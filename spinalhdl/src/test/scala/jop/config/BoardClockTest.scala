@@ -34,10 +34,8 @@ class BoardClockTest extends AnyFunSuite {
   }
 
   // How each kind of source states its input, in MHz.
-  private val altpllPs  = """inclk0_input_frequency\s*(?:=>|=|\()\s*(\d+)""".r  // picoseconds
   private val memPhyRef = """name\s*=\s*"pll_ref_clk_mhz"\s+value\s*=\s*"([0-9.]+)"""".r
 
-  private def altpll(path: String)   = stated(path, altpllPs).map(ps => BigDecimal(1000000) / ps)
   private def megahertz(re: Regex)(path: String) = stated(path, re)
 
   /** A file that states a PLL's input, and the board clock that feeds it. */
@@ -47,10 +45,10 @@ class BoardClockTest extends AnyFunSuite {
     // The DDR2 controller's own PLL, read from its committed MegaWizard
     // variation: the generated IP under ip/ is not in the tree.
     Source("fpga/a-e115fb-ddr2/ip-src/ddr2_64bit.v", megahertz(memPhyRef), "a-e115fb", "CLK25M"),
-    Source("fpga/cyc5000-sdram/cyc5000_pll.vhd", altpll, "cyc5000", "CLK12M"),
     // Every clk_wiz script left in step 8: the Wukong's three and the i9+
-    // Makefile's -in_freq (8b), the XC7A100T's and the Au's (8c). Their
-    // designs define their PLLs, built by clk_wiz.
+    // Makefile's -in_freq (8b), the XC7A100T's and the Au's (8c). The
+    // CYC5000's cyc5000_pll.vhd left in step 9. Their designs define their
+    // PLLs, built by their families.
   )
 
   /** Files that mention a PLL input without stating one a design is built with. */
@@ -115,14 +113,9 @@ class BoardClockTest extends AnyFunSuite {
     assert(loose.isEmpty, s"PLL inputs no row checks: ${loose.mkString(", ")}")
   }
 
-  test("every PLL file a board names is checked or excused") {
-    val named = boards.values.toSeq.flatMap { b =>
-      b.pllType.flatMap(_.ipFile).collect { case PllIpFile.Static(p) => p }.toSeq
-    }
-    val known = sources.map(_.path).toSet
-    assert(named.nonEmpty)
-    assert(named.filterNot(known).isEmpty, s"PLL files no row checks: ${named.filterNot(known).mkString(", ")}")
-  }
+  // "Every PLL file a board names is checked or excused" stood here until
+  // step 9: no board names a PLL file now (AlteraDesignPllTest holds that no
+  // board declares a PLL at all).
 
   // ---- the model ----
 

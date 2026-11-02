@@ -4,24 +4,6 @@ import spinal.core._
 import jop.config._
 
 /**
- * CYC5000 PLL BlackBox — Cyclone V altera_pll megafunction.
- * 12 MHz input -> c0=80MHz (JOP system), c1=80MHz/-2.5ns (SDRAM clock pin)
- */
-case class Cyc5000Pll() extends BlackBox {
-  setDefinitionName("cyc5000_pll")
-
-  val io = new Bundle {
-    val refclk   = in Bool()
-    val rst      = in Bool()
-    val outclk_0 = out Bool()
-    val outclk_1 = out Bool()
-    val locked   = out Bool()
-  }
-
-  noIoPrefix()
-}
-
-/**
  * Unified PLL result -- all clock outputs from the PLL subsystem.
  *
  * Different boards produce different subsets of clocks:
@@ -49,17 +31,11 @@ case class PllResult(
 )
 
 /**
- * PLL factory. A PLL the DESIGN defines is built by its FPGA family's builder
- * (`build`, status item 173); a board whose family has no builder yet still
- * declares its own (`create`, delegating to PllType.create()).
+ * PLL factory. Every PLL is one a DESIGN defines (`PllDefinition`), built by
+ * its FPGA family's builder (status item 173): no board declares one, since
+ * the CYC5000's -- the last -- moved into its designs on 2026-11-02.
  */
 object Pll {
-
-  def create(board: Board, memType: MemoryType, inputClock: Bool, systemIndex: Int = 0): PllResult = {
-    val pllType = board.pllType.getOrElse(
-      throw new RuntimeException(s"Board '${board.name}' has no pllType defined"))
-    pllType.create(memType, inputClock, systemIndex)
-  }
 
   /** The PLL `d` defines, fed from `clock` (its reference) on `inputClock`,
     * built by `family`'s builder; its outputs are handed out by role. `reset`
@@ -121,20 +97,17 @@ object Pll {
     PllDefinition(clock.name, Seq(PllOutput(PllRole.System, mhz)), module = s"pll_sys_${mhz}mhz", instance = "pll")
 
   /** The PLL of a design that wants only a system clock, at `systemMhz`, from
-    * the board's one clock -- the exercisers. Where the board's FPGA family
-    * has a builder, that is `systemOnly`; elsewhere the board's own, which
-    * must run at `systemMhz` until its family is converted. */
-  def forDesign(board: Board, memType: MemoryType, inputClock: Bool, systemMhz: Int): PllResult =
-    if (board.pllType.isDefined) create(board, memType, inputClock)
-    else {
-      require(memType == MemoryType.BRAM,
-        s"Board '${board.name}' declares no PLL; a $memType design must define its own (PllDefinition)")
-      val clock = board.clocks match {
-        case Seq(only) => only
-        case cs => throw new IllegalArgumentException(
-          s"Board '${board.name}' offers ${cs.size} clocks (${cs.map(_.name).mkString(", ")}); " +
-            "a design on it must define its PLL and name the one it takes")
-      }
-      build(systemOnly(clock, systemMhz), board, inputClock)
+    * the board's one clock -- the exercisers: `systemOnly`, built by the
+    * board's FPGA family. */
+  def forDesign(board: Board, memType: MemoryType, inputClock: Bool, systemMhz: Int): PllResult = {
+    require(memType == MemoryType.BRAM,
+      s"Board '${board.name}': a $memType design needs more than a system clock and must define its PLL (PllDefinition)")
+    val clock = board.clocks match {
+      case Seq(only) => only
+      case cs => throw new IllegalArgumentException(
+        s"Board '${board.name}' offers ${cs.size} clocks (${cs.map(_.name).mkString(", ")}); " +
+          "a design on it must define its PLL and name the one it takes")
     }
+    build(systemOnly(clock, systemMhz), board, inputClock)
+  }
 }

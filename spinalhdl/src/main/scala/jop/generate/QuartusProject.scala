@@ -164,19 +164,6 @@ object QuartusProject {
 
     sb.append("# Sources\n")
     g("VERILOG_FILE", up(s"${layout.rtlDir(preset, buildArgs)}/${config.entityName}.v"))
-    // The system PLL, from the BOARD's PllType. This used to be a hardcoded
-    // "dram_pll.vhd" -- the EP4CGX150's PLL -- so a Cyclone V project named a
-    // file that does not exist for it.
-    config.assembly.fpgaBoard.pllType.flatMap(_.ipFile).foreach {
-      case PllIpFile.Static(path) =>
-        // By EXTENSION, not always VHDL_FILE: the MAX1000's PLL is Verilog, and
-        // calling a .v file VHDL_FILE is the same class of error as pointing at
-        // the wrong path -- Quartus does not read it and the module comes out
-        // "undefined".
-        g(if (path.endsWith(".v") || path.endsWith(".sv")) "VERILOG_FILE" else "VHDL_FILE",
-          up(path))
-    }
-
     // The PLLs the DESIGN defines (status item 173), which the Verilog
     // generator writes into this configuration's ip/ (DesignPlls).
     DesignPlls.files(config).foreach(f =>

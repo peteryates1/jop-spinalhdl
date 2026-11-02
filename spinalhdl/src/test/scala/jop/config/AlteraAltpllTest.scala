@@ -156,9 +156,46 @@ class AlteraAltpllTest extends AnyFunSuite {
   }
 
   test("the families on ALTPLL have the builder, under their Quartus names") {
-    for (f <- Seq(FpgaFamily.CycloneIV, FpgaFamily.CycloneIVE, FpgaFamily.MAX10))
+    // Cyclone V too (status item 173, step 9): Quartus implements an altpll
+    // instance there on the fractional PLL in integer mode, which is what the
+    // CYC5000's hand-written cyc5000_pll.vhd was and ran as.
+    for (f <- Seq(FpgaFamily.CycloneIV, FpgaFamily.CycloneIVE, FpgaFamily.MAX10, FpgaFamily.CycloneV))
       assert(f.pll.contains(AlteraAltpll(f.quartusFamilyName)), s"$f")
-    assert(FpgaFamily.CycloneV.pll.isEmpty, "Cyclone V is altera_pll, not ALTPLL: its builder is a later step")
+  }
+
+  /** Every parameter of the hand-written fpga/cyc5000-sdram/cyc5000_pll.vhd,
+    * which ran JOP on the CYC5000 (GcStressTest, 2026-09-14): RECORDED, for the
+    * same reason as validatedPll125 -- the file is generated now. */
+  private val validatedCyc5000: Map[String, String] = validatedPll125 -- Seq(
+      "self_reset_on_loss_lock", "width_clock") ++ Map(
+    "clk0_divide_by" -> "3", "clk0_multiply_by" -> "20",
+    "clk1_divide_by" -> "3", "clk1_duty_cycle" -> "50", "clk1_multiply_by" -> "20", "clk1_phase_shift" -> "\"-2500\"",
+    "inclk0_input_frequency" -> "83333",
+    "intended_device_family" -> "\"Cyclone V\"",
+    "lpm_hint" -> "\"CBX_MODULE_PREFIX=cyc5000_pll\"",
+    "port_areset" -> "\"PORT_USED\"",
+    "port_clk1" -> "\"PORT_USED\"",
+    "valid_lock_multiplier" -> "1")
+
+  test("the CYC5000's spec on Cyclone V gives the hand-written PLL's parameters") {
+    val gen = params(generated(PllSpec(12, Seq(PllOutput(PllRole.System, 80),
+      PllOutput(PllRole.Sdram, 80, phasePs = -2500))), FpgaFamily.CycloneV, "cyc5000_pll"))
+    // What the builder states otherwise: areset is tied off, as on every
+    // ALTPLL it writes (the file's `rst` was tied low); valid_lock_multiplier
+    // is altpll's default, 1; and the two parameters of pll_125.v's set.
+    val want = validatedCyc5000 - "valid_lock_multiplier" ++ Map(
+      "port_areset" -> "\"PORT_UNUSED\"", "self_reset_on_loss_lock" -> "\"OFF\"", "width_clock" -> "5")
+    assert(gen == want, s"\n  generated: ${(gen.toSet -- want.toSet).toSeq.sorted}\n  " +
+      s"validated: ${(want.toSet -- gen.toSet).toSeq.sorted}")
+  }
+
+  test("on Cyclone V an output's clock is the fractional PLL's output counter") {
+    // Quartus 25.1 named the CYC5000's outputs so (its STA report, 2026-09-14):
+    // c0 is generic_pll1, c1 generic_pll2.
+    assert(AlteraAltpll("Cyclone V").clockPath("pll", 1).contains(
+      "pll|altpll_component|auto_generated|generic_pll2~PLL_OUTPUT_COUNTER|divclk"))
+    assert(AlteraAltpll("Cyclone IV GX").clockPath("pll", 1).contains(
+      "pll|altpll_component|auto_generated|pll1|clk[1]"))
   }
 
   test("more outputs than ALTPLL has counters are refused") {

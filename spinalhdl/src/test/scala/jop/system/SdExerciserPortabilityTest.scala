@@ -12,7 +12,8 @@ import jop.config._
  * CLOCK, not by anything to do with SD. Its SD pins already resolved on all
  * three boards (see BoardDesignTest); it was the clock that could not move.
  *
- * Taking the PLL from `Board.pllType` fixed that, and this test is what keeps
+ * Taking the PLL from the board fixed that -- and since status item 173 from
+ * the design, built by its FPGA family -- and this test is what keeps
  * it fixed. A future top that reaches for a vendor primitive directly will pass
  * on its home board and fail here. Since 2026-11-02 (status item 173) a board
  * whose FPGA family has a PLL builder declares no PLL: on the i5 the exerciser

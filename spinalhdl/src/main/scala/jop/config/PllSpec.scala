@@ -105,7 +105,7 @@ case class PllSpec(inputMhz: Int, outputs: Seq[PllOutput]) {
  * @param module    the IP's module name: the file the flow generates
  *                  (`PllGenMain`) and synthesises
  * @param instance  the netlist instance name, STATED so that constraints can
- *                  name it (`PllType.instanceName` says why not inferred)
+ *                  name it (TimingConstraints' header says why not inferred)
  */
 case class PllDefinition(reference: String, outputs: Seq[PllOutput], module: String, instance: String) {
   require(outputs.nonEmpty, s"PLL $module: a PLL with no outputs is not a PLL")

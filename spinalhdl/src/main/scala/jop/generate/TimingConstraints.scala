@@ -22,8 +22,9 @@ case class ClockConstraint(port: String, freqHz: BigDecimal, name: Option[String
  *   - `jop_sdram.sdc`'s entire `set_clock_groups`, discarded because it named
  *     the PLL instance `pll` where the design instantiates `dramPll`
  *
- * That last one is why `PllType.instanceName` is now STATED in Scala and read
- * from here, rather than copied into a constraint file where nothing checks it.
+ * That last one is why a PLL's instance name is STATED in Scala -- the design's
+ * `PllDefinition.instance`, through its builder's `clockPath` -- and read from
+ * here, rather than copied into a constraint file where nothing checks it.
  *
  * THREE TOOLCHAINS, THREE RENDERINGS of the same facts:
  *

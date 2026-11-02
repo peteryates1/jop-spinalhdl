@@ -203,7 +203,7 @@ primitives:
 | Altera `altpll` | none since 2026-11-02: `DramPll`, `Max1000Pll`, `Ep4ce6Pll` and `EthPll` are the ALTPLL families' builder, `AlteraAltpll.instantiate` (item 173) | output count, generated-file name |
 | Xilinx `clk_wiz` | none since 2026-11-02: `ClkWizBlackBox`, `WukongClkWizBlackBox` and `SdramExerciserClkWiz` are the Artix-7 builder, `XilinxClkWiz.instantiate` (item 173) | port set, instance name |
 | Lattice `EHXPLLL` | `I5Pll` (since 2026-11-02 none: the ECP5 family's builder, `LatticeEcpPll.instantiate`, item 173) | — |
-| Altera Cyclone V | `Cyc5000Pll` | different megafunction |
+| Altera Cyclone V | none since 2026-11-02: `Cyc5000Pll` was an altpll too, which Quartus implements on the fractional PLL; the ALTPLL builder serves Cyclone V (item 173) | different megafunction (it was not) |
 
 `DramPll` is named for its first job -- clocking the SDRAM -- but `c1` is the
 SYSTEM clock, so a design with no DRAM instantiates something called `DramPll`.

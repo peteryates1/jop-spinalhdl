@@ -75,7 +75,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 34. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 35. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 36. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02). Boards now declare their clocks and designs pick one (step 5, 2026-11-02); designs define their PLLs and the ECP5, ALTPLL and clk_wiz families build them (steps 6-8: the i5, MAX1000, EP4CE6, EP4CGX150, the GMII designs' 125 MHz PLLs, and every Artix-7 design); next Cyclone V
+37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02). Boards now declare their clocks and designs pick one (step 5, 2026-11-02); designs define their PLLs and every FPGA family builds them (steps 6-9: ECP5, ALTPLL -- Cyclone IV, MAX 10 and Cyclone V -- and clk_wiz); no board declares a PLL, so `Board.scala` no longer depends on JOP; next, the hardware layer as an sbt subproject
 38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
 39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
 40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -4676,6 +4676,27 @@ Built with Vivado 2025.2, each definition reported both MIG clocks exact:
   last met build (9,211 LUTs on 2026-08-22, WNS +0.477), not with this step.
   The Au is not attached here, so neither Au build ran on hardware.
 
+**Step 9 (2026-11-02): Cyclone V, and no board declares a PLL.** The
+CYC5000's hand-written `cyc5000_pll.vhd` called itself an altera_pll and was an
+`altpll` instance, which Quartus implements on Cyclone V's fractional PLL in
+integer mode: so Cyclone V takes the ALTPLL builder too, which names output n
+`generic_pll<n+1>~PLL_OUTPUT_COUNTER|divclk` there instead of `pll1|clk[n]`.
+The CYC5000's designs define their PLL (`JopConfig.cyc5000Pll`: 80 MHz from
+CLK12M and the SDRAM's copy at -2500 ps, this board's validated lead), and the
+builder reproduces every parameter of the hand-written file except its areset
+(tied off, as everywhere) and `valid_lock_multiplier` (altpll's default, 1).
+That was the last `PllType`: `PllType`, `PllIpFile`, `Board.pllType`,
+`Pll.create`, `Cyc5000Pll` and the file are gone, `Board.scala` imports
+nothing of JOP, and a design that defines no PLL is refused at elaboration
+(only a DDR2 design, which runs on its PHY's clock, defines none). Tests first:
+7 red, among them a recorded copy of the file's parameters and the Quartus
+clock names. Dumped before and after, the 19 Altera presets' projects and SDCs
+differ in one line, the CYC5000's PLL file. Quartus 25.1 builds the identical
+PLL -- integer mode, VCO 1200.0048 MHz, M 200, N 2, C 15, both outputs
+80.00032 MHz, the SDRAM's at 288 deg (-2.5 ns) -- under the predicted names,
+and meets timing: Fmax 87.55 MHz, setup +0.956 ns, hold +0.289 (2026-09-14:
+85.42, +0.792, +0.377). The CYC5000 is not attached here, so it did not run.
+
 **What is left:** the setup layer is done. Every fact the 2026-10-28 list
 put in the wrong layer -- the board designs' aliases, the serial registries,
 the network identity and the host's paths -- is in `setup/`, and the guard
@@ -4684,11 +4705,11 @@ and designs pick one (step 5), the ECP5 family builds the PLLs its designs
 define (step 6), and so do the ALTPLL families (step 7): the MAX1000, the
 EP4CE6, the EP4CGX150 and the GMII designs' 125 MHz PLLs -- every PLL the
 Cyclone IV and MAX 10 designs instantiate themselves (the A-E115FB's DDR2
-PHY keeps its own, inside the vendor IP) -- and Artix-7 builds every one
-its designs define (step 8). Next, Cyclone V's. Then the last
-`PllType`s leave `Board`, which is the only code in `Board.scala` that needs
-JOP, and the hardware layer becomes an sbt subproject that does not depend on
-JOP, so the compiler holds the direction. Lab-specific TESTS (`InstanceTest`'s
+PHY keeps its own, inside the vendor IP) -- Artix-7 builds every one its
+designs define (step 8), and Cyclone V the CYC5000's (step 9). No board
+declares a PLL, so `Board.scala` no longer needs JOP. Next, the hardware layer
+becomes an sbt subproject that does not depend on JOP, so the compiler holds
+the direction. Lab-specific TESTS (`InstanceTest`'s
 descriptor table) stay in `spinalhdl/src/test` for now; they would move with
 the setup if it gets a repository of its own.
 

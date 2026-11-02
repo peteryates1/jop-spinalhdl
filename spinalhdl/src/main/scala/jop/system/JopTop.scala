@@ -249,16 +249,17 @@ case class JopTop(
       // clock's where it cannot share that VCO. A DDR2 design defines no system
       // PLL -- the ALTMEMPHY controller contains its own, takes the 25 MHz board
       // oscillator as its reference, and sources phy_clk for the whole system --
-      // but may define its GMII one. A board whose family has no builder yet
-      // still declares its PLL; the A-E115FB declares none, and Pll.create
-      // would throw.
+      // but may define its GMII one. Every other design defines its system
+      // PLL; no board declares one (status item 173).
       //
       // A DDR3 design holds its PLL in reset while the board's reset is held,
       // as its hand-wired clock wizard did: the lock drops, MIG resets and
       // recalibrates. Nothing else resets its PLL.
       val pllReset = if (isDdr3) Some(!ClockDomain.current.readResetWire) else None
       if (sys.plls.nonEmpty) pllResult = Pll.build(sys.plls, config.fpgaFamily, config.assembly, boardClk, pllReset)
-      else if (!isDdr2) pllResult = Pll.create(board, memType, boardClk)
+      else if (!isDdr2) throw new IllegalArgumentException(
+        s"System '${sys.name}' defines no PLL: every design defines its own (JopSystem.plls), " +
+          "and its FPGA family builds it -- no board declares one (status item 173)")
 
       // 4. Reset Generation + Main Clock Domain
       val systemClk = if (!isDdr3 && !isDdr2) pllResult.systemClk.get else null

@@ -127,8 +127,11 @@ object LatticeEcpPll extends PllVendor {
 }
 
 /**
- * Altera's ALTPLL: Cyclone IV E, Cyclone IV GX and MAX 10, one instance per
- * family (`FpgaFamily.pll`), named for `intended_device_family`.
+ * Altera's ALTPLL: Cyclone IV E, Cyclone IV GX, MAX 10 and Cyclone V, one
+ * instance per family (`FpgaFamily.pll`), named for `intended_device_family`.
+ * Cyclone V has no ALTPLL hardware; Quartus implements an altpll instance on
+ * its fractional PLL in integer mode, which is how the CYC5000's hand-written
+ * PLL ran.
  *
  * The generated module instantiates the `altpll` megafunction with the spec's
  * ratios, and Quartus chooses M, N and the output counters when it compiles
@@ -286,9 +289,13 @@ case class AlteraAltpll(deviceFamily: String) extends PllVendor {
   override def generatedWithVerilog = true
 
   /** Quartus names the altpll's counters
-    * `<inst>|altpll_component|auto_generated|pll1|clk[n]`. */
+    * `<inst>|altpll_component|auto_generated|pll1|clk[n]`. On Cyclone V it
+    * implements altpll on the fractional PLL, and output n is that PLL's
+    * output counter `generic_pll<n+1>` (the CYC5000's STA report, 2026-09). */
   override def clockPath(instance: String, n: Int): Option[String] =
-    Some(s"$instance|altpll_component|auto_generated|pll1|clk[$n]")
+    if (deviceFamily == "Cyclone V")
+      Some(s"$instance|altpll_component|auto_generated|generic_pll${n + 1}~PLL_OUTPUT_COUNTER|divclk")
+    else Some(s"$instance|altpll_component|auto_generated|pll1|clk[$n]")
 }
 
 /**

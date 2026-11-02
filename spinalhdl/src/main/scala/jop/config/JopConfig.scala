@@ -79,9 +79,8 @@ case class JopSystem(
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None,
   devices: Map[String, DeviceInstance] = Map.empty,
   /** The PLLs this system's clocks come from, defined by the DESIGN and built
-    * by its FPGA family (status item 173). None while the board's family has
-    * no builder (the board still declares its PLL, `Board.pllType`), or where
-    * a DRAM PHY makes the system clock (the A-E115FB's DDR2). Usually one;
+    * by its FPGA family (status item 173). None only where a DRAM PHY makes
+    * the system clock (the A-E115FB's DDR2); no board declares a PLL. Usually one;
     * two where an output cannot share the system clock's VCO -- GMII's
     * 125 MHz beside 80 needs 2000 MHz, past Cyclone IV's 1300. A design asks
     * for clocks by ROLE, and each role comes from one output. */
@@ -1210,10 +1209,20 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
+      plls = Seq(cyc5000Pll),
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(
         hasCardTable = true, cardTableBudgetBytes = 4 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("FT2232H"))))))
+
+  /** The CYC5000's PLL (status item 173): 80 MHz from its 12 MHz CLK12M, and
+    * the SDRAM's copy 2.5 ns early. Cyclone V's ALTPLL builder makes it; it
+    * was the hand-written cyc5000_pll.vhd, an altpll that Quartus implements
+    * on the fractional PLL in integer mode. -2500 ps is this board's
+    * validated lead, not the -3000 the others run. */
+  def cyc5000Pll: PllDefinition = PllDefinition("CLK12M",
+    Seq(PllOutput(PllRole.System, 80), PllOutput(PllRole.Sdram, 80, phasePs = -2500)),
+    module = "cyc5000_pll", instance = "pll")
 
   /** CYC5000 SMP (N cores) */
   def cyc5000Smp(n: Int) = {

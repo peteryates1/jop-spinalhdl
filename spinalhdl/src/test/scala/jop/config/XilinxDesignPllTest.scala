@@ -47,7 +47,7 @@ class XilinxDesignPllTest extends AnyFunSuite {
   test("no Artix-7 board declares a PLL: every design on one defines its own") {
     val artix = SystemAssembly.all.flatMap(_.boards).filter(_.fpga.exists(_.family == FpgaFamily.Artix7))
     assert(artix.map(_.name).distinct.size == 4, artix.map(_.name))
-    for (b <- artix) assert(b.pllType.isEmpty, s"${b.name} still declares a PLL")
+    // No board declares a PLL any more (AlteraDesignPllTest holds that).
     val names = presets.map(_._1)
     for (n <- Seq("wukongSdram", "wukongDdr3", "wukongFull", "wukongBram", "wukongSdrFull",
                   "wukongDualIndependent", "colorlightDbI9PlusEth", "xc7a100tDbSerial", "xc7a100tDbEth",

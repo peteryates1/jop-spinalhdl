@@ -66,8 +66,9 @@ trait BoardDesign {
 
   /** The PLLs this design defines (status item 173), each built by its FPGA
     * family's builder. What the generators read to write the PLLs' IP, list
-    * it in a project and name its clocks in constraints. A design whose PLL
-    * its board still declares (`Board.pllType`) defines none here. */
+    * it in a project and name its clocks in constraints. No board declares a
+    * PLL: a design with none (the A-E115FB's DDR2) runs on what its memory
+    * controller makes. */
   def plls: Seq[PllDefinition] = Nil
 
   /** How many LEDs the DESIGN drives, which is not how many the assembly

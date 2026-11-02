@@ -20,7 +20,6 @@ class PllDefinitionTest extends AnyFunSuite {
                               JopConfig.colorlightDbI5Sdram, JopConfig.colorlightDbI5Eth)
 
   test("the i5's PLL is its designs', not its board's") {
-    assert(Board.ColorlightI5.pllType.isEmpty, "Board.ColorlightI5 still declares a PllType")
     for (d <- i5Designs) {
       val p = d.system.plls.headOption.getOrElse(fail(s"${d.designName} defines no PLL"))
       assert(p.reference == "CLK25M" && p.module == "pll_jop_i5" && p.instance == "i5Pll")

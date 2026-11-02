@@ -951,8 +951,8 @@ case class SdSpiExerciserTop(
  * instantiates `DramPll()` directly -- an Altera altpll blackbox -- so it is
  * nailed to one vendor by its CLOCK. The SD pins themselves resolve on the
  * Wukong and the XC7A100T + DB v5 today (see BoardDesignTest). Taking the PLL
- * from `Board.pllType` via `Pll.create` is what makes this design cross-family,
- * and it is a separate change because it alters the netlist.
+ * from `Board.pllType` via `Pll.create` made this design cross-family; since
+ * status item 173 it defines its own (`plls` below), built by the family.
  */
 object SdSpiExerciserDesign extends jop.config.BoardDesign {
   // Its PLL (status item 173): only a system clock, built by the board's

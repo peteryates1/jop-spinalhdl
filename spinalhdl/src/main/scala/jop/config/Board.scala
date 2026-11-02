@@ -63,50 +63,12 @@ case class BoardClock(name: String, freq: spinal.core.HertzNumber, pin: String) 
   require(freq.toBigDecimal > 0, s"board clock $name: frequency must be positive")
 }
 
-// ==========================================================================
-// PLL Type — which PLL family a board uses
-// ==========================================================================
+// A board declares no PLL: each design defines its own (JopSystem.plls) and
+// the FPGA family builds it (FpgaFamily.pll, status item 173). The PllTypes
+// that stood here until 2026-11-02 were the only code in this file that
+// depended on JOP.
 
 import spinal.core._
-import jop.system.pll.{Cyc5000Pll, PllResult}
-
-/** Where a board-declared PLL's IP file comes from. A PLL a design defines is
-  * written by its family's builder instead (DesignPlls, status item 173). */
-sealed trait PllIpFile
-object PllIpFile {
-  /** A hand-written file at a fixed repo-relative path. */
-  case class Static(path: String) extends PllIpFile
-}
-
-sealed trait PllType {
-  /** Instantiate the PLL and return all clock outputs.
-    * @param systemIndex differentiates multiple PLL instances in multi-system designs */
-  def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0): PllResult
-
-  /** The IP file that defines this PLL, if a Quartus project must list one:
-    * a hand-written file at a fixed repo-relative path.
-    *
-    * Stated here because the generator hardcoded `dram_pll.vhd`, which was the
-    * EP4CGX150's PLL: a Cyclone V project came out naming a file that does not
-    * exist for it. */
-  def ipFile: Option[PllIpFile] = None
-}
-
-object PllType {
-
-  /** CYC5000 (Cyclone V): altera_pll megafunction.
-    * 12 MHz -> outclk_0=80MHz system, outclk_1=80MHz/-2.5ns SDRAM. */
-  case object AlteraCyc5000 extends PllType {
-    override val ipFile = Some(PllIpFile.Static("fpga/cyc5000-sdram/cyc5000_pll.vhd"))
-    def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
-      val pll = Cyc5000Pll()
-      pll.io.refclk := inputClock
-      pll.io.rst := False
-      PllResult(systemClk = Some(pll.io.outclk_0), locked = pll.io.locked,
-        sdramClk = Some(pll.io.outclk_1))
-    }
-  }
-}
 
 // ==========================================================================
 // Board
@@ -126,7 +88,6 @@ case class Board(
   fpga: Option[FpgaDevice] = None,
   devices: Seq[BoardDevice] = Seq.empty,
   connectors: Map[String, Map[Int, String]] = Map.empty,
-  pllType: Option[PllType] = None,
   entityTag: String = "",       // Replaces memType-based entity name (e.g., "Cyc5000", "Max1000Sdram")
   entitySuffix: String = "",    // Appended to memType-based entity name (e.g., "Wukong")
   ledActiveHigh: Boolean = false,
@@ -251,7 +212,7 @@ object Board {
   def QmtechEP4CGX150 = Board(
     name = "qmtech-ep4cgx150",
     fpga = Some(FpgaDevice.EP4CGX150DF27.withGrade(7, 'I')),   // EP4CGX150DF27I7, docs/boards/qmtech-ep4cgx150-board.md
-    // No pllType: its designs define their PLLs (JopConfig.ep4cgx150Pll) and
+    // Its designs define their PLLs (JopConfig.ep4cgx150Pll) and
     // Cyclone IV GX builds them (status item 173), in place of DramPllGen's
     // template and its fixed four outputs.
     clocks = Seq(BoardClock("CLK50M", 50 MHz, "PIN_B14")),
@@ -331,7 +292,9 @@ object Board {
    */
   def CYC5000 = Board(
     name = "cyc5000",
-    pllType = Some(PllType.AlteraCyc5000),
+    // Its designs define their PLL from CLK12M and Cyclone V's ALTPLL builder
+    // makes it (JopConfig.cyc5000Pll, status item 173), in place of the
+    // hand-written cyc5000_pll.vhd.
     entityTag = "Cyc5000",
     fpga = Some(FpgaDevice.`5CEBA2U15`),   // 5CEBA2U15C8, the default (slowest) grade
     clocks = Seq(BoardClock("CLK12M", 12 MHz, "PIN_F14")),
@@ -399,7 +362,7 @@ object Board {
    */
   def ColorlightI5 = Board(
     name = "colorlight-i5",
-    // No pllType: the designs on it define their PLL from CLK25M, and the ECP5
+    // The designs on it define their PLL from CLK25M, and the ECP5
     // family builds it (JopConfig.colorlightI5Pll; status item 173).
     entitySuffix = "I5",
     fpga = Some(FpgaDevice.LFE5U25F),
@@ -485,7 +448,7 @@ object Board {
   def ColorlightI9Plus = Board(
     name = "colorlight-i9plus",
     fpga = Some(FpgaDevice.XC7A50T),
-    // No pllType: the designs on it define their PLL from CLK25M, and clk_wiz
+    // The designs on it define their PLL from CLK25M, and clk_wiz
     // builds it (JopConfig.xilinxSdrPll, status item 173).
     entitySuffix = "I9Plus",
     useStackCache = true,
@@ -593,7 +556,7 @@ object Board {
     // -2: what its flows build and the two docs with build results say (ddr3-gc-hang.md,
     // artix7-core-estimates.md). There is no board doc, and the chip marking is unread.
     fpga = Some(FpgaDevice.XC7A35T.withGrade(2)),
-    // No pllType: its designs define their PLL from CLK100M and clk_wiz builds
+    // Its designs define their PLL from CLK100M and clk_wiz builds
     // it (JopConfig.migPll, status item 173).
     ddr3HasCs = true,
     clocks = Seq(BoardClock("CLK100M", 100 MHz, "N14")),
@@ -733,7 +696,7 @@ object Board {
   def WukongXC7A100T = Board(
     name = "qmtech-wukong-xc7a100t",
     fpga = Some(FpgaDevice.XC7A100T.withGrade(2)),   // -2: docs/boards/qmtech-wukong-board.md
-    // No pllType: each design defines its PLL from CLK50M -- the SDR, DDR3 and
+    // Each design defines its PLL from CLK50M -- the SDR, DDR3 and
     // BRAM ones, and both halves of the dual -- and clk_wiz builds it (status
     // item 173). Until 2026-11-02 three hand-made IPs with incompatible ports
     // stood in for all of them.
@@ -827,7 +790,7 @@ object Board {
   def QmtechXC7A100T = Board(
     name = "qmtech-xc7a100t",
     fpga = Some(FpgaDevice.XC7A100T.withGrade(2)),   // -2: docs/boards/qmtech-xc7a100t-board.md
-    // No pllType: its designs define their PLL from CLK50M and clk_wiz builds
+    // Its designs define their PLL from CLK50M and clk_wiz builds
     // it (JopConfig.migPll, status item 173).
     clocks = Seq(BoardClock("CLK50M", 50 MHz, "U22")),
     devices = Seq(
@@ -1158,7 +1121,7 @@ object Board {
   def MAX1000 = Board(
     name = "max1000",
     fpga = Some(FpgaDevice.`10M08SAU169`),   // 10M08SAU169C8G, the default (slowest) grade
-    // No pllType: max1000Sdram defines its PLL and MAX 10 builds it (status
+    // max1000Sdram defines its PLL and MAX 10 builds it (status
     // item 173). The board's file was a stub passing 12 MHz through.
     entityTag = "Max1000Sdram",
     clocks = Seq(BoardClock("CLK12M", 12 MHz, "PIN_H6")),
@@ -1200,7 +1163,7 @@ object Board {
   def GenericEP4CE6 = Board(
     name = "generic-ep4ce6",
     fpga = Some(FpgaDevice.EP4CE6E22),   // EP4CE6E22C8, the default (slowest) grade
-    // No pllType: ep4ce6Sdram defines its PLL and Cyclone IV E builds it
+    // ep4ce6Sdram defines its PLL and Cyclone IV E builds it
     // (status item 173). The board named a file that was never committed.
     entityTag = "Ep4ce6Sdram",
     clocks = Seq(BoardClock("CLK50M", 50 MHz, "PIN_23")),

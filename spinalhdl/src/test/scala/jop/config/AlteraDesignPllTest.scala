@@ -22,8 +22,6 @@ class AlteraDesignPllTest extends AnyFunSuite {
     ("ep4ce6Sdram", JopConfig.ep4ce6Sdram, PllDefinition("CLK50M", sdram80, "ep4ce6_pll", "pll")))
 
   test("the MAX1000's and the EP4CE6's PLLs belong to their designs, not their boards") {
-    assert(Board.MAX1000.pllType.isEmpty, "the MAX1000 still declares a PLL")
-    assert(Board.GenericEP4CE6.pllType.isEmpty, "the EP4CE6 still declares a PLL")
     for ((name, cfg, want) <- small) {
       assert(cfg.system.plls == Seq(want), s"$name defines ${cfg.system.plls}")
       assert(cfg.plls == Seq(want), name)
@@ -74,6 +72,47 @@ class AlteraDesignPllTest extends AnyFunSuite {
     assert(tc.derivePllClocks)
   }
 
+  // ---- the CYC5000, Cyclone V (step 9) ----
+
+  test("the CYC5000's PLL is its designs': 80 MHz and the SDRAM's copy 2.5 ns early, from CLK12M") {
+    // The hand-written cyc5000_pll.vhd's outputs, kept: -2500 ps is this
+    // board's validated lead, not the -3000 the others run.
+    val want = PllDefinition("CLK12M", Seq(PllOutput(PllRole.System, 80),
+      PllOutput(PllRole.Sdram, 80, phasePs = -2500)), module = "cyc5000_pll", instance = "pll")
+    for (cfg <- Seq(JopConfig.cyc5000Serial, JopConfig.cyc5000Smp(2)))
+      assert(cfg.system.plls == Seq(want), cfg.system.plls)
+  }
+
+  test("the CYC5000's project reads the generated PLL, not the hand-written file") {
+    val tcl = QuartusProject.generate(JopConfig.cyc5000Serial, "rev", "cyc5000Serial", Seq("cyc5000Serial"))
+    assert(tcl.linesIterator.exists(l => l.contains("VERILOG_FILE") && l.contains("build/cyc5000Serial/ip/cyc5000_pll.v")), tcl)
+    assert(!tcl.contains("cyc5000_pll.vhd"), "the project still names the hand-written file")
+    assert(!Files.exists(Paths.get("fpga/cyc5000-sdram/cyc5000_pll.vhd")), "the hand-written PLL is back")
+  }
+
+  test("no board declares a PLL: every design defines its own, and Board.scala needs no JOP") {
+    // The last PllType, the CYC5000's, left with step 9 (status item 173). The
+    // PLL code was the only part of Board.scala that depended on JOP.
+    assert(!classOf[Board].getDeclaredFields.map(_.getName).contains("pllType"))
+    for (c <- Seq("jop.config.PllType", "jop.config.PllIpFile", "jop.system.pll.Cyc5000Pll"))
+      assert(scala.util.Try(Class.forName(c)).isFailure, s"$c is back")
+    val boardScala = read("spinalhdl/src/main/scala/jop/config/Board.scala")
+    assert(!boardScala.contains("import jop.system"), "Board.scala imports JOP again")
+  }
+
+  test("a design that defines no PLL is refused, not handed its board's") {
+    val base = JopConfig.ep4cgx150Serial
+    val none = base.copy(systems = Seq(base.system.copy(plls = Nil)))
+    val rom = jop.utils.JopFileLoader.loadMicrocodeRom(MicrocodePaths.rom(BootMode.Serial))
+    val ram = jop.utils.JopFileLoader.loadStackRam(MicrocodePaths.ram(BootMode.Serial))
+    val e = intercept[Throwable](jop.system.JopSpinalConfig(none,
+      jop.generate.BuildLayout.default.standaloneDir("AlteraDesignPllTest-nopll")).generate(
+      spinal.lib.io.InOutWrapper(jop.system.JopTop(config = none, romInit = rom, ramInit = ram,
+        mainMemInit = None, mainMemSize = 64 * 1024))))
+    val messages = Iterator.iterate(e)(_.getCause).takeWhile(_ != null).map(t => String.valueOf(t.getMessage))
+    assert(messages.exists(_.contains("defines no PLL")), e.toString)
+  }
+
   // ---- the EP4CGX150 (step 7c) ----
 
   private def isVga(d: DeviceInstance) =
@@ -94,10 +133,6 @@ class AlteraDesignPllTest extends AnyFunSuite {
       "ep4cgx150Smp(8, 50)"     -> JopConfig.ep4cgx150Smp(8, 50),
       "ep4cgx150Smp(12, 36)"    -> JopConfig.ep4cgx150Smp(12, 36),
       "ep4cgx150BramSmp(4, 50)" -> JopConfig.ep4cgx150BramSmp(4, 50))
-  }
-
-  test("the EP4CGX150's PLL belongs to its designs, not its board") {
-    assert(Board.QmtechEP4CGX150.pllType.isEmpty, "the EP4CGX150 still declares a PLL")
   }
 
   test("an EP4CGX150 design's PLL: its clock, the SDRAM's copy 3 ns early, VGA's 25 MHz, nothing else") {
