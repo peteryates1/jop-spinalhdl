@@ -179,6 +179,11 @@ object QuartusProject {
           up(path))
     }
 
+    // The PLLs the DESIGN defines (status item 173), which the Verilog
+    // generator writes into this configuration's ip/ (DesignPlls).
+    DesignPlls.files(config).foreach(f =>
+      g("VERILOG_FILE", layout.relativeTo(projectDir, layout.ipDir(preset, buildArgs) + "/" + f)))
+
     // Board IP beyond the system PLL. Emitted only when the DESIGN needs it:
     // the Ethernet PLL exists on the board whether or not this configuration
     // instantiates one, and listing its source unconditionally would put an

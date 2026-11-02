@@ -157,8 +157,23 @@ object TimingConstraints {
     def alteraPll(outputs: Seq[Int]) = board.pllType.toSeq.flatMap { pt =>
       if (pt.instanceName.isEmpty) Nil else outputs.map(pt.alteraClockPath)
     }
-    val dramGroup = alteraPll(pllOutputs)
-    val vgaGroup = if (sdr && hasVga) alteraPll(Seq(3)) else Nil
+    // A PLL the DESIGN defines (status item 173) is named by ROLE: its outputs
+    // are numbered in the order the definition lists them, and the family's
+    // builder says how the toolchain names each. The fixed numbering above is
+    // the board-declared PLLs' until their families are converted.
+    def designPll(roles: PllRole*): Seq[String] = for {
+      d <- config.plls
+      v <- config.fpgaFamily.pll.toSeq
+      (o, i) <- d.outputs.zipWithIndex
+      if roles.contains(o.role)
+      path <- v.clockPath(d.instance, i)
+    } yield path
+    val byDesign = config.plls.nonEmpty
+    val dramGroup = if (byDesign) designPll(PllRole.System, PllRole.Sdram) else alteraPll(pllOutputs)
+    val vgaGroup =
+      if (!hasVga) Nil
+      else if (byDesign) designPll(PllRole.Vga)
+      else if (sdr) alteraPll(Seq(3)) else Nil
     // The Ethernet PLL and the PHY's receive clock are separate domains -- but
     // only when the DESIGN instantiates Ethernet, not merely when the board
     // carries the chip. The hand-written jop_sdram.sdc keyed off the board and

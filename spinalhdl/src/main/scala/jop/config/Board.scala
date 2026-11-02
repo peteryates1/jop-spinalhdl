@@ -68,7 +68,7 @@ case class BoardClock(name: String, freq: spinal.core.HertzNumber, pin: String) 
 // ==========================================================================
 
 import spinal.core._
-import jop.system.{DramPll, Max1000Pll, Ep4ce6Pll, SdramExerciserClkWiz}
+import jop.system.{DramPll, SdramExerciserClkWiz}
 import jop.system.pll.{Cyc5000Pll, WukongClkWizBlackBox, PllResult}
 import jop.ddr3.ClkWizBlackBox
 
@@ -151,35 +151,6 @@ object PllType {
       pll.io.rst := False
       PllResult(systemClk = Some(pll.io.outclk_0), locked = pll.io.locked,
         sdramClk = Some(pll.io.outclk_1))
-    }
-  }
-
-  /** MAX1000 (MAX10): c0=80MHz system, c1=80MHz/-3ns SDRAM. */
-  case object AlteraMax1000 extends PllType {
-    // .v, not .vhd: the file on disk is Verilog. Naming it .vhd made the
-    // generated project reference a path that does not exist, and Quartus
-    // reported it as `undefined entity "max1000_pll"` -- a missing FILE
-    // presented as a missing MODULE. (It is still a fit-check stub; see the
-    // header of max1000_pll.v.)
-    override val ipFile = Some(PllIpFile.Static("fpga/max1000/max1000_pll.v"))
-    def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
-      val pll = Max1000Pll()
-      pll.io.inclk0 := inputClock
-      pll.io.areset := False
-      PllResult(systemClk = Some(pll.io.c0), locked = pll.io.locked,
-        sdramClk = Some(pll.io.c1))
-    }
-  }
-
-  /** EP4CE6 (Cyclone IV E): c0=80MHz system, c1=80MHz/-3ns SDRAM. */
-  case object AlteraEp4ce6 extends PllType {
-    override val ipFile = Some(PllIpFile.Static("fpga/ip/ep4ce6_pll.vhd"))
-    def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
-      val pll = Ep4ce6Pll()
-      pll.io.inclk0 := inputClock
-      pll.io.areset := False
-      PllResult(systemClk = Some(pll.io.c0), locked = pll.io.locked,
-        sdramClk = Some(pll.io.c1))
     }
   }
 
@@ -1315,7 +1286,8 @@ object Board {
   def MAX1000 = Board(
     name = "max1000",
     fpga = Some(FpgaDevice.`10M08SAU169`),   // 10M08SAU169C8G, the default (slowest) grade
-    pllType = Some(PllType.AlteraMax1000),
+    // No pllType: max1000Sdram defines its PLL and MAX 10 builds it (status
+    // item 173). The board's file was a stub passing 12 MHz through.
     entityTag = "Max1000Sdram",
     clocks = Seq(BoardClock("CLK12M", 12 MHz, "PIN_H6")),
     devices = Seq(
@@ -1356,7 +1328,8 @@ object Board {
   def GenericEP4CE6 = Board(
     name = "generic-ep4ce6",
     fpga = Some(FpgaDevice.EP4CE6E22),   // EP4CE6E22C8, the default (slowest) grade
-    pllType = Some(PllType.AlteraEp4ce6),
+    // No pllType: ep4ce6Sdram defines its PLL and Cyclone IV E builds it
+    // (status item 173). The board named a file that was never committed.
     entityTag = "Ep4ce6Sdram",
     clocks = Seq(BoardClock("CLK50M", 50 MHz, "PIN_23")),
     devices = Seq(

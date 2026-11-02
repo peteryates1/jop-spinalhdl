@@ -197,7 +197,7 @@ primitives:
 
 | primitive | wrappers | differ only by |
 |---|---|---|
-| Altera `altpll` | `DramPll` (4 outputs), `Max1000Pll` (2), `Ep4ce6Pll` (2), `EthPll` (1, and no `areset`) | output count, generated-file name |
+| Altera `altpll` | `DramPll` (4 outputs), `EthPll` (1, and no `areset`); `Max1000Pll` and `Ep4ce6Pll` gone since 2026-11-02 (the ALTPLL families' builder, `AlteraAltpll.instantiate`, item 173) | output count, generated-file name |
 | Xilinx `clk_wiz` | `ClkWizBlackBox`, `WukongClkWizBlackBox`, `SdramExerciserClkWiz` | port set, instance name |
 | Lattice `EHXPLLL` | `I5Pll` (since 2026-11-02 none: the ECP5 family's builder, `LatticeEcpPll.instantiate`, item 173) | — |
 | Altera Cyclone V | `Cyc5000Pll` | different megafunction |

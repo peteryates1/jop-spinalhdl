@@ -338,9 +338,24 @@ object JopTopVerilog {
       emitted + f"  ${jop.config.MigClockCheck.check(dir, sys.clkFreq.toLong)}%n"
     } else ""
 
+    // A PLL the DESIGN defines, where its family's builder only writes text
+    // (ALTPLL): written into this configuration's ip/ with the Verilog, as
+    // DramPllGen's was, so the project that lists it never names a stale one
+    // (status item 173).
+    val designPllLines = {
+      val ipDir = jop.generate.BuildLayout.default.ipDir(presetName,
+        buildArgs.filterNot(_.equalsIgnoreCase("buildtree")))
+      jop.generate.DesignPlls.withVerilog(jopConfig).zip(jop.generate.DesignPlls.emit(jopConfig, ipDir))
+        .map { case ((d, _), path) =>
+          f"  PLL:         ${d.module}: " +
+            d.spec(jopConfig.assembly).outputs.map(_.describe).mkString(", ") + f" -> $path%n"
+        }.mkString
+    }
+
     print(summary)
     print(romRamLines)
     print(pllLines)
+    print(designPllLines)
 
     // WHERE THE VERILOG GOES: always beside the rest of this configuration's
     // artefacts, under build/<config>/rtl.

@@ -47,10 +47,8 @@ sealed trait FpgaFamily {
 object FpgaFamily {
   case object CycloneIV  extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone IV GX" ; override def pll = Some(AlteraAltpll(quartusFamilyName)) }
   // Cyclone IV E is a distinct Quartus family from Cyclone IV GX — the name is
-  // used verbatim in the generated .qsf, so they cannot share an entry.
-  // NOTE: EP4CE6E22C8 below is also a Cyclone IV E part but is still assigned to
-  // CycloneIV (GX). Left alone rather than changed blind, since it would alter
-  // an existing board's project file; worth checking if that board is revived.
+  // used verbatim in the generated .qsf and in a generated PLL's
+  // intended_device_family, so they cannot share an entry.
   case object CycloneIVE extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone IV E" ; override def pll = Some(AlteraAltpll(quartusFamilyName)) }
   case object CycloneV   extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone V" }
   case object MAX10      extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "MAX 10" ; override def pll = Some(AlteraAltpll(quartusFamilyName)) }
@@ -151,7 +149,7 @@ object FpgaDevice {
     g("C7", "C8", "I7", "A7"), SpeedGrade(8), suffix = "G",
     les = 8000, dspBlocks = 24, bramKbits = 378)
 
-  def EP4CE6E22 = FpgaDevice("EP4CE6", FpgaFamily.CycloneIV, "E22",
+  def EP4CE6E22 = FpgaDevice("EP4CE6", FpgaFamily.CycloneIVE, "E22",
     g("C6", "C7", "C8", "I7", "A7"), SpeedGrade(8),
     les = 6272, dspBlocks = 0, bramKbits = 276)
 

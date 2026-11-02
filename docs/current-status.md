@@ -4501,15 +4501,37 @@ which put this preset at 48.98 MHz. It may also be why item 129's comparator
 in the memory controller's IDLE chain cost the i5 7 MHz on a path through
 the fetch stage (unverified).
 
+**Step 7, Altera's ALTPLL (2026-11-02).** 7a: Cyclone IV GX, Cyclone IV E
+and MAX 10 build the PLLs their designs define (`AlteraAltpll`, d2b1538). The
+builder writes a module instantiating `altpll` with each output's reduced
+ratio and phase and the input period, and Quartus picks the counters when it
+compiles. Everything else is the parameter set of the hand-written
+`pll_125.v`: a one-output 125 MHz spec reproduces every parameter of both
+copies. An output may state its phase as a delay (`phasePs`); the
+EP4CGX150's -3000 ps is one. ecppll refuses a delay rather than round it.
+7b: the MAX1000 and the generic EP4CE6 define their PLLs, 80 MHz and the
+SDRAM's copy at -3000 ps. The Verilog generator writes them beside the RTL
+(`DesignPlls`), the projects read them, and the SDC names their outputs by
+role through the builder. The MAX1000's pass-through stub and
+`SmallFpgaPll.scala` are gone. The EP4CE6 is a Cyclone IV E part now; it was
+filed under Cyclone IV GX, so its project named a family the device is not
+in. Every other Altera preset's project and SDC is byte-identical. Quartus
+implements both PLLs, x20/3 from 12 MHz and x8/5 from 50, with the SDRAM
+output at -3125 ps, the nearest step to -3000 (warning 15559 says so). Then
+both fits stop on logic: the MAX1000 at 8,970 combinational nodes against
+8,064 ([item 84](#item-84)), the EP4CE6 at 7,138 against 6,272. Neither board
+is a unit here, so a fit is all either can be held to.
+
 **What is left:** the setup layer is done. Every fact the 2026-10-28 list
 put in the wrong layer -- the board designs' aliases, the serial registries,
 the network identity and the host's paths -- is in `setup/`, and the guard
 holds it there. The hardware layer has started: boards declare their clocks
-and designs pick one (step 5), and the ECP5 family builds the PLLs its
-designs define (step 6). Next, the other families' builders: Altera's altpll
-(which also gives the MAX1000 a real PLL and the generic EP4CE6 one at all,
-and makes `DramPllGen` and `pll_125` design definitions), Xilinx's clk_wiz
-(the MIG designs' reference clocks too), and Cyclone V's. Then the last
+and designs pick one (step 5), the ECP5 family builds the PLLs its designs
+define (step 6), and so do the ALTPLL families (step 7a), for the MAX1000 and
+the EP4CE6 so far (7b). Next in step 7: the EP4CGX150's designs define their
+PLL instead of `DramPllGen`'s template, then the GMII designs their 125 MHz
+PLL instead of `pll_125.v` (a second PLL per design). Then Xilinx's clk_wiz
+(the MIG designs' reference clocks too) and Cyclone V's. Then the last
 `PllType`s leave `Board`, which is the only code in `Board.scala` that needs
 JOP, and the hardware layer becomes an sbt subproject that does not depend on
 JOP, so the compiler holds the direction. Lab-specific TESTS (`InstanceTest`'s

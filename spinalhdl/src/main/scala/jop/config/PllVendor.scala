@@ -30,6 +30,17 @@ trait PllVendor {
   /** Instantiate the module `generate` writes for `spec`, as `instance`, fed
     * from `clkIn`: one clock per output in the spec's order, and its lock. */
   def instantiate(spec: PllSpec, moduleName: String, instance: String, clkIn: Bool): PllClocks
+
+  /** True when `generate` only writes text, so the Verilog generator writes
+    * the PLL beside the design (DesignPlls); false when it runs a vendor tool,
+    * which the board flow runs instead (PllGenMain -- ecppll is not on every
+    * host that elaborates). */
+  def generatedWithVerilog: Boolean = false
+
+  /** How a timing constraint names output `n` of `instance`, where the
+    * toolchain needs it named (Quartus); None where it derives PLL outputs
+    * itself. */
+  def clockPath(instance: String, n: Int): Option[String] = None
 }
 
 /** What an instantiated PLL gives the design: its outputs in the spec's order,
@@ -259,8 +270,10 @@ case class AlteraAltpll(deviceFamily: String) extends PllVendor {
     PllClocks(pll.c, pll.locked)
   }
 
-  /** How the generated SDC names output `n` of the instance: Quartus calls the
-    * altpll's counters `<inst>|altpll_component|auto_generated|pll1|clk[n]`. */
-  def clockPath(instance: String, n: Int): String =
-    s"$instance|altpll_component|auto_generated|pll1|clk[$n]"
+  override def generatedWithVerilog = true
+
+  /** Quartus names the altpll's counters
+    * `<inst>|altpll_component|auto_generated|pll1|clk[n]`. */
+  override def clockPath(instance: String, n: Int): Option[String] =
+    Some(s"$instance|altpll_component|auto_generated|pll1|clk[$n]")
 }

@@ -64,6 +64,12 @@ trait BoardDesign {
     * took a board's first clock, and the A-E115FB's 25 MHz clock read as 50. */
   def inputClock: BoardClock = BoardDesign.inputClock(assembly, clockName)
 
+  /** The PLLs this design defines (status item 173), each built by its FPGA
+    * family's builder. What the generators read to write the PLLs' IP, list
+    * it in a project and name its clocks in constraints. A design whose PLL
+    * its board still declares (`Board.pllType`) defines none here. */
+  def plls: Seq[PllDefinition] = Nil
+
   /** How many LEDs the DESIGN drives, which is not how many the assembly
     * offers. `JopTop` sizes its port from `assembly.fpgaBoard.ledCount`, so the
     * generators must use the same number or they assign pins that do not exist:

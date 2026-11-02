@@ -67,14 +67,6 @@ class BoardClockTest extends AnyFunSuite {
       "qmtech-wukong-xc7a100t", "CLK50M"),
     Source("fpga/colorlight-db-i9plus/Makefile", megahertz(inFreqArg), "colorlight-i9plus", "CLK25M"))
 
-  /** PLL files no row can check, each with the reason; the last test holds
-    * the reason, so a change to it brings the file back here. */
-  private val unchecked = Map(
-    "fpga/max1000/max1000_pll.v" ->
-      ("a fit-check stub passing the 12 MHz input through (assign c0 = inclk0), so it states no input; " +
-       "max1000Sdram assumes 80 MHz, so a MAX1000 image runs 6.7x slow until a real PLL is built"),
-    "fpga/ip/ep4ce6_pll.vhd"     -> "named by PllType.AlteraEp4ce6 but never committed: the generic EP4CE6 has no flow")
-
   /** Files that mention a PLL input without stating one a design is built with. */
   private val notSources = Map(
     "fpga/bringup/"                     -> "bring-up designs: standalone Verilog, built from no board data",
@@ -84,6 +76,8 @@ class BoardClockTest extends AnyFunSuite {
     "spinalhdl/src/main/scala/jop/config/DramPllGen.scala" -> "checked below through DramPllGen.inputMhz",
     "spinalhdl/src/main/scala/jop/config/PllVendor.scala" ->
       "the ALTPLL builder writes inclk0_input_frequency from a design's definition, checked below through it",
+    "spinalhdl/src/test/scala/jop/config/AlteraAltpllTest.scala" -> "the builder's test, asserting on what it writes",
+    "spinalhdl/src/test/scala/jop/config/AlteraDesignPllTest.scala" -> "asserts on the generated PLLs' inputs",
     "spinalhdl/src/test/scala/jop/config/BoardClockTest.scala" -> "this test")
 
   private lazy val boards: Map[String, Board] =
@@ -133,7 +127,7 @@ class BoardClockTest extends AnyFunSuite {
     import scala.sys.process._
     val files = Seq("git", "grep", "-l", "-E", "inclk0_input_frequency|PRIM_IN_FREQ|pll_ref_clk_mhz|-in_freq",
       "--", ":!docs", ":!*.md").lineStream_!.toSeq
-    val known = sources.map(_.path).toSet ++ unchecked.keySet
+    val known = sources.map(_.path).toSet
     val loose = files.filterNot(f => known(f) || notSources.keys.exists(f.startsWith))
     assert(loose.isEmpty, s"PLL inputs no row checks: ${loose.mkString(", ")}")
   }
@@ -143,17 +137,9 @@ class BoardClockTest extends AnyFunSuite {
       b.pllType.flatMap(_.ipFile).collect { case PllIpFile.Static(p) => p }.toSeq ++
         b.ethIpFiles.filter(_.endsWith(".v"))
     }
-    val known = sources.map(_.path).toSet ++ unchecked.keySet
+    val known = sources.map(_.path).toSet
     assert(named.nonEmpty)
     assert(named.filterNot(known).isEmpty, s"PLL files no row checks: ${named.filterNot(known).mkString(", ")}")
-  }
-
-  test("the excused PLL files are still what the excuse says") {
-    val max1000 = read("fpga/max1000/max1000_pll.v")
-    assert(max1000.contains("assign c0 = inclk0;") && !max1000.contains("inclk0_input_frequency"),
-      unchecked("fpga/max1000/max1000_pll.v"))
-    assert(!Files.exists(Paths.get("fpga/ip/ep4ce6_pll.vhd")),
-      "fpga/ip/ep4ce6_pll.vhd exists now: give it a row in `sources`")
   }
 
   // ---- the model ----

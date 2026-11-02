@@ -399,6 +399,8 @@ case class JopConfig(
         s"${inputClock.name}; a PLL on another board clock needs a second clock input, " +
         "which the generated top does not have yet")
 
+  override def plls: Seq[PllDefinition] = systems.flatMap(_.pll)
+
   // --- Single-system convenience ---
   def system: JopSystem = {
     require(systems.length == 1,
@@ -1361,6 +1363,12 @@ object JopConfig {
     useAcache = false
   )
 
+  /** The small boards' PLL: 80 MHz, and the SDRAM's copy 3 ns early, from
+    * whichever clock the board offers (status item 173). */
+  private def sdram80Pll(reference: String, module: String) =
+    PllDefinition(reference, Seq(PllOutput(PllRole.System, 80), PllOutput(PllRole.Sdram, 80, phasePs = -3000)),
+      module = module, instance = "pll")
+
   /** Arrow MAX1000 — SDR SDRAM with O$/A$ caches (fits at 85%) */
   def max1000Sdram = JopConfig(
     assembly = SystemAssembly.max1000,
@@ -1369,6 +1377,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
+      pll = Some(sdram80Pll("CLK12M", "max1000_pll")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("FT2232H"))))))
 
   /** Generic EP4CE6 — SDR SDRAM, no caches (6K LEs too small for O$/A$) */
@@ -1379,6 +1388,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
+      pll = Some(sdram80Pll("CLK50M", "ep4ce6_pll")),
       coreConfig = JopCoreConfig(memConfig = noCacheMemConfig),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
