@@ -82,6 +82,8 @@ class BoardClockTest extends AnyFunSuite {
     "fpga/scripts/test_check_clk_ip.py" -> "its test",
     "spinalhdl/src/main/scala/jop/config/Board.scala" -> "quotes the i9+ flow's -in_freq in a comment",
     "spinalhdl/src/main/scala/jop/config/DramPllGen.scala" -> "checked below through DramPllGen.inputMhz",
+    "spinalhdl/src/main/scala/jop/config/PllVendor.scala" ->
+      "the ALTPLL builder writes inclk0_input_frequency from a design's definition, checked below through it",
     "spinalhdl/src/test/scala/jop/config/BoardClockTest.scala" -> "this test")
 
   private lazy val boards: Map[String, Board] =

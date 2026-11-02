@@ -45,15 +45,15 @@ sealed trait FpgaFamily {
   def pll: Option[PllVendor] = None
 }
 object FpgaFamily {
-  case object CycloneIV  extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone IV GX" }
+  case object CycloneIV  extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone IV GX" ; override def pll = Some(AlteraAltpll(quartusFamilyName)) }
   // Cyclone IV E is a distinct Quartus family from Cyclone IV GX — the name is
   // used verbatim in the generated .qsf, so they cannot share an entry.
   // NOTE: EP4CE6E22C8 below is also a Cyclone IV E part but is still assigned to
   // CycloneIV (GX). Left alone rather than changed blind, since it would alter
   // an existing board's project file; worth checking if that board is revived.
-  case object CycloneIVE extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone IV E" }
+  case object CycloneIVE extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone IV E" ; override def pll = Some(AlteraAltpll(quartusFamilyName)) }
   case object CycloneV   extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone V" }
-  case object MAX10      extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "MAX 10" }
+  case object MAX10      extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "MAX 10" ; override def pll = Some(AlteraAltpll(quartusFamilyName)) }
   case object Artix7     extends FpgaFamily { val manufacturer = Manufacturer.Xilinx }
   case object ECP5       extends FpgaFamily { val manufacturer = Manufacturer.Lattice; override def pll = Some(LatticeEcpPll) }
 }

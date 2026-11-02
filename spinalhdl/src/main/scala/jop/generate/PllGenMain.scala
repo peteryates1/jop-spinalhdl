@@ -43,5 +43,5 @@ object PllGenMain extends App {
 
   val path = vendor.generate(spec, pll.module, outDir)
   println(s"Wrote $path  (${pll.reference} ${spec.inputMhz} MHz in, " +
-          spec.outputs.map(o => s"${o.role} ${o.mhz}MHz@${o.phaseDeg}deg").mkString(", ") + ")")
+          spec.outputs.map(_.describe).mkString(", ") + ")")
 }

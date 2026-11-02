@@ -21,12 +21,28 @@ object PllRole {
 /**
  * One PLL output: what it is for, how fast, and at what phase.
  *
- * @param phaseDeg degrees, positive = later. The SDRAM output is conventionally
- *                 expressed as a negative time (-3.1 ns) on Altera and as
- *                 degrees on Lattice; degrees is the portable form because it
- *                 stays correct when the frequency changes.
+ * A phase is an angle or a delay, and they are different statements. An angle
+ * stays the same fraction of a cycle when the frequency changes; a delay stays
+ * the same time. The i5's SDRAM clock is 315 degrees. The EP4CGX150's is
+ * -3000 ps at 80, 60, 50 and 36 MHz alike, deliberately: a sweep found the
+ * delay makes no measurable difference there, so it was kept rather than
+ * re-derived per clock (DramPllGen, 2026-08). Each states the one it means.
+ *
+ * @param phaseDeg degrees, positive = later
+ * @param phasePs  picoseconds, positive = later; at most one of the two
  */
-case class PllOutput(role: PllRole, mhz: Int, phaseDeg: Int = 0)
+case class PllOutput(role: PllRole, mhz: Int, phaseDeg: Int = 0, phasePs: Int = 0) {
+  require(mhz > 0, s"$role output: frequency must be positive, got $mhz MHz")
+  require(phaseDeg == 0 || phasePs == 0,
+    s"$role output: a phase in degrees ($phaseDeg) or in picoseconds ($phasePs), not both")
+
+  /** The phase as a delay at this output's frequency, in picoseconds. */
+  def shiftPs: BigDecimal =
+    if (phasePs != 0) BigDecimal(phasePs) else BigDecimal(phaseDeg) * 1000000 / mhz / 360
+
+  def describe: String = s"$role $mhz MHz" + (
+    if (phasePs != 0) s" @ $phasePs ps" else if (phaseDeg != 0) s" @ $phaseDeg deg" else "")
+}
 
 /**
  * A clock generator described by what it must PRODUCE, with no vendor in it.
