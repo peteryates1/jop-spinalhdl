@@ -74,6 +74,10 @@ CFG        := $(PRESET)
 CFG_NAME   := $(PRESET)
 include ../unit.mk
 include ../ecp5.mk
+# The first rule make reads is its default goal, included files and all:
+# without this a bare `make` runs ../unit.mk's unit-info (before 2026-11-01,
+# this file's own $(APP) rule) and builds no bitstream.
+.DEFAULT_GOAL := all
 TTY         = $(shell $(ROOT)/fpga/scripts/usb_serial_map --by-id $(CONSOLE_ALIAS) 2>/dev/null)
 BAUD       := 1000000
 # THE APP COMES FROM THIS CONFIG'S OWN JAVA TREE, like every other board.
