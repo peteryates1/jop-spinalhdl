@@ -9,24 +9,6 @@ import jop.config.{MemoryDevice, SystemAssembly}
 import jop.memory.{BmbSdramCtrl32, JopMemoryConfig, SdramDeviceInfo}
 
 /**
- * ClkWiz BlackBox for SDRAM exerciser on Wukong board.
- * Vivado `sdr_clk`: 50 MHz input -> 100 MHz + 100 MHz phase-shifted outputs.
- */
-class SdramExerciserClkWiz(instanceName: String = "sdr_clk") extends BlackBox {
-  val io = new Bundle {
-    val resetn        = in Bool()
-    val clk_in        = in Bool()
-    val clk_100       = out Bool()
-    val clk_100_shift = out Bool()
-    val clk_125       = out Bool()
-    val locked        = out Bool()
-  }
-
-  setBlackBoxName(instanceName)
-  noIoPrefix()
-}
-
-/**
  * SDRAM Exerciser FPGA Top for QMTECH XC7A100T Wukong V3
  *
  * Directly exercises BmbSdramCtrl32 with JOP-like memory access patterns
@@ -51,26 +33,25 @@ case class SdramExerciserWukongTop(md: MemoryDevice) extends Component {
 
   noIoPrefix()
 
-  // ClkWiz: 50 MHz -> 100 MHz system + 100 MHz -108° SDRAM clock
-  val clkWiz = new SdramExerciserClkWiz
-  clkWiz.io.clk_in := io.clk_in
-  clkWiz.io.resetn := True
-  io.sdram_clk := clkWiz.io.clk_100_shift
+  // Its PLL (status item 173): 50 MHz -> 100 MHz system + the SDRAM's copy
+  // 3 ns early (-108 deg), built by clk_wiz from the definition below.
+  val clkWiz = jop.system.pll.Pll.build(SdramExerciserWukongTop.pll, jop.config.Board.WukongXC7A100T, io.clk_in)
+  io.sdram_clk := clkWiz.sdramClk.get
 
   // Reset generator
   val rawClockDomain = ClockDomain(
-    clock = clkWiz.io.clk_100,
+    clock = clkWiz.systemClk.get,
     config = ClockDomainConfig(resetKind = BOOT)
   )
   val resetGen = new ClockingArea(rawClockDomain) {
     val res_cnt = Reg(UInt(3 bits)) init (0)
-    when(clkWiz.io.locked && res_cnt =/= 7) {
+    when(clkWiz.locked && res_cnt =/= 7) {
       res_cnt := res_cnt + 1
     }
-    val int_res = !clkWiz.io.locked || !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
+    val int_res = !clkWiz.locked || !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
   }
   val mainClockDomain = ClockDomain(
-    clock = clkWiz.io.clk_100,
+    clock = clkWiz.systemClk.get,
     reset = resetGen.int_res,
     frequency = FixedFrequency(100 MHz),
     config = ClockDomainConfig(resetKind = SYNC, resetActiveLevel = HIGH)
@@ -575,6 +556,12 @@ case class SdramExerciserWukongTop(md: MemoryDevice) extends Component {
  * Generate Verilog for SdramExerciserWukongTop
  */
 
+object SdramExerciserWukongTop {
+  /** Its PLL: what the shared `sdr_clk` IP gave it, less the 125 MHz output
+    * it never used (status item 173). */
+  val pll = jop.config.JopConfig.xilinxSdrPll("CLK50M", 100, instance = "clkWiz")
+}
+
 object SdramExerciserWukongTopVerilog extends App {
   val asm = SystemAssembly.wukong
   val bd = asm.findDeviceByRole("sdr").get
@@ -585,6 +572,9 @@ object SdramExerciserWukongTopVerilog extends App {
     targetDirectory = jop.generate.StandaloneBuild.rtlDir("sdramExerciserWukong"),
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
   ).generate(InOutWrapper(SdramExerciserWukongTop(md)))
+  // The clk_wiz definition the flow sources (JOP_PLL_TCL), beside the RTL.
+  jop.config.XilinxClkWiz.generate(SdramExerciserWukongTop.pll.spec(asm), SdramExerciserWukongTop.pll.module,
+    jop.generate.BuildLayout.default.ipDir("sdramExerciserWukong", Seq.empty))
 
   jop.generate.StandaloneBuild.summary("sdramExerciserWukong", "SdramExerciserWukongTop",
     board = "qmtech-wukong-v3", fpga = "XC7A100T", clkMhz = 100, uartBaud = Some(1000000))

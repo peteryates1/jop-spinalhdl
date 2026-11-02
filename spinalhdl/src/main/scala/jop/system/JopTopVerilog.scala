@@ -211,6 +211,17 @@ object JopTopVerilog {
   }
 
   /** Build a human-readable configuration summary for a resolved JopConfig. */
+  /** The boot mode whose microcode `config`'s image carries: every system's,
+    * which must agree -- the top hands both clusters of a two-system design
+    * one ROM and one RAM image. Read through `config.system` until
+    * 2026-11-02, which refuses a two-system design: `make dual-generate`
+    * failed from 2026-08-26 until then. */
+  def bootModeOf(config: JopConfig): BootMode = config.systems.map(_.bootMode).distinct match {
+    case Seq(mode) => mode
+    case modes => throw new IllegalArgumentException(
+      s"the systems boot from ${modes.mkString(" and ")}, but one microcode image serves them all")
+  }
+
   def configSummary(presetName: String, jopConfig: JopConfig): String = {
     val sb = new StringBuilder
     def line(s: String): Unit = { sb.append(s); sb.append('\n') }
@@ -327,14 +338,15 @@ object JopTopVerilog {
           f"  *** Download with: python3 fpga/scripts/download.py -e <app>.jop <tty> $eff%n"
       baudLine
     } else if (jopConfig.assembly.fpgaBoard.name.contains("wukong") && sys.memory == "ddr3") {
-      // Emit the MIG + clk_wiz inputs for the preset's profile, then verify the
-      // chain. The emit covers "someone forgot which numbers go together"; the
-      // check covers "someone edited the tracked files by hand, or has not
-      // re-run make ddr3-create-ip since changing profile".
+      // Emit the MIG inputs for the preset's profile, then verify the chain
+      // against the MIG IP the board has. The emit covers "someone forgot which
+      // numbers go together"; the check covers "the board's MIG IP was made
+      // for another profile, and make ddr3-create-ip has not been re-run".
       val dir = "fpga/qmtech-xc7a100t-wukong"
       val emitted = jopConfig.migProfile
         .map(p => f"  ${MigProfile.emit(dir, p)}%n").getOrElse("")
-      emitted + f"  ${jop.config.MigClockCheck.check(dir, sys.clkFreq.toLong)}%n"
+      val migIn = sys.plls.flatMap(_.outputs).find(_.role == PllRole.MigSys).map(_.mhz)
+      emitted + f"  ${jop.config.MigClockCheck.check(dir, sys.clkFreq.toLong, migIn)}%n"
     } else ""
 
     // A PLL the DESIGN defines, where its family's builder only writes text
@@ -444,7 +456,7 @@ object JopTopVerilog {
     // garbage" this preset produced: not a corrupt image and not the timing
     // violation it also had, but the wrong boot ROM.
     val withMif  = jop.config.MifPathOverride(
-      config, layout.relativeTo(prjDir, MicrocodePaths.dir(config.system.bootMode)))
+      config, layout.relativeTo(prjDir, MicrocodePaths.dir(bootModeOf(config))))
     // THE EMBEDDED IMAGE COMES FROM THE BUILD TREE, ALWAYS.
     //
     // This kept an `else Some(s"java/$appRel")` arm -- the source path, which

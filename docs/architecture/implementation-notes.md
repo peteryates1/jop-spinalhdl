@@ -186,7 +186,7 @@ QMTECH XC7A100T Wukong V3 board, exploiting both on-board DDR3 and SDR SDRAM.
   domain and reset, with independent serial boot on separate UARTs.
 - **FPGA utilization**: 1+1 = 28,043 LUTs (44.2%), 2+2 = 46,644 LUTs (73.6%)
 - **Timing**: Both configs pass timing (WNS +0.034 ns / +0.013 ns)
-- **Build**: `make dual-generate dual-create-ip dual-build`
+- **Build**: `make dual-generate ddr3-create-ip dual-build` (MIG once; the PLLs are the design's)
 - **Future**: Phase 3 (message queues via `StreamFifoCC`), Phase 4 (watchdog FSM).
   See `docs/architecture/dual-subsystem-design.md` for full design document.
 

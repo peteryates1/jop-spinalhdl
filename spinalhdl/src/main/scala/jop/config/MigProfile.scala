@@ -23,8 +23,10 @@ import java.nio.file.{Files, Paths}
  *
  * The whole chain, for reference:
  * {{{
- *   clk_wiz CLKOUT1 -> MIG sys_clk -> memory clock -> ui_clk = memory / 4
+ *   PLL MigSys output -> MIG sys_clk -> memory clock -> ui_clk = memory / 4
  * }}}
+ * The PLL is the design's (`JopConfig.migPll`), and a preset whose PLL feeds
+ * MIG another input than its profile demands is refused (JopConfig).
  * and `ui_clk` clocks the entire JOP cluster, because the DDR3 path has no
  * system PLL of its own (`Board.scala`, `JopTop.scala`).
  */
@@ -83,8 +85,8 @@ object MigProfile {
   val rejected: String = "2778 ps (ui_clk 90 MHz) — MIG demands 102.848 MHz in"
 
   /**
-   * Write the MIG and clk_wiz configuration for `profile` into the board's
-   * generated/ directory. `mig.prj` is used as the template so the rest of the
+   * Write the MIG configuration for `profile` into the board's generated/
+   * directory. `mig.prj` is used as the template so the rest of the
    * MIG configuration — memory part, pinout, all of it — stays byte-identical
    * to the version known to work.
    *
@@ -114,18 +116,9 @@ object MigProfile {
 
     Files.createDirectories(outDir)
     Files.write(outDir.resolve("mig.prj"), text.getBytes("UTF-8"))
-
-    // The clk_wiz frequency travels as a tcl fragment the wizard script sources,
-    // because it lives inline in a create_ip call rather than in a config file.
-    val tcl =
-      s"""|# GENERATED FROM THE PRESET's MigProfile — DO NOT EDIT.
-          |# Profile ${profile.name}: ${profile.note}
-          |# MIG demands this exact sys_clk for TimePeriod ${profile.timePeriodPs} ps;
-          |# feeding it anything else makes MIG retune itself and the memory clock
-          |# lands off target while still building cleanly.
-          |set ddr3_clkwiz_mhz ${profile.migInputMhz}
-          |""".stripMargin
-    Files.write(outDir.resolve("ddr3_clocks.tcl"), tcl.getBytes("UTF-8"))
+    // The clock that feeds MIG is the design's PLL output now (JopConfig.migPll,
+    // status item 173): a ddr3_clocks.tcl fragment for the board's clk_wiz
+    // script carried it until 2026-11-02.
 
     f"MIG:         ${profile.name} — ${profile.timePeriodPs} ps, memory " +
     f"${profile.memoryMhz}%.1f MHz, ui_clk ${profile.uiClkMhz}%.2f MHz " +

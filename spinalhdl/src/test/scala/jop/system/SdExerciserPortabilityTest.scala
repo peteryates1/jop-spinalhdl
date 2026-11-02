@@ -19,13 +19,14 @@ import jop.config._
  * defines its own -- CLK25M in, its 40 MHz out -- and the ECP5 family builds
  * it, instead of borrowing JOP's three-output pll_jop_i5. Likewise on the
  * EP4CGX150 since step 7c, where the ALTPLL builder makes it in place of
- * DramPllGen's dram_pll.
+ * DramPllGen's dram_pll, and on the Wukong since step 8b, where clk_wiz makes
+ * it in place of the BRAM design's `bram_clk` IP.
  */
 class SdExerciserPortabilityTest extends AnyFunSuite {
 
   private val boards: Seq[(String, Board, Int, String)] = Seq(
     ("EP4CGX150 (Altera Cyclone IV GX)", Board.QmtechEP4CGX150, 80,  "pll_sys_80mhz"),
-    ("Wukong (Xilinx Artix-7)",          Board.WukongXC7A100T, 100,  "bram_clk"),
+    ("Wukong (Xilinx Artix-7)",          Board.WukongXC7A100T, 100,  "pll_sys_100mhz"),
     ("Colorlight i5 (Lattice ECP5)",     Board.ColorlightI5,    40,  "pll_sys_40mhz"))
 
   for ((label, board, mhz, primitive) <- boards) {

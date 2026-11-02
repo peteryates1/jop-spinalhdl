@@ -68,8 +68,7 @@ case class BoardClock(name: String, freq: spinal.core.HertzNumber, pin: String) 
 // ==========================================================================
 
 import spinal.core._
-import jop.system.SdramExerciserClkWiz
-import jop.system.pll.{Cyc5000Pll, WukongClkWizBlackBox, PllResult}
+import jop.system.pll.{Cyc5000Pll, PllResult}
 import jop.ddr3.ClkWizBlackBox
 
 /** Where a board-declared PLL's IP file comes from. A PLL a design defines is
@@ -107,74 +106,6 @@ object PllType {
       pll.io.rst := False
       PllResult(systemClk = Some(pll.io.outclk_0), locked = pll.io.locked,
         sdramClk = Some(pll.io.outclk_1))
-    }
-  }
-
-  /** Wukong XC7A100T: Vivado clk_wiz variants per memory type.
-    * SDR: clk_100 system + clk_100_shift SDRAM + clk_125 Eth.
-    * DDR3: clk_100 MIG sys + clk_200 MIG ref + clk_125 Eth.
-    * BRAM: clk_100 system.
-    *
-    * The IP instance is named for its FUNCTION, not its position in `systems`.
-    * These three variants have incompatible port sets, and while they were all
-    * called `clk_wiz_0` the three generator scripts each deleted the other two's
-    * output -- so switching memory type without re-running create-ip failed with
-    * "named port connection 'clk_100_shift' does not exist", and the dual build
-    * could only work because SDR happened to land at index 1. Naming by function
-    * makes the flows independent: `make sdram-create-ip` and `ddr3-create-ip`
-    * now produce different directories and no longer clobber each other, and the
-    * dual build gets both from one generation with no index dependence. */
-  case object XilinxWukong extends PllType {
-    def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
-      val clkWizName = memType match {
-        case MemoryType.SDRAM_SDR  => "sdr_clk"
-        case MemoryType.SDRAM_DDR3 => "ddr3_clk"
-        case _                     => "bram_clk"
-      }
-      memType match {
-        case MemoryType.SDRAM_SDR =>
-          val clkWiz = new SdramExerciserClkWiz(clkWizName)
-          clkWiz.io.clk_in := inputClock
-          clkWiz.io.resetn := True
-          PllResult(systemClk = Some(clkWiz.io.clk_100), locked = clkWiz.io.locked,
-            sdramClk = Some(clkWiz.io.clk_100_shift), ethClk = Some(clkWiz.io.clk_125))
-        case MemoryType.SDRAM_DDR3 =>
-          val clkWiz = new ClkWizBlackBox(clkWizName)
-          clkWiz.io.clk_in := inputClock
-          clkWiz.io.resetn := !ClockDomain.current.readResetWire
-          PllResult(locked = clkWiz.io.locked, migSysClk = Some(clkWiz.io.clk_100),
-            migRefClk = Some(clkWiz.io.clk_200), ethClk = Some(clkWiz.io.clk_125))
-        case _ =>
-          val clkWiz = new WukongClkWizBlackBox(clkWizName)
-          clkWiz.io.clk_in := inputClock
-          clkWiz.io.resetn := False
-          PllResult(systemClk = Some(clkWiz.io.clk_100), locked = clkWiz.io.locked)
-      }
-    }
-  }
-
-  /** Colorlight i9+ (XC7A50T): the Wukong's SDR clk_wiz SHAPE -- same ports,
-    * same IP name `sdr_clk` -- generated for a 25 MHz input on the 50T by
-    * fpga/colorlight-db-i9plus (create_sdram_clk_wiz.tcl -in_freq 25 -part ...).
-    * clk_100 is the system clock at whatever the preset says (the port name is
-    * not a frequency claim; see that script), clk_100_shift the SDRAM clock.
-    *
-    * SDR only. The module has no other memory JOP can run from, and a BRAM
-    * branch would need a second IP shape for nothing -- refuse instead.
-    *
-    * clk_125 is the Ethernet clock: jop.io.Rgmii100 needs it at 50 MHz
-    * (Rgmii100.TxClockMhz). A build with RGMII says so in its summary, and
-    * check_clk_ip.py holds the IP to it. A build without Ethernet leaves it
-    * unused. */
-  case object XilinxColorlightI9Plus extends PllType {
-    def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
-      require(memType == MemoryType.SDRAM_SDR,
-        s"Colorlight i9+ clocking supports SDR SDRAM only, not $memType")
-      val clkWiz = new SdramExerciserClkWiz("sdr_clk")
-      clkWiz.io.clk_in := inputClock
-      clkWiz.io.resetn := True
-      PllResult(systemClk = Some(clkWiz.io.clk_100), locked = clkWiz.io.locked,
-        sdramClk = Some(clkWiz.io.clk_100_shift), ethClk = Some(clkWiz.io.clk_125))
     }
   }
 
@@ -569,7 +500,8 @@ object Board {
   def ColorlightI9Plus = Board(
     name = "colorlight-i9plus",
     fpga = Some(FpgaDevice.XC7A50T),
-    pllType = Some(PllType.XilinxColorlightI9Plus),
+    // No pllType: the designs on it define their PLL from CLK25M, and clk_wiz
+    // builds it (JopConfig.xilinxSdrPll, status item 173).
     entitySuffix = "I9Plus",
     useStackCache = true,
     connectors = Map("SODIMM" -> ColorlightSodimm.SodimmI9Plus),
@@ -815,7 +747,10 @@ object Board {
   def WukongXC7A100T = Board(
     name = "qmtech-wukong-xc7a100t",
     fpga = Some(FpgaDevice.XC7A100T.withGrade(2)),   // -2: docs/boards/qmtech-wukong-board.md
-    pllType = Some(PllType.XilinxWukong),
+    // No pllType: each design defines its PLL from CLK50M -- the SDR, DDR3 and
+    // BRAM ones, and both halves of the dual -- and clk_wiz builds it (status
+    // item 173). Until 2026-11-02 three hand-made IPs with incompatible ports
+    // stood in for all of them.
     entitySuffix = "Wukong",
     ledActiveHigh = true,
     useStackCache = true,

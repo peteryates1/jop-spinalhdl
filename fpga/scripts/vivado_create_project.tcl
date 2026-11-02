@@ -12,6 +12,8 @@
 #   JOP_RTL        space-separated RTL files                 (required)
 #   JOP_XDC        space-separated constraint files          (optional)
 #   JOP_IP         space-separated .xci files                (optional)
+#   JOP_PLL_TCL    space-separated clk_wiz definitions, the design's PLLs
+#                  (jop.config.XilinxClkWiz)                 (optional)
 #   JOP_BIN_GLOB   glob for BRAM-init .bin sidecars          (optional)
 #   JOP_GEN_HINT   what to run if the RTL is missing         (optional)
 #   JOP_IP_GEN_TARGET  yes => generate_target all on each .xci (optional)
@@ -45,6 +47,7 @@ set build_dir  [file normalize [jop_require JOP_BUILD_DIR]]
 set rtl_files  [jop_require JOP_RTL]
 set xdc_files  [jop_env JOP_XDC]
 set ip_files   [jop_env JOP_IP]
+set pll_files  [jop_env JOP_PLL_TCL]
 set bin_glob   [jop_env JOP_BIN_GLOB]
 set gen_hint   [jop_env JOP_GEN_HINT "run 'make generate' first"]
 
@@ -67,6 +70,27 @@ foreach f $rtl_files {
 # BRAM init sidecars emitted next to the RTL by SpinalHDL ($readmemb targets).
 if {$bin_glob ne ""} {
   foreach f [glob -nocomplain $bin_glob] { add_files -norecurse $f }
+}
+
+# The design's PLLs (status item 173): each definition creates its clk_wiz in
+# this project, which generates and synthesises it with the design's own runs.
+# See vivado_build_nonproject.tcl.
+if {$pll_files ne ""} {
+  set jop_ip_dir [file join $build_dir ip]
+  file delete -force $jop_ip_dir
+  file mkdir $jop_ip_dir
+  foreach f $pll_files {
+    set f [file normalize $f]
+    if {![file exists $f]} {
+      puts "ERROR: PLL definition not found: $f"
+      puts "       $gen_hint"
+      exit 1
+    }
+    source $f
+  }
+  if {[jop_env JOP_IP_GEN_TARGET] eq "yes"} {
+    foreach ip [get_ips] { generate_target all $ip }
+  }
 }
 
 # IP is required when named: a missing .xci means the create-ip step has not

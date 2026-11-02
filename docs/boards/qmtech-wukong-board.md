@@ -93,18 +93,21 @@ to match — with everything still building cleanly.
 
 **Steps 1 and 2 are obsolete — do not hand-edit those files.** Both values now
 come from the preset's `MigProfile`: `JopTopVerilog` calls `MigProfile.emit`,
-which writes a generated `mig.prj` and a `ddr3_clocks.tcl` carrying the header
-*"GENERATED FROM THE PRESET's MigProfile — DO NOT EDIT"*, and
-`create_ddr3_clk_wiz.tcl` sources that fragment so it overrides the literal in
-the script. The tracked `vivado/ip/mig.prj` is the template INPUT, not the knob.
-Kept here as the record of what the numbers were and why:
+which writes a generated `mig.prj` carrying the header *"GENERATED FROM THE
+PRESET's MigProfile — DO NOT EDIT"*, and since 2026-11-02 the clock that feeds
+MIG is the design's own PLL (`JopConfig.migPll`, status item 173), built with
+the design; a preset whose PLL feeds MIG another input than its profile
+demands is refused. The tracked `vivado/ip/mig.prj` is the template INPUT, not
+the knob. Kept here as the record of what the numbers were and why:
 
 1. ~~`vivado/ip/mig.prj` — `TimePeriod` 2500 → **2727**, `InputClkFreq` 100.0 →
    **97.787**.~~ Now from `MigProfile`.
 2. ~~`vivado/tcl/create_ddr3_clk_wiz.tcl` — `CLKOUT1_REQUESTED_OUT_FREQ`
-   100.000 → **97.787**.~~ Achieved 97.764 (50 × 60.125/3 / 10.25), 0.02 % low.
-   Now from the generated `ddr3_clocks.tcl`.
-3. `make ddr3-create-ip` — runs both scripts.
+   100.000 → **97.787**.~~ Achieved 97.764 (50 × 60.125/3 / 10.25), 0.02 % low,
+   beside an unused 125 MHz output. The design's PLL has no such output and
+   makes 97.826 MHz, 400 ppm high, with the reference at 200.893 MHz; it states
+   1000 and 50000 ppm tolerances, and its definition refuses more.
+3. `make ddr3-create-ip` — the MIG IP, from the generated `mig.prj`.
 4. Generate with the matching ui_clk **in Hz**:
    `sbt "runMain jop.system.JopTopVerilog wukongDdr3Smp 6 91650000"`.
    NOTE: `make ddr3-smp-build` in step 5 builds `wukongSmp $(DDR3_SMP_CORES)`,
@@ -558,7 +561,8 @@ units; Cluster 1 runs on SDR SDRAM with integer-only cores.
 | 1+1 cores | 28,043 | 44.2% | +0.034 ns |
 | 2+2 cores | 46,644 | 73.6% | +0.013 ns |
 
-- **Build**: `make dual-generate && make dual-create-ip && make dual-build`
+- **Build**: `make dual-generate && make ddr3-create-ip && make dual-build`
+  (the MIG IP once; each half's PLL is built with the design)
 
 ### SdramExerciserWukongTop — SDRAM Test
 
@@ -580,8 +584,10 @@ JOP with on-chip BRAM (128 KB). Board bring-up and UART verification only.
 
 ### FPGA Build Flow
 
-All builds use Vivado non-project (in-process) flow. ClkWiz IP is shared between
-the SDRAM exerciser and JOP SDRAM top (`make sdram-create-ip`).
+All builds use Vivado non-project (in-process) flow. The clock IP is each
+design's: its PLL definition is written with its Verilog into
+`build/<config>/ip/`, and the build creates the clk_wiz from it (`JOP_PLL_TCL`,
+status item 173). Only the MIG IP is made once per board (`make ddr3-create-ip`).
 
 ```bash
 cd fpga/qmtech-xc7a100t-wukong
@@ -594,22 +600,21 @@ make ddr3-generate        # sbt "runMain jop.system.JopTopVerilog wukongDdr3"
 # It passes DoAll since 2026-08-31 (status item 69: it used to die at FloatTest),
 # and is the Wukong's Ethernet build.
 make ddr3-generate DDR3_CFG=wukongFull
-make ddr3-create-ip       # ClkWiz + MIG IP (once)
-make ddr3-build           # Vivado synth + impl + bitstream
+make ddr3-create-ip       # MIG IP (once)
+make ddr3-build           # Vivado synth + impl + bitstream, PLL included
 make ddr3-program         # openFPGALoader via dirtyJtag
 make ddr3-monitor         # UART monitor (after serial download)
 
 # SDR SDRAM (wukongSdram)
 make jop-sdram-generate   # sbt "runMain jop.system.JopTopVerilog wukongSdram"
-make sdram-create-ip      # ClkWiz IP (once)
-make jop-sdram-build      # Vivado synth + impl + bitstream
+make jop-sdram-build      # Vivado synth + impl + bitstream, PLL included
 make jop-sdram-program    # openFPGALoader via dirtyJtag
 make jop-sdram-monitor    # UART monitor (after serial download)
 
 # Dual-cluster (wukongDualIndependent — DDR3 + SDR, 1+1 cores)
 make dual-generate        # sbt "runMain jop.system.JopTopVerilog wukongDualIndependent"
-make dual-create-ip       # ClkWiz + MIG IP (once)
-make dual-build           # Vivado synth + impl + bitstream
+make ddr3-create-ip       # MIG IP (once)
+make dual-build           # Vivado synth + impl + bitstream, both PLLs included
 ```
 
 ### Built-In Peripherals vs DB_FPGA

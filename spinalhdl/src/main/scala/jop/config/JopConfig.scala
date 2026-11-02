@@ -415,6 +415,22 @@ case class JopConfig(
 
   override def plls: Seq[PllDefinition] = systems.flatMap(_.plls)
 
+  // Every PLL is instantiated in one top and generated into one ip/, so names
+  // are unique across systems as well as within one (the Wukong's dual).
+  private def twice(xs: Seq[String]) = xs.diff(xs.distinct).distinct
+  require(twice(plls.map(_.module)).isEmpty && twice(plls.map(_.instance)).isEmpty,
+    s"Two of the design's PLLs share a module or an instance name: ${plls.map(p => p.module + "/" + p.instance)}")
+
+  // MIG dictates its input clock from a table (MigProfile) and silently retunes
+  // a mismatch, so the memory clock -- and ui_clk, the DDR3 system clock --
+  // lands off target while the build stays clean. The PLL feeding it must make
+  // what this design's profile demands.
+  private def migDemands = migProfile.getOrElse(MigProfile.Ddr3_400)
+  for (s <- systems; p <- s.plls; o <- p.outputs if o.role == PllRole.MigSys)
+    require(o.mhz == BigDecimal(migDemands.migInputMhz),
+      s"System '${s.name}': its PLL ${p.module} feeds MIG ${o.mhz} MHz, but MIG profile " +
+        s"${migDemands.name} demands ${migDemands.migInputMhz} MHz (MigProfile)")
+
   // --- Single-system convenience ---
   def system: JopSystem = {
     require(systems.length == 1,
@@ -717,6 +733,49 @@ object JopConfig {
    */
   def gmii125Pll(reference: String): PllDefinition =
     PllDefinition(reference, Seq(PllOutput(PllRole.Eth, 125)), module = "pll_125", instance = "ethPll")
+
+  /**
+   * The SDR PLL on the Artix-7 boards, the Wukong and the i9+ (status item
+   * 173): the system clock and the SDRAM's copy 3.0 ns early, plus the
+   * Ethernet transmit clock where the design has one -- GMII's 125 MHz, or
+   * RGMII's 50 (jop.io.Rgmii100.TxClockMhz). Built by clk_wiz (XilinxClkWiz).
+   *
+   * -3000 ps as a DELAY: it is physical -- board trace plus the SDRAM's own
+   * setup and hold -- and an angle would move it with the clock (-108 deg is
+   * 3.0 ns at 100 MHz, 3.75 at 80). The hand-made IPs held it the same way.
+   *
+   * NO OUTPUT A DESIGN DOES NOT USE. Every output shares one VCO, and an
+   * unused 125 MHz one forced 80 MHz onto a compromise that split the system
+   * and SDRAM clocks (status item 164); the hand-made IPs carried it into
+   * every SDR design and worked around it with `-eth_mhz`.
+   */
+  def xilinxSdrPll(reference: String, mhz: Int, eth: Option[Int] = None,
+                   module: String = "sdr_clk", instance: String = "pll"): PllDefinition =
+    PllDefinition(reference,
+      Seq(PllOutput(PllRole.System, mhz), PllOutput(PllRole.Sdram, mhz, phasePs = -3000)) ++
+        eth.map(PllOutput(PllRole.Eth, _)),
+      module = module, instance = instance)
+
+  /**
+   * A MIG design's PLL (status item 173): MIG's input at what `mig` demands,
+   * the 200 MHz IDELAYCTRL reference, and GMII's 125 MHz where the design has
+   * it. There is no system output: a DDR3 design runs on MIG's ui_clk.
+   *
+   * The two MIG clocks state tolerances, the only outputs here that do. MIG
+   * takes the input it is given -- the memory clock and ui_clk scale with it --
+   * and clk_wiz cannot make Ddr3_366's 97.787 MHz exactly beside 200 from
+   * 50 MHz: it makes 97.826, 400 ppm high (Vivado 2025.2, 2026-11-02). 1000 ppm
+   * keeps the UART and the timers, which are derived from the profile's
+   * nominal ui_clk, far inside a UART's margin. IDELAYCTRL takes its reference
+   * at 200 +- 10 MHz (DS181); the same IP makes 200.893.
+   */
+  def migPll(reference: String, mig: MigProfile, gmii: Boolean,
+             module: String = "ddr3_clk", instance: String = "pll"): PllDefinition =
+    PllDefinition(reference,
+      Seq(PllOutput(PllRole.MigSys, BigDecimal(mig.migInputMhz), tolerancePpm = 1000),
+          PllOutput(PllRole.MigRef, 200, tolerancePpm = 50000)) ++
+        (if (gmii) Seq(PllOutput(PllRole.Eth, 125)) else Nil),
+      module = module, instance = instance)
 
   def ep4cgx150Serial = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
@@ -1283,6 +1342,7 @@ object JopConfig {
         bootMode = BootMode.Serial,
         clkFreq = 100 MHz,
         cpuCnt = 4,
+        plls = Seq(migPll("CLK50M", MigProfile.Ddr3_400, gmii = false, instance = "ddr3Pll")),
         coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
         
           bytecodes = Map("idiv" -> "hw", "irem" -> "hw", "float" -> "hw")),
@@ -1293,6 +1353,9 @@ object JopConfig {
         bootMode = BootMode.Serial,
         clkFreq = 50 MHz,
         cpuCnt = 2,
+        // Its own 50 MHz: until 2026-11-02 this half ran on the shared 100 MHz
+        // clock IP while its UART and timers were built for 50.
+        plls = Seq(xilinxSdrPll("CLK50M", 50, instance = "sdrPll")),
         coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
         devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("PICO_UART0"))))),  // sdr half -- see wukongConsolePart
@@ -1303,10 +1366,7 @@ object JopConfig {
   def wukongDualIndependent = wukongDualIndependentSmp()
   def wukongDualIndependentMig(mig: MigProfile) = wukongDualIndependentSmp(mig = mig)
 
-  // sdrClkMhz must match CLKOUT1/CLKOUT2 in create_sdram_clk_wiz_1.tcl AND the
-  // getOrElse default in JopTopVerilog — three places, none cross-checked.
-  //
-  // Do not lower it to chase the "VIOLATED" status in the dual build. That
+  // Do not lower sdrClkMhz to chase the "VIOLATED" status in the dual build. That
   // WNS is measured against the hand-picked `set_max_delay 5.0` in
   // build_dual_bitstream.tcl, which exists only as placement guidance, not as a
   // real SDRAM requirement — wukongSdrFull misses the same constraint by
@@ -1329,12 +1389,10 @@ object JopConfig {
     *            alongside it — the two must agree, because ui_clk is what that
     *            cluster actually runs at. Hardcoding 100 MHz here meant this
     *            preset could not be built at all against a Ddr3_366 mig.prj. */
-  /** @param sdrClkMhz DECLARED frequency only. The SDR half's actual clock comes
-    *        from the clk_wiz IP, fixed at clk_100 — changing this does NOT
-    *        change the hardware. It changes the UART divider and the IO_US_CNT
-    *        prescaler, so a value other than 100 gives a wrong baud and a wrong
-    *        benchmark calibration while timing is analysed at 10.000 ns
-    *        regardless. Same trap as the EP4CGX150's hardwired dram_pll. */
+  /** @param sdrClkMhz the SDR half's clock, which its PLL makes (status item
+    *        173). Until 2026-11-02 it was a DECLARED frequency only: the clock
+    *        came from a clk_wiz IP fixed at 100 MHz, so another value detuned
+    *        the UART and the timers while timing was analysed at 10 ns. */
   def wukongDualIndependentSmp(cpuCnt: Int = 1, sdrClkMhz: Int = 100,
                                mig: MigProfile = MigProfile.Ddr3_400) = JopConfig(
     assembly = SystemAssembly.wukongWithJ11Uart,
@@ -1342,6 +1400,7 @@ object JopConfig {
     systems = Seq(
       JopSystem(name = "ddr3", memory = "ddr3", bootMode = BootMode.Serial,
         clkFreq = HertzNumber(mig.uiClkHz), cpuCnt = cpuCnt,
+        plls = Seq(migPll("CLK50M", mig, gmii = false, instance = "ddr3Pll")),
         // hasPerfCounters IS THE POINT OF THIS PRESET -- do not make it opt-in.
         // It used to rely on the `perf` CLI switch, so `make dual-generate`
         // produced a bitstream whose IO_PERFCNT reads 0 for every category.
@@ -1373,6 +1432,7 @@ object JopConfig {
           params = Map("baudRate" -> 2000000)))),
       JopSystem(name = "sdr", memory = "sdr", bootMode = BootMode.Serial,
         clkFreq = sdrClkMhz MHz, cpuCnt = cpuCnt,
+        plls = Seq(xilinxSdrPll("CLK50M", sdrClkMhz, instance = "sdrPll")),
         // Identical to the ddr3 core above -- see the note there.
         coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024,
           hasPerfCounters = true),
@@ -1467,16 +1527,17 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
+      plls = Seq(xilinxSdrPll("CLK50M", 100)),
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongConsolePart))))))
 
   /** `wukongSdram` at another clock -- CLI `wukongSdram <MHz>`. Status item 164:
-    * 80 MHz failed only because its clock IP split the system and SDRAM clocks;
-    * a per-frequency IP from `make sdram-create-ip-mhz` is needed. */
+    * 80 MHz failed only because its clock IP split the system and SDRAM clocks.
+    * Its PLL moves with it (`atClock`), and the IP is built from that. */
   def wukongSdramAt(clkMhz: Int) = {
     val base = wukongSdram
-    base.copy(systems = Seq(base.system.copy(clkFreq = clkMhz MHz)))
+    base.copy(systems = Seq(base.system.atClock(clkMhz)))
   }
 
   /**
@@ -1495,8 +1556,7 @@ object JopConfig {
    */
   def wukongSdrSmp(n: Int, clkMhz: Int = 100) = {
     val base = wukongSdram
-    base.copy(systems = Seq(base.system.copy(
-      name = s"sdrsmp$n", cpuCnt = n, clkFreq = clkMhz MHz)))
+    base.copy(systems = Seq(base.system.copy(name = s"sdrsmp$n", cpuCnt = n).atClock(clkMhz)))
   }
 
   /**
@@ -1557,9 +1617,14 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
+      plls = Seq(migPll("CLK50M", MigProfile.Ddr3_400, gmii = false)),
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongConsolePart))))))
+
+  /** The Wukong BRAM designs' PLL: the system clock only. */
+  private def wukongBramPll =
+    PllDefinition("CLK50M", Seq(PllOutput(PllRole.System, 100)), module = "bram_clk", instance = "pll")
 
   /** Wukong BRAM (single-system, simulation-mode) */
   def wukongBram = JopConfig(
@@ -1569,6 +1634,7 @@ object JopConfig {
       memory = "bram",  // no physical memory — uses on-chip BRAM
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
+      plls = Seq(wukongBramPll),
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 64 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
@@ -1749,6 +1815,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = clkMhz MHz,
+      plls = Seq(xilinxSdrPll("CLK25M", clkMhz)),
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(
         hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
@@ -1761,11 +1828,10 @@ object JopConfig {
    * jop.io.Rgmii100. The MAC runs in its 4-bit (MII) mode, so the PHY must not
    * advertise gigabit; `ETH_GIGABIT = false` tells EthDriver.
    *
-   * 50 MHz only. Rgmii100 clocks TX from the clock IP's third output, which
-   * the board's IP flow makes at the system frequency (`-eth_mhz $(MHZ)`).
-   * At 50 MHz that is the 50 MHz the adapter needs. Another system frequency
-   * needs an IP with that output at 50, and check_clk_ip.py refuses one
-   * without it (the summary's `Eth clock:` line).
+   * 50 MHz only. Rgmii100 clocks TX from the PLL's Ethernet output at 50 MHz
+   * (Rgmii100.TxClockMhz); at a 50 MHz system clock the two share the VCO
+   * exactly. Another system frequency would need its own check that they
+   * still do -- clk_wiz's definition makes it (XilinxClkWiz).
    *
    * H2, the PHYs' shared reset, is NOT driven (`noPhyReset`): driving it was
    * never shown safe on this module (fpga/bringup/colorlight-db-i9plus-eth,
@@ -1776,7 +1842,8 @@ object JopConfig {
     base.copy(systems = Seq(base.system.copy(devices = base.system.devices +
       ("eth" -> DeviceInstance(DeviceType.Ethernet,
         params = Map("rgmii" -> true, "phyAddr" -> 1, "noPhyReset" -> true),
-        devicePart = Some("B50612D_U9"))))))
+        devicePart = Some("B50612D_U9"))),
+      plls = Seq(xilinxSdrPll("CLK25M", 50, eth = Some(jop.io.Rgmii100.TxClockMhz))))))
   }
 
   /** Wukong BRAM with all compute units (DCU debug — simulation only) */
@@ -1790,7 +1857,8 @@ object JopConfig {
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 64 * 1024),
         bytecodes = base.system.coreConfig.bytecodes),
-      devices = uartOnly(base.system))))
+      devices = uartOnly(base.system),
+      plls = Seq(wukongBramPll))))
   }
 
   // ========================================================================
@@ -1805,6 +1873,7 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
+      plls = Seq(migPll("CLK50M", MigProfile.Ddr3_400, gmii = true)),
       devices = Map(
         // 1 Mbaud, not the 2 Mbaud default. At 2 Mbaud a GcPauseTest run came
         // back with "generatlona disabled", "GsPaueTest done" and hSize=6696246
@@ -1853,6 +1922,7 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
+      plls = Seq(migPll("CLK50M", MigProfile.Ddr3_400, gmii = false)),
       coreConfig = JopCoreConfig(
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw"),
         memConfig = JopMemoryConfig(l2SetCount = 64)),
@@ -1872,11 +1942,16 @@ object JopConfig {
   private def uartOnly(sys: JopSystem): Map[String, DeviceInstance] =
     sys.devices.filter { case (k, _) => k == "uart" }
 
+  /** `sys`'s PLLs without the Ethernet output, for a design that drops the
+    * Ethernet device: an unused output still constrains the shared VCO. */
+  private def withoutEth(sys: JopSystem): Seq[PllDefinition] =
+    sys.plls.map(p => p.copy(outputs = p.outputs.filterNot(_.role == PllRole.Eth)))
+
   /** Wukong DDR3 — all compute units, UART only (no Ethernet/SD) */
   def wukongDdr3AllCu = {
     val base = wukongFull
     base.copy(systems = Seq(base.system.copy(
-      devices = uartOnly(base.system))))
+      devices = uartOnly(base.system), plls = withoutEth(base.system))))
   }
 
   /** Wukong DDR3 — full featured SMP (with Ethernet + SD) */
@@ -1930,7 +2005,8 @@ object JopConfig {
         jpcWidth = 15,
         blockBits = 6,
         bytecodes = cc.bytecodes ++ Map("double" -> "java")),
-      devices = uartOnly(base.system))))
+      devices = uartOnly(base.system),
+      plls = withoutEth(base.system))))
   }
 
   /**
@@ -1970,7 +2046,8 @@ object JopConfig {
     base.copy(
       migProfile = Some(mig),
       systems = Seq(base.system.copy(
-        name = s"ddr3smp$n", cpuCnt = n, clkFreq = HertzNumber(mig.uiClkHz))))
+        name = s"ddr3smp$n", cpuCnt = n, clkFreq = HertzNumber(mig.uiClkHz),
+        plls = Seq(migPll("CLK50M", mig, gmii = false)))))
   }
 
   /** Wukong DDR3 SMP with a NON-BLOCKING L2 — `mshr` misses in flight.
@@ -2250,6 +2327,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
+      plls = Seq(xilinxSdrPll("CLK50M", 100, eth = Some(125))),
       devices = Map(
         "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongConsolePart)),
         "eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true, "phyDataWidth" -> 8),

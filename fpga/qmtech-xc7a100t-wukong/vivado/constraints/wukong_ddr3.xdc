@@ -77,13 +77,15 @@ set_property IOSTANDARD LVCMOS33 [get_ports {e_resetn}]
 
 # CDC false paths: Ethernet 125 MHz ↔ MIG ui_clk (clk_pll_i)
 # All crossings use SpinalHDL BufferCC/StreamFifoCC (safe gray-code CDC).
+# clk_eth_ddr3_clk is the PLL's Ethernet output (Vivado names it
+# <port>_<module>, jop.config.XilinxClkWiz); only a GMII design's PLL makes it.
 set_clock_groups -asynchronous \
-    -group [get_clocks clk_125_ddr3_clk] \
+    -group [get_clocks -quiet clk_eth_ddr3_clk] \
     -group [get_clocks clk_pll_i]
 set_clock_groups -asynchronous \
     -group [get_clocks e_rxc] \
     -group [get_clocks clk_pll_i] \
-    -group [get_clocks clk_125_ddr3_clk]
+    -group [get_clocks -quiet clk_eth_ddr3_clk]
 
 # CDC false path: board oscillator (sys_clk, 50 MHz) <-> MIG ui_clk (clk_pll_i).
 # Same justification as above -- the crossings are SpinalHDL BufferCC, e.g.

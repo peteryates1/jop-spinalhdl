@@ -137,7 +137,6 @@ check-build:
 	@.github/scripts/check-setup-layer.sh
 	@python3 fpga/scripts/test_hw_verify.py
 	@python3 fpga/scripts/test_jop_setup.py
-	@python3 fpga/scripts/test_check_clk_ip.py
 
 help:
 	@echo "make check-build  assert the build graph's guards hold (seconds)"

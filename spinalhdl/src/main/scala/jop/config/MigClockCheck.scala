@@ -42,45 +42,40 @@ object MigClockCheck {
 
   /**
    * Verify the DDR3 clock chain for `boardDir` against a preset asking for
-   * `presetClkHz`. Returns a summary line; throws with a specific, actionable
-   * message when the chain is inconsistent.
+   * `presetClkHz`, whose PLL feeds MIG `migInputMhz` (its MigSys output).
+   * Returns a summary line; throws with a specific, actionable message when
+   * the chain is inconsistent.
+   *
+   * The clk_wiz frequency comes from the DESIGN's PLL since 2026-11-02 (status
+   * item 173): it was read from the board's create_ddr3_clk_wiz.tcl, or from a
+   * fragment MigProfile.emit wrote for that script to source.
    */
-  def check(boardDir: String, presetClkHz: Long): String = {
+  def check(boardDir: String, presetClkHz: Long, migInputMhz: Option[BigDecimal]): String = {
     val genMig  = Paths.get("build", "ip", Paths.get(boardDir).getFileName.toString, "generated", "mig.prj")
     val migPath = if (Files.exists(genMig)) genMig else Paths.get(boardDir, "vivado/ip/mig.prj")
-    val wizPath = Paths.get(boardDir, "vivado/tcl/create_ddr3_clk_wiz.tcl")
-    if (!Files.exists(migPath) || !Files.exists(wizPath))
-      return "MIG check:   skipped (mig.prj or clk_wiz script not found)"
+    if (!Files.exists(migPath))
+      return "MIG check:   skipped (mig.prj not found)"
+    val wizMhz = migInputMhz.map(_.toDouble)
+      .getOrElse(return "MIG check:   skipped (the design's PLL feeds MIG nothing)")
 
     val migText = new String(Files.readAllBytes(migPath), "UTF-8")
-    val wizText = new String(Files.readAllBytes(wizPath), "UTF-8")
 
     val periodPs = readNum(migText, """<TimePeriod>([0-9.]+)<""")
       .getOrElse(return "MIG check:   skipped (no TimePeriod in mig.prj)")
     val migInMhz = readNum(migText, """<InputClkFreq>([0-9.]+)<""")
       .getOrElse(return "MIG check:   skipped (no InputClkFreq in mig.prj)")
-    // The clk_wiz frequency now normally arrives as a generated tcl fragment
-    // (MigProfile.emit) which the wizard script sources; the literal in the
-    // script is only the stock fallback for standalone runs.
-    val genPath = Paths.get("build", "ip", Paths.get(boardDir).getFileName.toString, "generated", "ddr3_clocks.tcl")
-    val wizMhz = (if (Files.exists(genPath))
-        readNum(new String(Files.readAllBytes(genPath), "UTF-8"),
-                """set ddr3_clkwiz_mhz ([0-9.]+)""")
-      else None)
-      .orElse(readNum(wizText, """set ddr3_clkwiz_mhz ([0-9.]+)"""))
-      .orElse(readNum(wizText, """CLKOUT1_REQUESTED_OUT_FREQ \{([0-9.]+)\}"""))
-      .getOrElse(return "MIG check:   skipped (no clk_wiz frequency found)")
 
     // 1. The clk_wiz must feed MIG exactly what MIG expects, or MIG retunes.
     if (math.abs(wizMhz - migInMhz) > 0.01)
       throw new IllegalStateException(
         f"""|DDR3 CLOCK CHAIN INCONSISTENT.
-            |  clk_wiz CLKOUT1      = $wizMhz%.3f MHz   (create_ddr3_clk_wiz.tcl)
+            |  PLL feeding MIG      = $wizMhz%.3f MHz   (the design's PLL definition)
             |  MIG InputClkFreq     = $migInMhz%.3f MHz   (mig.prj)
             |MIG dictates its own sys_clk for a given TimePeriod and will silently
             |retune a mismatch, putting the memory clock -- and therefore ui_clk and
             |the whole cluster -- off target while still building cleanly. Set both
-            |to the same value and re-run `make ddr3-create-ip`.""".stripMargin)
+            |to the same value: build the design with the MigProfile the board's MIG IP
+            |was made for, or re-run `make ddr3-create-ip` after generating it.""".stripMargin)
 
     val memMhz = 1e6 / periodPs           // ps -> MHz
     val uiMhz  = memMhz / phyRatio

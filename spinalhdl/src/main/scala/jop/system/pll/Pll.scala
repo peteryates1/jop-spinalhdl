@@ -22,21 +22,6 @@ case class Cyc5000Pll() extends BlackBox {
 }
 
 /**
- * Wukong BRAM ClkWiz BlackBox — Vivado `bram_clk`: 50 MHz -> 100 MHz.
- */
-class WukongClkWizBlackBox(instanceName: String = "bram_clk") extends BlackBox {
-  val io = new Bundle {
-    val resetn  = in Bool()
-    val clk_in  = in Bool()
-    val clk_100 = out Bool()
-    val locked  = out Bool()
-  }
-
-  setBlackBoxName(instanceName)
-  noIoPrefix()
-}
-
-/**
  * Unified PLL result -- all clock outputs from the PLL subsystem.
  *
  * Different boards produce different subsets of clocks:

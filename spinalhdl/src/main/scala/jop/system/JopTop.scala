@@ -252,7 +252,12 @@ case class JopTop(
       // but may define its GMII one. A board whose family has no builder yet
       // still declares its PLL; the A-E115FB declares none, and Pll.create
       // would throw.
-      if (sys.plls.nonEmpty) pllResult = Pll.build(sys.plls, config.fpgaFamily, config.assembly, boardClk)
+      //
+      // A DDR3 design holds its PLL in reset while the board's reset is held,
+      // as its hand-wired clock wizard did: the lock drops, MIG resets and
+      // recalibrates. Nothing else resets its PLL.
+      val pllReset = if (isDdr3) Some(!ClockDomain.current.readResetWire) else None
+      if (sys.plls.nonEmpty) pllResult = Pll.build(sys.plls, config.fpgaFamily, config.assembly, boardClk, pllReset)
       else if (!isDdr2) pllResult = Pll.create(board, memType, boardClk)
 
       // 4. Reset Generation + Main Clock Domain
@@ -755,7 +760,10 @@ case class JopTop(
     // System 0 (DDR3): PLL0 -> MIG -> cd0 -> cluster0
     // ==================================================================
 
-    val pll0Result = Pll.create(board, MemoryType.SDRAM_DDR3, boardClk, systemIndex = 0)
+    // Each system's PLL is its own (status item 173): the DDR3 half's makes
+    // MIG's clocks and is reset with the board, as in the single-system path.
+    val pll0Result = Pll.build(sys0.plls, config.fpgaFamily, config.assembly, boardClk,
+      reset = Some(!ClockDomain.current.readResetWire))
 
     val ddr3Mig = new MigBlackBox(board.ddr3HasCs)
     io.ddr3_dq    <> ddr3Mig.io.ddr3_dq
@@ -816,7 +824,7 @@ case class JopTop(
     // System 1 (SDR): PLL1 -> reset gen -> cd1 -> cluster1
     // ==================================================================
 
-    val pll1Result = Pll.create(board, MemoryType.SDRAM_SDR, boardClk, systemIndex = 1)
+    val pll1Result = Pll.build(sys1.plls, config.fpgaFamily, config.assembly, boardClk)
 
     val sdr1SystemClk = pll1Result.systemClk.get
     val sdr1Reset = ResetGenerator(pll1Result.locked, sdr1SystemClk)

@@ -391,7 +391,7 @@ Each cluster has its own clock domain, memory controller, and UART.
 ```bash
 cd fpga/qmtech-xc7a100t-wukong
 make dual-generate       # sbt "runMain jop.system.JopTopVerilog wukongDualIndependent"
-make dual-create-ip      # ClkWiz + MIG IP (once)
+make ddr3-create-ip      # MIG IP (once); each half's PLL is built with the design
 make dual-build          # Vivado synth + impl + bitstream
 ```
 
@@ -450,17 +450,18 @@ frequency the standalone SDR presets have always used. With it, both clusters ru
 `DoAll` **66/66 concurrently** from a single programming (SDR on the J11 UART at
 115200, DDR3 on the CH340 at 2 Mbaud).
 
-The frequency lives in three uncoupled places that must agree, and nothing checks
-them — `sdrClkMhz` in `JopConfig`, the `getOrElse` defaults in `JopTopVerilog`,
-and CLKOUT1/CLKOUT2 in `create_sdram_clk_wiz.tcl`. A mismatch is silent: the IP
-generates one frequency while the design is constrained for another.
+The frequency lived in three uncoupled places that had to agree, and nothing
+checked them — `sdrClkMhz` in `JopConfig`, the `getOrElse` defaults in
+`JopTopVerilog`, and CLKOUT1/CLKOUT2 in `create_sdram_clk_wiz.tcl`. Since
+2026-11-02 (status item 173) each half defines its own PLL from its own clock,
+and the build makes the IP from that definition: `sdrClkMhz` is the only place.
 
 (Was `create_sdram_clk_wiz_1.tcl` until 2026-08-17. The dual cluster's SDR clock
 had been raised 80→100 MHz, making that script config-identical to the standalone
 one, so the two were collapsed into a single function-named `sdr_clk` that both
 the dual and standalone SDR flows share. The DDR3 cluster's wizard is `ddr3_clk`;
-neither can clobber the other now, and `Board.scala` picks the name from the
-cluster's memory type rather than its index in `systems`.)
+neither can clobber the other now. Since 2026-11-02 each is the design's own,
+generated into the build's `ip/` with its Verilog.)
 
 **The IOB-packing suspect above was disproved by measurement.** Opening both
 post-route checkpoints and querying the register directly:

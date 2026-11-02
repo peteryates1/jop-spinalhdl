@@ -261,15 +261,16 @@ class GeneratedConstraintsTest extends AnyFunSuite {
   }
 
   // THE TRANSMIT CLOCK TOO. A GMII MAC on a Xilinx board transmits on the clock
-  // wizard's clk_125 output, which Vivado names clk_125_<IP> (clk_125_clk_wiz_0
-  // on the DB_FPGA V5, clk_125_ddr3_clk on the Wukong), and reaches it through
-  // CC FIFOs. The Wukong's hand-written XDC grouped it; the V5's generated file
+  // wizard's Ethernet output, which Vivado names <port>_<IP> (clk_125_clk_wiz_0
+  // on the DB_FPGA V5's hand-made IP; clk_eth_ddr3_clk where the design defines
+  // its PLL, the Wukong since status item 173), and reaches it through CC
+  // FIFOs. The Wukong's hand-written XDC grouped it; the V5's generated file
   // did not, and `xc7a100tDbEth` missed timing by 2.591 ns on exactly those
   // crossings -- clk_pll_i to clk_125_clk_wiz_0, timed as if synchronous.
   test("a GMII design's XDC makes the clock wizard's Ethernet clock asynchronous") {
-    val group = "set_clock_groups -asynchronous -group [get_clocks clk_125_*]"
-    for (preset <- Seq("xc7a100tDbEth", "wukongFull"))
-      assert(XdcGenerator.generate(cfgOf(preset)).contains(group), preset)
+    for ((preset, clk) <- Seq("xc7a100tDbEth" -> "clk_125_*", "wukongFull" -> "clk_eth_ddr3_clk"))
+      assert(XdcGenerator.generate(cfgOf(preset)).contains(
+        s"set_clock_groups -asynchronous -group [get_clocks $clk]"), preset)
     assert(!XdcGenerator.generate(cfgOf("xc7a100tDbSerial")).contains("clk_125"),
       "a design without Ethernet does not name the Ethernet clock")
   }

@@ -75,7 +75,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 34. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 35. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 36. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02). Boards now declare their clocks and designs pick one (step 5, 2026-11-02); designs define their PLLs and the ECP5 and ALTPLL families build them (steps 6-7: the i5, MAX1000, EP4CE6, EP4CGX150 and the GMII designs' 125 MHz PLLs); next the Xilinx and Cyclone V builders
+37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02). Boards now declare their clocks and designs pick one (step 5, 2026-11-02); designs define their PLLs and the ECP5, ALTPLL and clk_wiz families build them (steps 6-8b: the i5, MAX1000, EP4CE6, EP4CGX150, the GMII designs' 125 MHz PLLs, the Wukong and the i9+); next the XC7A100T and the Au (8c), then Cyclone V
 38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
 39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
 40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -4582,6 +4582,65 @@ and ALTPLL refuse one rather than drop it. Next (8b): the Wukong's designs
 define their PLLs, the flows source the definitions (`JOP_PLL_TCL`), and the
 create-ip scripts, per-frequency IP roots and `check_clk_ip.py` go.
 
+**Step 8b (2026-11-02): the Wukong's and the i9+'s designs define their
+PLLs, and clk_wiz builds them in the build that uses them.** Every preset on
+the two boards defines its PLL: `JopConfig.xilinxSdrPll` (the system clock,
+the SDRAM's copy 3.0 ns early, and the Ethernet clock where a design has one:
+GMII's 125 MHz, RGMII's 50), `JopConfig.migPll` (MIG's input at what the
+preset's MigProfile demands, the 200 MHz reference, GMII's 125 MHz), or the
+BRAM design's system clock. No design keeps an output it does not use: the
+hand-made SDR IP carried an unused 125 MHz output into every SDR design,
+which caused item 164's split at 80 MHz and needed `-eth_mhz` to avoid. A
+derived preset that drops Ethernet drops its output; one at another clock
+moves its PLL (`atClock`). Each half of the dual defines its own, under names
+unique across systems; `wukongDual`'s 50 MHz SDR half ran on the shared
+100 MHz IP until now. The SDRAM exerciser defines its own. A preset whose PLL
+feeds MIG another input than its profile demands is refused; `MigClockCheck`
+read that from the clk_wiz script, and still checks the board's MIG IP. A
+DDR3 design's PLL is reset from the board's reset, as its hand-wired wizard
+was; nothing else resets one.
+
+The flows: generating a design writes its clk_wiz definition into
+`build/<config>/ip/`, and both Vivado build scripts create, generate and
+synthesise it in the run (`JOP_PLL_TCL`); `DesignPlls` removes a definition
+an earlier generation left. Gone: the Wukong's three clk_wiz scripts, `make
+create-ip`, `sdram-create-ip` (and `-smp`, `-mhz`), `dual-create-ip`, the
+per-frequency IP directories, the i9+'s `create-ip`, `check_clk_ip.py` and its
+test, the MIG clock fragment (`ddr3_clocks.tcl`) with its guard,
+`PllType.XilinxWukong` and `XilinxColorlightI9Plus`, and their blackboxes.
+Vivado names a derived clock `<port>_<module>`, so the hand-written CDC
+constraints now name `clk_sys_sdr_clk`, `clk_sdram_sdr_clk` and `clk_eth_*`,
+and the generated XDC names the GMII clock from the design's PLL. These
+resolve only once the IP's netlist is linked, as the old names did: Vivado
+defers them at synthesis, where the IP is a black box. `XilinxDesignPllTest`
+was written first and red on all 11 of its tests; a twelfth, for the dual, was
+red on its own. Dumped before and after, the 22 Xilinx presets' XDCs are
+identical except the two GMII clock-group lines.
+
+Built with Vivado 2025.2, each definition reported every output exact, with
+the hand-made IPs' MMCM settings (M 20 at 100 MHz, M 40 for the i9+ at 50):
+- `wukongSdram`: WNS +0.027 ns, WHS +0.072 (2026-10-03: +0.026, +0.059).
+- `wukongFull`: +0.022 (10-12: +0.049), its GMII clock `clk_eth_ddr3_clk`.
+- `colorlightDbI9PlusSdram` +3.588 (10-10: +2.896); `colorlightDbI9PlusEth`
+  +0.370 (10-11: +0.597).
+- `wukongDdr3` misses by 0.024 ns (TNS -0.084) on the fetch stage's
+  `ir_reg` -> `romAddrReg` in ui_clk. A control build at the previous commit,
+  with the hand-made IP, gives the identical numbers, and the two netlists
+  differ only in the PLL instance: the miss predates this step (10-02 was
+  +0.006 on older RTL). Not run on hardware.
+- `wukongDualIndependent`: every clock group meets; only the 5 ns
+  `set_max_delay` placement guidance on the SDRAM outputs fails, -0.364 ns,
+  as the design doc records it (-0.378). Its generation had failed since
+  2026-08-26 (`JopTopVerilog` read `config.system`, which refuses two
+  systems); fixed, test first (`bootModeOf`).
+
+On hardware: `jop-i9plus-1` passes DoAll 68/68 (`colorlightDbI9PlusSdram`),
+and `colorlightDbI9PlusEth`'s NetTest linked at 100M, took a DHCP lease,
+answered ping 10/10 and UDP echo 10/10, and passed `net_echo_check.py`'s three
+checks. `jop-wukong-1` passes DoAll 68/68 on `wukongSdram` and on `wukongFull`,
+whose NetTest linked at 1000M with the same results; both halves of the dual
+download and run HelloWorld. Both boards are parked in their handshakes.
+
 **What is left:** the setup layer is done. Every fact the 2026-10-28 list
 put in the wrong layer -- the board designs' aliases, the serial registries,
 the network identity and the host's paths -- is in `setup/`, and the guard
@@ -4590,8 +4649,9 @@ and designs pick one (step 5), the ECP5 family builds the PLLs its designs
 define (step 6), and so do the ALTPLL families (step 7): the MAX1000, the
 EP4CE6, the EP4CGX150 and the GMII designs' 125 MHz PLLs -- every PLL the
 Cyclone IV and MAX 10 designs instantiate themselves (the A-E115FB's DDR2
-PHY keeps its own, inside the vendor IP). Next, Xilinx's clk_wiz
-(the MIG designs' reference clocks too) and Cyclone V's. Then the last
+PHY keeps its own, inside the vendor IP) -- and Artix-7 builds the Wukong's
+and the i9+'s (step 8b). Next, the XC7A100T and the Au on clk_wiz (8c), then
+Cyclone V's. Then the last
 `PllType`s leave `Board`, which is the only code in `Board.scala` that needs
 JOP, and the hardware layer becomes an sbt subproject that does not depend on
 JOP, so the compiler holds the direction. Lab-specific TESTS (`InstanceTest`'s

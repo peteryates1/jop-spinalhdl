@@ -478,11 +478,12 @@ board), preset `colorlightDbI9PlusEth`, 50 MHz:
 - **Driver:** `EthDriver` takes the PHY at `Const.ETH_PHY_ADDR` (1). A scan
   would find U5 first, the PHY with no jack. With `Const.ETH_GIGABIT` false it
   does not advertise 1000BASE-T. It reads the speed from the standard registers.
-- **Clock IP:** the build summary says `Eth clock: 50 MHz`, and
-  `check_clk_ip.py` refuses an IP that makes anything else on that output.
+- **Clock IP:** the design's PLL makes the RGMII clock, 50 MHz, beside the
+  system clock (`JopConfig.xilinxSdrPll`); the build creates the clk_wiz from
+  that definition, which refuses an IP that makes anything else (status item
+  173). The build summary says `Eth clock: 50 MHz`.
 
 ```bash
-make -C fpga/colorlight-db-i9plus CFG=colorlightDbI9PlusEth create-ip   # clk_125 at 50 MHz
 make -C fpga/colorlight-db-i9plus CFG=colorlightDbI9PlusEth build
 make -C java/apps/Small JOP_PRESET=colorlightDbI9PlusEth APP_NAME=NetTest EXTRA_SRC=../../net/src
 make -C fpga/colorlight-db-i9plus CFG=colorlightDbI9PlusEth program

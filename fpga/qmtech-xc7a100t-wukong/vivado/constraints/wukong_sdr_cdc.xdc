@@ -32,8 +32,9 @@
 # NOT `-include_generated_clocks sys_clk`: the MMCM outputs ARE generated
 # clocks of the clk port, so that spelling puts them in the same group as the
 # clock they are being separated from, and the constraint does nothing. Name
-# both sides explicitly. -quiet tolerates clk_125, which Vivado optimises away
-# in the non-GMII builds.
+# both sides explicitly. Vivado names each clock <port>_<module>, the ports by
+# role (jop.config.XilinxClkWiz); -quiet tolerates clk_eth_sdr_clk, which only
+# a GMII design's PLL makes (wukongSdrFull).
 set_clock_groups -asynchronous \
   -group [get_clocks -quiet sys_clk] \
-  -group [get_clocks -quiet {clk_100_sdr_clk clk_100_shift_sdr_clk clk_125_sdr_clk}]
+  -group [get_clocks -quiet {clk_sys_sdr_clk clk_sdram_sdr_clk clk_eth_sdr_clk}]

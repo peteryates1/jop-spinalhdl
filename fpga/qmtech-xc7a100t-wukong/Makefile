@@ -32,10 +32,20 @@ PART       := xc7a100tfgg676-2
 CREATE_TCL := $(REPO_ROOT)/fpga/scripts/vivado_create_project.tcl
 PRJ_TCL    := $(REPO_ROOT)/fpga/scripts/vivado_build_project.tcl
 NP_TCL     := $(REPO_ROOT)/fpga/scripts/vivado_build_nonproject.tcl
-# Generated IP under build/, board-scoped: this board's IP serves SEVEN
-# configurations, so build/<config>/ would either duplicate it or arbitrarily
-# elect one config to own it. The tracked mig.prj input stays at vivado/ip/.
+# Generated MIG IP under build/, board-scoped: this board's MIG serves every
+# DDR3 configuration, so build/<config>/ would either duplicate it or
+# arbitrarily elect one config to own it. The tracked mig.prj input stays at
+# vivado/ip/.
+#
+# THE CLOCK IP IS EACH DESIGN'S (status item 173). Every design defines its
+# PLL, and generating its Verilog writes the clk_wiz definition into
+# build/<config>/ip/ (jop.config.XilinxClkWiz); each Vivado build below sources
+# it (JOP_PLL_TCL), so the IP is created in the run that uses it. Until
+# 2026-11-02 three hand-run scripts made three shared IPs here -- bram_clk,
+# ddr3_clk, sdr_clk -- plus one directory per SDR frequency, and
+# check_clk_ip.py compared each against the build afterwards.
 IP         := $(REPO_ROOT)/build/ip/qmtech-xc7a100t-wukong
+PLL_TCL     = $(wildcard $(1)/ip/*.tcl)
 XDC        := $(CURDIR)/vivado/constraints
 SHARED_XDC := $(REPO_ROOT)/fpga/constraints
 # Standalone top: its own config directory, not a preset's.
@@ -67,14 +77,14 @@ TIMING_DIRECTIVES := JOP_SYNTH_DIRECTIVE=PerformanceOptimized JOP_SYNTH_RETIMING
 # already gone stale (115200, against a preset saying 2000000). console.mk
 # reads the rate the build itself recorded. Status item 70.
 
-.PHONY: bram-generate create-ip create-project build program program-flash bram-monitor all clean
+.PHONY: bram-generate create-project build program program-flash bram-monitor all clean
 .PHONY: ddr3-generate ddr3-create-ip ddr3-build ddr3-program ddr3-monitor ddr3-download ddr3-reset ddr3-redownload
 .PHONY: ddr3-smp-generate ddr3-smp-build ddr3-smp-bitstream ddr3-smp-program ddr3-smp-monitor
-.PHONY: dual-generate dual-create-ip dual-build dual-program dual-monitor dual-sdr-monitor dual-sdr-download
-.PHONY: sdram-generate sdram-create-ip sdram-create-ip-smp sdram-build sdram-program sdram-monitor
-.PHONY: sdram-create-ip-mhz jop-sdram-generate jop-sdram-build sdr-smp-generate jop-sdram-smp-generate jop-sdram-smp-build jop-sdram-smp-bitstream jop-sdram-program jop-sdram-monitor print-cfg-dir
+.PHONY: dual-generate dual-build dual-program dual-monitor dual-sdr-monitor dual-sdr-download
+.PHONY: sdram-generate sdram-build sdram-program sdram-monitor
+.PHONY: jop-sdram-generate jop-sdram-build sdr-smp-generate jop-sdram-smp-generate jop-sdram-smp-build jop-sdram-smp-bitstream jop-sdram-program jop-sdram-monitor print-cfg-dir
 
-all: microcode create-ip build
+all: microcode build
 
 # === JOP BRAM targets ===
 #
@@ -129,16 +139,13 @@ bram-generate: $(UCODE_SCALA) $(call APP_JOP,$(BRAM_CFG))
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(BRAM_CFG) buildtree"
 	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(BRAM_CFG) --write build/$(BRAM_CFG)/vivado/wukong_jop_bram.xdc"
 
-create-ip:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_clk_wiz.tcl
-
 create-project: bram-generate
 	$(VIVADO_ENV) && JOP_PROJ=wukong_jop_bram JOP_PART=$(PART) JOP_TOP=JopBramWukongTop \
 	  JOP_BUILD_DIR=$(BRAM_CFG_DIR)/vivado/build \
 	  JOP_RTL=$(BRAM_CFG_DIR)/rtl/JopBramWukongTop.v \
 	  JOP_BIN_GLOB='$(BRAM_CFG_DIR)/rtl/JopBramWukongTop*.bin' \
 	  JOP_XDC=$(BRAM_CFG_DIR)/vivado/wukong_jop_bram.xdc \
-	  JOP_IP=$(IP)/bram_clk/bram_clk.xci \
+	  JOP_PLL_TCL="$(call PLL_TCL,$(BRAM_CFG_DIR))" \
 	  JOP_GEN_HINT="run: make bram-generate" \
 	  $(VIVADO) -mode batch -source $(CREATE_TCL)
 
@@ -190,9 +197,8 @@ ddr3-generate: $(UCODE_SCALA) $(call APP_JOP,$(DDR3_CFG))
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(DDR3_CFG) buildtree"
 	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(DDR3_CFG) --write build/$(DDR3_CFG)/vivado/wukong_ddr3_base.xdc"
 
+# MIG only: the clock that feeds it is the design's PLL, built with the design.
 ddr3-create-ip:
-	$(VIVADO_ENV) && JOP_MIG_TCL=$(IP)/generated/ddr3_clocks.tcl \
-	  $(VIVADO) -mode batch -source vivado/tcl/create_ddr3_clk_wiz.tcl
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_mig.tcl
 
 # BASE FILE FIRST. For a GMII design wukong_ddr3_base.xdc does
@@ -205,7 +211,8 @@ ddr3-build: ddr3-generate
 	$(VIVADO_ENV) && JOP_TOP=JopDdr3WukongTop JOP_PART=$(PART) \
 	  JOP_BUILD_DIR=$(DDR3_CFG_DIR)/vivado/build \
 	  JOP_RTL=$(DDR3_CFG_DIR)/rtl/JopDdr3WukongTop.v \
-	  JOP_IP="$(IP)/ddr3_clk/ddr3_clk.xci $(IP)/mig_7series_0/mig_7series_0.xci" \
+	  JOP_IP=$(IP)/mig_7series_0/mig_7series_0.xci \
+	  JOP_PLL_TCL="$(call PLL_TCL,$(DDR3_CFG_DIR))" \
 	  JOP_XDC="$(DDR3_CFG_DIR)/vivado/wukong_ddr3_base.xdc $(XDC)/wukong_ddr3.xdc" \
 	  $(TIMING_DIRECTIVES) JOP_DRC_WAIVE=LUTLP-1 \
 	  JOP_SUMMARY=$(DDR3_CFG_DIR)/rtl/JopDdr3WukongTop.summary.txt \
@@ -261,7 +268,8 @@ ddr3-smp-bitstream: ddr3-smp-xdc
 	$(VIVADO_ENV) && JOP_TOP=JopSmpDdr3WukongTop JOP_PART=$(PART) \
 	  JOP_BUILD_DIR=$(DDR3_SMP_DIR)/vivado/build \
 	  JOP_RTL=$(DDR3_SMP_DIR)/rtl/JopSmpDdr3WukongTop.v \
-	  JOP_IP="$(IP)/ddr3_clk/ddr3_clk.xci $(IP)/mig_7series_0/mig_7series_0.xci" \
+	  JOP_IP=$(IP)/mig_7series_0/mig_7series_0.xci \
+	  JOP_PLL_TCL="$(call PLL_TCL,$(DDR3_SMP_DIR))" \
 	  JOP_XDC="$(DDR3_SMP_DIR)/vivado/wukong_ddr3_base.xdc $(XDC)/wukong_ddr3.xdc" \
 	  $(TIMING_DIRECTIVES) JOP_DRC_WAIVE=LUTLP-1 \
 	  JOP_SUMMARY=$(DDR3_SMP_DIR)/rtl/JopSmpDdr3WukongTop.summary.txt \
@@ -282,9 +290,6 @@ DUAL_CFG_DIR  = $(REPO_ROOT)/build/$(DUAL_CFG)
 dual-generate: $(UCODE_SCALA) $(call APP_JOP,$(DUAL_CFG))
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(DUAL_CFG) buildtree"
 
-dual-create-ip: ddr3-create-ip
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl
-
 # The only build here needing constraints applied to the SYNTHESISED netlist --
 # set_max_delay / set_clock_groups over the SDR controller, which resolve
 # against the elaborated design. They live in an ordinary file now and are
@@ -293,7 +298,8 @@ dual-build: dual-generate
 	$(VIVADO_ENV) && JOP_TOP=JopDualWukongTop JOP_PART=$(PART) \
 	  JOP_BUILD_DIR=$(DUAL_CFG_DIR)/vivado/build \
 	  JOP_RTL=$(DUAL_CFG_DIR)/rtl/JopDualWukongTop.v \
-	  JOP_IP="$(IP)/ddr3_clk/ddr3_clk.xci $(IP)/sdr_clk/sdr_clk.xci $(IP)/mig_7series_0/mig_7series_0.xci" \
+	  JOP_IP=$(IP)/mig_7series_0/mig_7series_0.xci \
+	  JOP_PLL_TCL="$(call PLL_TCL,$(DUAL_CFG_DIR))" \
 	  JOP_XDC=$(XDC)/wukong_dual.xdc \
 	  JOP_POST_SYNTH_TCL=$(XDC)/wukong_dual_post_synth.tcl \
 	  $(TIMING_DIRECTIVES) \
@@ -324,16 +330,13 @@ dual-sdr-download:
 sdram-generate:
 	cd $(REPO_ROOT) && sbt "runMain jop.system.SdramExerciserWukongTopVerilog"
 
-sdram-create-ip:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl
-
 # Default directives: this exerciser has timing margin to spare and does not
 # need the closure flow the JOP builds run.
 sdram-build: sdram-generate
 	$(VIVADO_ENV) && JOP_TOP=SdramExerciserWukongTop JOP_PART=$(PART) \
 	  JOP_BUILD_DIR=$(SDR_EX_DIR)/vivado/build \
 	  JOP_RTL=$(SDR_EX_DIR)/rtl/SdramExerciserWukongTop.v \
-	  JOP_IP=$(IP)/sdr_clk/sdr_clk.xci \
+	  JOP_PLL_TCL="$(call PLL_TCL,$(SDR_EX_DIR))" \
 	  JOP_XDC="$(XDC)/wukong_sdram.xdc $(SHARED_XDC)/sdram_sdr.xdc" \
 	  $(VIVADO) -mode batch -source $(NP_TCL)
 
@@ -352,8 +355,8 @@ sdram-monitor:
 # it falls back to the old in-tree layout, so unconverted flows are unaffected.
 #
 # SDR_JOP_MHZ builds `wukongSdram` at another clock (`wukongSdram <MHz>`), into
-# its own build/wukongSdram-<MHz>. It needs its own clock IP first:
-#   make sdram-create-ip-mhz SDR_MHZ=80 && make jop-sdram-build SDR_JOP_MHZ=80
+# its own build/wukongSdram-<MHz>, its PLL with it:
+#   make jop-sdram-build SDR_JOP_MHZ=80
 # The directory comes from BuildLayoutMain for a multi-word config, as vivado.mk
 # does, rather than from a second copy of its naming rule here. The app is
 # built with JOP_PRESET quoted, which the %-pattern rule above cannot do.
@@ -387,13 +390,12 @@ jop-sdram-generate: $(UCODE_SCALA) jop-sdram-app
 # shell command, so it comments out everything after it -- including the vivado
 # invocation. `make -n` showed the recipe with no `vivado` in it at all.
 #
-# THE CLOCK IP FOLLOWS THE BUILD (status item 162). This flow linked the shared
-# 100 MHz `sdr_clk` whatever the config said, so moving `wukongSdram` to 80 MHz
-# would have timed and run an "80 MHz" design at 100 -- console detuned by 1.25x,
-# no error anywhere. The build's own summary names its frequency; 100 MHz uses
-# the shared IP, any other frequency its own root (the SMP flow's convention,
-# below), and check_clk_ip.py refuses a root whose IP runs at anything else.
-# Create a missing one with `make sdram-create-ip-mhz SDR_MHZ=<n>`.
+# THE CLOCK IP IS THE BUILD'S OWN (status items 162, 173). This flow linked the
+# shared 100 MHz `sdr_clk` whatever the config said, so moving `wukongSdram` to
+# 80 MHz would have timed and run an "80 MHz" design at 100 -- console detuned
+# by 1.25x, no error anywhere. Then each frequency got its own IP directory and
+# check_clk_ip.py matched it to the build. Now the design's PLL definition is
+# generated with its Verilog and built in this run (JOP_PLL_TCL).
 #
 # AND THE CLOSURE DIRECTIVES (status item 162). "The SDR JOP builds have margin
 # and run the default flow" was measured before the stack cache: on the default
@@ -409,19 +411,13 @@ jop-sdram-generate: $(UCODE_SCALA) jop-sdram-app
 # 80 MHz build reported WNS -3.616 ns -- every failing path one of those
 # crossings. The SMP flow below already read the file; this one now does too,
 # so it no longer depends on the 2:1 ratio.
-SDRAM_SUMMARY = $(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.summary.txt
 jop-sdram-build: jop-sdram-generate
-	@mhz=$$(sed -n 's/^ *Clock: *\([0-9]*\) MHz.*/\1/p' $(SDRAM_SUMMARY) | head -1); \
-	if [ "$$mhz" = 100 ]; then root=$(IP); else root=$(REPO_ROOT)/build/ip/qmtech-xc7a100t-wukong-sdr$$mhz; fi; \
-	xci=$$root/sdr_clk/sdr_clk.xci; \
-	[ -f "$$xci" ] || { echo "No $$mhz MHz SDR clock IP at $$root -- create it: make sdram-create-ip-mhz SDR_MHZ=$$mhz"; exit 1; }; \
-	python3 $(REPO_ROOT)/fpga/scripts/check_clk_ip.py $(SDRAM_SUMMARY) $$xci || exit 1; \
 	$(VIVADO_ENV) && JOP_TOP=JopSdramWukongTop JOP_PART=$(PART) \
 	  $(TIMING_DIRECTIVES) \
 	  JOP_BUILD_DIR=$(SDRAM_CFG_DIR)/vivado/build \
 	  JOP_RTL=$(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.v \
 	  JOP_BIN_GLOB='$(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.v_*.bin' \
-	  JOP_IP=$$xci \
+	  JOP_PLL_TCL="$(call PLL_TCL,$(SDRAM_CFG_DIR))" \
 	  JOP_XDC="$(SDRAM_CFG_DIR)/vivado/wukong_jop_sdram.xdc $(XDC)/wukong_sdr_cdc.xdc" \
 	  JOP_SUMMARY=$(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.summary.txt \
 	  $(VIVADO) -mode batch -source $(NP_TCL)
@@ -441,40 +437,14 @@ jop-sdram-build: jop-sdram-generate
 # of period over 80, and 2 Mbaud is exact at 75 MHz (the A-E115FB runs there,
 # 0.0006 % error), so the console costs nothing to move.
 #
-# The frequency is in the CONFIG, so the generated XDC follows it for free.
-# What does NOT follow is the clk_wiz IP, which is why 80 MHz gets its own
-# IP_SDR_SMP root -- regenerating the shared `sdr_clk` at 80 would leave the
-# single-core SDR and exerciser flows constraining 100 MHz against an 80 MHz
-# part, silently. Status item 70's family of defect.
+# The frequency is in the CONFIG, and so is the PLL (JopConfig.xilinxSdrPll):
+# the generated XDC and the clock IP both follow it. The -3.0 ns SDRAM clock
+# lead is held as a delay and converted to degrees at each frequency: the
+# ANGLE would move it (-108 deg is -3.0 ns at 100 MHz but -3.75 ns at 80).
 SDR_SMP_CORES ?= 2
 SDR_SMP_MHZ   ?= 75
 SDR_SMP_CFG     = wukongSdrSmp $(SDR_SMP_CORES) $(SDR_SMP_MHZ)
 SDR_SMP_DIR     = $(CFG_DIR)
-IP_SDR_SMP     := $(REPO_ROOT)/build/ip/qmtech-xc7a100t-wukong-sdr$(SDR_SMP_MHZ)
-
-# The SMP SDR clock wizard, at SDR_SMP_MHZ into its own root. The -3.0 ns
-# SDRAM phase shift is held in NANOSECONDS by the script and converted to
-# degrees for the requested frequency: carrying the ANGLE across frequencies
-# would move the delay (-108 deg is -3.0 ns at 100 MHz but -3.75 ns at 80) and
-# show up as SDRAM read corruption, not as a build error.
-sdram-create-ip-smp:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl \
-	  -tclargs -freq $(SDR_SMP_MHZ) -ip_root $(IP_SDR_SMP) -shift -3.0 -eth_mhz $(SDR_SMP_MHZ)
-
-# Any other frequency, into its own root, for the single-core flow above. Same
-# script, same rule for the phase shift (held in ns, converted per frequency).
-#
-# -eth_mhz = the system clock (status item 164). These roots serve wukongSdram
-# and wukongSdrSmp, neither of which has a GMII; the 125 MHz output that the
-# shared 100 MHz IP keeps for wukongSdrFull would here only constrain the VCO.
-# At 80 MHz it forced a fractional system divide and an integer SDRAM divide --
-# 79.93 vs 80.51 MHz -- and the program never printed. The script now refuses
-# such an IP, and check_clk_ip.py refuses one at build time.
-SDR_MHZ ?= 80
-sdram-create-ip-mhz:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl \
-	  -tclargs -freq $(SDR_MHZ) -ip_root $(REPO_ROOT)/build/ip/qmtech-xc7a100t-wukong-sdr$(SDR_MHZ) -shift -3.0 \
-	  -eth_mhz $(SDR_MHZ)
 
 # The XDC comes with it. jop-sdram-build regenerates the pin constraints for
 # its config; this flow did not, and then read the TRACKED copy below -- so the
@@ -510,7 +480,7 @@ jop-sdram-smp-bitstream: sdr-smp-generate
 	  JOP_BUILD_DIR=$(SDR_SMP_DIR)/vivado/build \
 	  JOP_RTL=$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.v \
 	  JOP_BIN_GLOB='$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.v_*.bin' \
-	  JOP_IP=$(IP_SDR_SMP)/sdr_clk/sdr_clk.xci \
+	  JOP_PLL_TCL="$(call PLL_TCL,$(SDR_SMP_DIR))" \
 	  JOP_XDC="$(SDR_SMP_DIR)/vivado/wukong_jop_sdram.xdc $(XDC)/wukong_sdr_cdc.xdc" \
 	  JOP_SUMMARY=$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.summary.txt \
 	  $(VIVADO) -mode batch -source $(NP_TCL)

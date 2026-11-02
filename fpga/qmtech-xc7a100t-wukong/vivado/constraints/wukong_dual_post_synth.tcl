@@ -9,9 +9,11 @@
 # instead of keeping its own 83-line copy of it.
 
 set sdram_all_out [get_ports {sdram_ADDR[*] sdram_BA[*] sdram_CKE sdram_CSn sdram_RASn sdram_CASn sdram_WEn sdram_DQM[*] sdram_DQ[*]}]
-set_max_delay 5.0 -datapath_only -from [get_clocks clk_100_sdr_clk] -to $sdram_all_out
-set_max_delay 5.0 -datapath_only -from [get_ports {sdram_DQ[*]}] -to [get_clocks clk_100_sdr_clk]
+# The SDR half's clocks are its PLL's (sdr_clk), which Vivado names
+# <port>_<module> (jop.config.XilinxClkWiz).
+set_max_delay 5.0 -datapath_only -from [get_clocks clk_sys_sdr_clk] -to $sdram_all_out
+set_max_delay 5.0 -datapath_only -from [get_ports {sdram_DQ[*]}] -to [get_clocks clk_sys_sdr_clk]
 set_clock_groups -asynchronous \
   -group [get_clocks sys_clk] \
   -group [get_clocks clk_pll_i] \
-  -group [get_clocks {clk_100_sdr_clk clk_100_shift_sdr_clk}]
+  -group [get_clocks {clk_sys_sdr_clk clk_sdram_sdr_clk}]

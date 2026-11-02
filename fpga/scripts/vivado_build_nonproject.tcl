@@ -10,6 +10,8 @@
 #   JOP_BUILD_DIR  where checkpoints, reports and the .bit go  (required)
 #   JOP_RTL        space-separated RTL files                   (required)
 #   JOP_IP         space-separated .xci files                  (optional)
+#   JOP_PLL_TCL    space-separated clk_wiz definitions, the design's PLLs
+#                  (jop.config.XilinxClkWiz)                   (optional)
 #   JOP_XDC        space-separated constraint files, IN ORDER  (optional)
 #   JOP_BIN_GLOB   glob for BRAM-init .bin sidecars            (optional)
 #   JOP_SYNTH_DIRECTIVE, JOP_SYNTH_RETIMING                    (optional)
@@ -61,6 +63,7 @@ set part      [jop_require JOP_PART]
 set build_dir [file normalize [jop_require JOP_BUILD_DIR]]
 set rtl_files [jop_require JOP_RTL]
 set ip_files  [jop_env JOP_IP]
+set pll_files [jop_env JOP_PLL_TCL]
 set xdc_files [jop_env JOP_XDC]
 set bin_glob  [jop_env JOP_BIN_GLOB]
 set post_tcl  [jop_env JOP_POST_SYNTH_TCL]
@@ -69,6 +72,33 @@ set summary   [jop_env JOP_SUMMARY]
 set bit_name  [jop_env JOP_BIT "$top.bit"]
 
 file mkdir $build_dir
+
+# THE DESIGN'S PLLs, created in the build that uses them (status item 173).
+# Each definition is written with the design's Verilog from its PLL definition
+# and creates one clk_wiz; here it is generated and synthesised out of context,
+# as the hand-run `make create-ip` did -- but that IP knew nothing of the
+# preset, and nothing tied the two together but check_clk_ip.py. A definition
+# refuses an IP whose outputs miss the design (status item 164), which stops
+# the build here.
+if {$pll_files ne ""} {
+  create_project -in_memory -part $part
+  set jop_ip_dir [file join $build_dir ip]
+  file delete -force $jop_ip_dir
+  file mkdir $jop_ip_dir
+  foreach f $pll_files {
+    set f [file normalize $f]
+    if {![file exists $f]} {
+      puts "ERROR: PLL definition not found: $f"
+      puts "       run the board's generate target first"
+      exit 1
+    }
+    source $f
+  }
+  foreach ip [get_ips] {
+    generate_target all $ip
+    synth_ip $ip
+  }
+}
 
 foreach f $ip_files {
   set f [file normalize $f]

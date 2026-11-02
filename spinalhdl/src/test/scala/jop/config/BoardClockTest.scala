@@ -36,8 +36,6 @@ class BoardClockTest extends AnyFunSuite {
   // How each kind of source states its input, in MHz.
   private val altpllPs  = """inclk0_input_frequency\s*(?:=>|=|\()\s*(\d+)""".r  // picoseconds
   private val clkWizTcl = """PRIM_IN_FREQ\s*\{([0-9.]+)\}""".r
-  private val tclInMhz  = """set\s+in_mhz\s+([0-9.]+)""".r
-  private val inFreqArg = """-in_freq\s+([0-9.]+)""".r
   private val memPhyRef = """name\s*=\s*"pll_ref_clk_mhz"\s+value\s*=\s*"([0-9.]+)"""".r
 
   private def altpll(path: String)   = stated(path, altpllPs).map(ps => BigDecimal(1000000) / ps)
@@ -54,28 +52,20 @@ class BoardClockTest extends AnyFunSuite {
     Source("fpga/alchitry-au/vivado/tcl/create_clk_wiz.tcl", megahertz(clkWizTcl), "alchitry-au-v2", "CLK100M"),
     Source("fpga/qmtech-xc7a100t-dbfpga-v5/vivado/tcl/create_ddr3_clk_wiz.tcl", megahertz(clkWizTcl),
       "qmtech-xc7a100t", "CLK50M"),
-    Source("fpga/qmtech-xc7a100t-wukong/vivado/tcl/create_clk_wiz.tcl", megahertz(clkWizTcl),
-      "qmtech-wukong-xc7a100t", "CLK50M"),
-    Source("fpga/qmtech-xc7a100t-wukong/vivado/tcl/create_ddr3_clk_wiz.tcl", megahertz(clkWizTcl),
-      "qmtech-wukong-xc7a100t", "CLK50M"),
-    // The SDR clk_wiz script's default input serves the Wukong, whose calls
-    // pass none; the i9+ passes its own.
-    Source("fpga/qmtech-xc7a100t-wukong/vivado/tcl/create_sdram_clk_wiz.tcl", megahertz(tclInMhz),
-      "qmtech-wukong-xc7a100t", "CLK50M"),
-    Source("fpga/colorlight-db-i9plus/Makefile", megahertz(inFreqArg), "colorlight-i9plus", "CLK25M"))
+    // The Wukong's three clk_wiz scripts and the i9+ Makefile's -in_freq left
+    // in step 8b: their designs define their PLLs, built by clk_wiz.
+  )
 
   /** Files that mention a PLL input without stating one a design is built with. */
   private val notSources = Map(
     "fpga/bringup/"                     -> "bring-up designs: standalone Verilog, built from no board data",
-    "fpga/scripts/check_clk_ip.py"      -> "reads a built clk_wiz; states nothing",
-    "fpga/scripts/test_check_clk_ip.py" -> "its test",
-    "spinalhdl/src/main/scala/jop/config/Board.scala" -> "quotes the i9+ flow's -in_freq in a comment",
     "spinalhdl/src/main/scala/jop/config/PllVendor.scala" ->
-      "the ALTPLL builder writes inclk0_input_frequency from a design's definition, checked below through it",
+      "the ALTPLL and clk_wiz builders write the input from a design's definition, checked below through it",
     "spinalhdl/src/test/scala/jop/config/AlteraAltpllTest.scala" -> "the builder's test, asserting on what it writes",
     "spinalhdl/src/test/scala/jop/config/AlteraDesignPllTest.scala" -> "asserts on the generated PLLs' inputs",
     "spinalhdl/src/test/scala/jop/config/BoardClockTest.scala" -> "this test",
-    "spinalhdl/src/test/scala/jop/config/XilinxClkWizTest.scala" -> "the clk_wiz builder's test, asserting on what it writes")
+    "spinalhdl/src/test/scala/jop/config/XilinxClkWizTest.scala" -> "the clk_wiz builder's test, asserting on what it writes",
+    "spinalhdl/src/test/scala/jop/config/XilinxDesignPllTest.scala" -> "asserts the old scripts are gone")
 
   private lazy val boards: Map[String, Board] =
     SystemAssembly.all.flatMap(_.boards).map(b => b.name -> b).toMap
