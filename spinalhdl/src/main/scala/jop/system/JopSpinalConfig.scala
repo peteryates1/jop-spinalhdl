@@ -28,7 +28,7 @@ import jop.config._
  */
 object JopSpinalConfig {
   def apply(config: JopConfig, targetDir: String): SpinalConfig = {
-    val boardFreq = config.assembly.boardClockFreq
+    val boardFreq = config.inputClock.freq
     SpinalConfig(
       mode = Verilog,
       targetDirectory = targetDir,

@@ -53,10 +53,37 @@ trait BoardDesign {
   def fpga: FpgaDevice
   def fpgaFamily: FpgaFamily
 
+  /** The board clock this design takes in, by name (status item 173). A
+    * board offers its clocks and the DESIGN picks one, so on an assembly with
+    * several the design must name it; on one with a single clock it may. */
+  def clockName: Option[String] = None
+
+  /** The board clock the design takes in: its pin is the top-level clock
+    * input, its frequency what the PLLs are built from and what the input is
+    * timed at. There is no default: `Board.clockFreq` fell back to 50 MHz and
+    * took a board's first clock, and the A-E115FB's 25 MHz clock read as 50. */
+  def inputClock: BoardClock = BoardDesign.inputClock(assembly, clockName)
+
   /** How many LEDs the DESIGN drives, which is not how many the assembly
     * offers. `JopTop` sizes its port from `assembly.fpgaBoard.ledCount`, so the
     * generators must use the same number or they assign pins that do not exist:
     * on the EP4CGX150 + DB v4 the top has `led[1:0]` while the assembly offers
     * seven, and five assignments were being emitted into thin air. */
   def ledCount: Int = assembly.ledCount
+}
+
+object BoardDesign {
+
+  /** The clock a design on `assembly` takes in: the one it names, or the
+    * assembly's only clock. Refuses an assembly with several clocks when the
+    * design names none, and one with none at all. */
+  def inputClock(assembly: SystemAssembly, name: Option[String]): BoardClock =
+    name.map(assembly.clock).getOrElse(assembly.clocks match {
+      case Seq(only) => only
+      case Seq() => throw new IllegalArgumentException(
+        s"SystemAssembly '${assembly.name}' offers no clock: a board must declare its clocks")
+      case several => throw new IllegalArgumentException(
+        s"SystemAssembly '${assembly.name}' offers ${several.size} clocks " +
+          s"(${several.map(_.name).mkString(", ")}): the design must name the one it takes in (clockName)")
+    })
 }

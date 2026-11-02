@@ -64,7 +64,8 @@ class JopConfigTest extends AnyFunSuite {
     assert(config.fpgaFamily == FpgaFamily.CycloneV)
     val asm = config.assembly
     // Clock (12 MHz on-board oscillator)
-    assert(asm.pinMapping("CLOCK_12MHz")("clock") == "PIN_F14")
+    assert(config.inputClock == BoardClock("CLK12M", 12 MHz, "PIN_F14"))
+    assert(jop.generate.PinResolver.clockFpgaPin(config) == "PIN_F14")
     // UART (FT2232H on-board USB)
     assert(asm.pinMapping("FT2232H")("TXD") == "PIN_F16")
     assert(asm.pinMapping("FT2232H")("RXD") == "PIN_E18")

@@ -42,6 +42,27 @@ case class BoardDevice(
   mapping: Map[String, String] = Map.empty     // device signal → pin reference
 )
 
+/**
+ * A clock a board offers the FPGA: an oscillator, or another component's
+ * clock output, arriving on `pin` -- an FPGA pin, or a connector pin the
+ * assembly resolves like any device pin (status item 173).
+ *
+ * A board declares every clock it has, each by a name unique in any assembly
+ * it joins; a design picks the one it takes in (`BoardDesign.clockName`), and
+ * its PLLs are built from that. Names follow the board's own documentation
+ * where it gives one (the A-E115FB's CLK25M and CLK100M) and are CLK<MHz>M
+ * otherwise.
+ *
+ * Until 2026-11-02 a clock was a `CLOCK_<n>MHz` device, and `Board.clockFreq`
+ * took the first one, or 50 MHz when there was none. So a board could declare
+ * one clock and only one, and the A-E115FB declared 50 MHz on AB11, which is
+ * 25 MHz; its second clock, 100 MHz on A11, was not declared at all.
+ */
+case class BoardClock(name: String, freq: spinal.core.HertzNumber, pin: String) {
+  require(name.nonEmpty, "a board clock needs a name")
+  require(freq.toBigDecimal > 0, s"board clock $name: frequency must be positive")
+}
+
 // ==========================================================================
 // PLL Type — which PLL family a board uses
 // ==========================================================================
@@ -398,8 +419,13 @@ case class Board(
     * board's buttons pull to GND with no resistor on the board, so `resetn`
     * needs PULLUP or it resets JOP whenever the pin drifts. Applied only to
     * ports the generated constraints actually place. */
-  portPulls: Map[String, String] = Map.empty
+  portPulls: Map[String, String] = Map.empty,
+  /** Every clock this board offers the FPGA -- see `BoardClock`. */
+  clocks: Seq[BoardClock] = Seq.empty
 ) {
+  require(clocks.map(_.name).distinct.size == clocks.size,
+    s"Board '$name' names two clocks alike: ${clocks.map(_.name).mkString(", ")}")
+
   def hasFpga: Boolean = fpga.isDefined
 
   /** Find a device by part name */
@@ -413,15 +439,6 @@ case class Board(
   /** All memory devices on this board (resolved via MemoryDevice registry) */
   def memoryDevices: Seq[(BoardDevice, MemoryDevice)] =
     devices.flatMap(bd => MemoryDevice.byName(bd.part).map(md => (bd, md)))
-
-  /** Board oscillator frequency (derived from CLOCK_* device, hardware fact) */
-  def clockFreq: spinal.core.HertzNumber = {
-    import spinal.core._
-    devices.find(_.part.startsWith("CLOCK_")).map { d =>
-      val mhz = d.part.stripPrefix("CLOCK_").stripSuffix("MHz").toInt
-      HertzNumber(BigDecimal(mhz) * 1000000)
-    }.getOrElse(HertzNumber(BigDecimal(50000000)))
-  }
 
   /** Number of on-board LEDs */
   def ledCount: Int = devices.filter(_.part == "LED").flatMap(_.mapping.keys).size
@@ -447,6 +464,7 @@ object Board {
     fpga = Some(FpgaDevice.EP4CGX150DF27.withGrade(7, 'I')),   // EP4CGX150DF27I7, docs/boards/qmtech-ep4cgx150-board.md
     pllType = Some(PllType.AlteraDramPll),
     hasEthPll = true,
+    clocks = Seq(BoardClock("CLK50M", 50 MHz, "PIN_B14")),
     devices = Seq(
       // On-board SDRAM (direct FPGA pins, verified against jop_sdram.qsf)
       BoardDevice("W9825G6JH6", role = Some("sdr"), mapping = Map(
@@ -466,7 +484,6 @@ object Board {
         "DQ11" -> "PIN_F24", "DQ12" -> "PIN_F23", "DQ13" -> "PIN_E24",
         "DQ14" -> "PIN_D24", "DQ15" -> "PIN_C24",
         "DQM0" -> "PIN_F26", "DQM1" -> "PIN_H24")),
-      BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "PIN_B14")),
       BoardDevice("LED", mapping = Map("led0" -> "PIN_A25", "led1" -> "PIN_A24")),
       // sw1 is the reset button. The key name "reset" is what PinResolver and
       // JopTop look for; sw0 stays free for application use. Both are the
@@ -527,6 +544,7 @@ object Board {
     pllType = Some(PllType.AlteraCyc5000),
     entityTag = "Cyc5000",
     fpga = Some(FpgaDevice.`5CEBA2U15`),   // 5CEBA2U15C8, the default (slowest) grade
+    clocks = Seq(BoardClock("CLK12M", 12 MHz, "PIN_F14")),
     devices = Seq(
       BoardDevice("W9864G6JT", role = Some("sdr"), mapping = Map(
         "CLK" -> "PIN_P16", "CKE" -> "PIN_T14",
@@ -544,7 +562,6 @@ object Board {
         "DQ11" -> "PIN_R9", "DQ12" -> "PIN_R11", "DQ13" -> "PIN_T9",
         "DQ14" -> "PIN_V10", "DQ15" -> "PIN_U9",
         "DQM0" -> "PIN_U13", "DQM1" -> "PIN_U14")),
-      BoardDevice("CLOCK_12MHz", mapping = Map("clock" -> "PIN_F14")),
       BoardDevice("FT2232H", mapping = Map(
         "TXD" -> "PIN_F16", "RXD" -> "PIN_E18")),
       BoardDevice("LED", mapping = Map(
@@ -597,8 +614,8 @@ object Board {
     fpga = Some(FpgaDevice.LFE5U25F),
     connectors = Map("SODIMM" -> ColorlightSodimm.SodimmI5),
     portPulls = Map("e_mdio" -> "PULLUP"),
+    clocks = Seq(BoardClock("CLK25M", 25 MHz, "P3")),
     devices = Seq(
-      BoardDevice("CLOCK_25MHz", mapping = Map("clock" -> "P3")),
       BoardDevice("LED", mapping = Map("led0" -> "U16")),
       BoardDevice("B50612D_U28", mapping = Map(
         "TXC" -> "U19", "TX_CTL" -> "P19",
@@ -682,8 +699,8 @@ object Board {
     useStackCache = true,
     connectors = Map("SODIMM" -> ColorlightSodimm.SodimmI9Plus),
     portPulls = Map("e_mdio" -> "PULLUP"),
+    clocks = Seq(BoardClock("CLK25M", 25 MHz, "K4")),
     devices = Seq(
-      BoardDevice("CLOCK_25MHz", mapping = Map("clock" -> "K4")),
       BoardDevice("B50612D_U9", mapping = Map(
         "TXC" -> "M6", "TX_CTL" -> "N5",
         "TXD0" -> "M5", "TXD1" -> "M2", "TXD2" -> "N4", "TXD3" -> "P4",
@@ -786,9 +803,9 @@ object Board {
     fpga = Some(FpgaDevice.XC7A35T.withGrade(2)),
     pllType = Some(PllType.XilinxDdr3ClkWiz),
     ddr3HasCs = true,
+    clocks = Seq(BoardClock("CLK100M", 100 MHz, "N14")),
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3")),   // DDR3 pins managed by MIG IP
-      BoardDevice("CLOCK_100MHz", mapping = Map("clock" -> "N14")),
       BoardDevice("FT2232H", mapping = Map(
         "TXD" -> "P16", "RXD" -> "P15")),
       BoardDevice("LED", mapping = Map(
@@ -875,12 +892,12 @@ object Board {
     fpga = Some(FpgaDevice.EP4CE115F23.withGrade(7, 'I')),   // EP4CE115F23I7, docs/boards/ep4ce115-ddr2-board.md
     entitySuffix = "Ae115fb",
     ledActiveHigh = false,
-    // Clock and reset, both of which this board was MISSING: PinResolver finds
-    // the clock via a CLOCK_* device and the reset via a SWITCH, and AE115FB
-    // declared neither -- so the generated project assigned neither, leaving
-    // the 50 MHz input for the fitter to place wherever it liked. The
-    // hand-written jop_ddr2.qsf had both. Nothing compared the two until the
-    // generated project was diffed against it on 2026-08-26.
+    // Clock and reset, both of which this board was MISSING until 2026-08-26:
+    // PinResolver finds the clock among the board's clocks and the reset via a
+    // SWITCH, and AE115FB declared neither -- so the generated project
+    // assigned neither, leaving the clock input for the fitter to place
+    // wherever it liked. The hand-written jop_ddr2.qsf had both. Nothing
+    // compared the two until the generated project was diffed against it.
     portIoStandards = Map(
       "clk_in" -> "1.8 V", "reset" -> "1.8 V",
       // The jumpered banks, at 2.5 V (J1, J2). These read "1.8 V" and
@@ -891,8 +908,14 @@ object Board {
       "e_gtxc" -> "2.5 V", "e_txc" -> "2.5 V", "e_txen" -> "2.5 V", "e_txd" -> "2.5 V",
       "e_rxc" -> "2.5 V", "e_rxdv" -> "2.5 V", "e_rxd" -> "2.5 V"),
     reserveNceoAsIo = true,   // mem_addr[10] is on nCEO (K22)
+    // Two clocks, named as the board doc names them. The DDR2 PHY's PLL and
+    // pll_125 are built for CLK25M (40000 ps), which until 2026-11-02 was
+    // declared here as 50 MHz, and CLK100M was not declared at all. CLK100M
+    // can feed PLL_3 (docs/boards/ep4ce115-ddr2-board.md); nothing uses it yet.
+    clocks = Seq(
+      BoardClock("CLK25M", 25 MHz, "PIN_AB11"),
+      BoardClock("CLK100M", 100 MHz, "PIN_A11")),
     devices = Seq(
-      BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "PIN_AB11")),
       BoardDevice("SWITCH", mapping = Map("reset" -> "PIN_N21")),
       BoardDevice("HYS64T128021", role = Some("ddr2")),
       // On-board CH340: FPGA TX -> CH340 RX is H5, CH340 TX -> FPGA RX is N1.
@@ -923,6 +946,7 @@ object Board {
     entitySuffix = "Wukong",
     ledActiveHigh = true,
     useStackCache = true,
+    clocks = Seq(BoardClock("CLK50M", 50 MHz, "M21")),
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3")),  // DDR3 pins managed by MIG IP
       // SDR SDRAM — Bank 14 (address/control) + Bank 15 (data)
@@ -968,7 +992,6 @@ object Board {
         "D2_P" -> "G2", "D2_N" -> "G1",
         "SCL" -> "B2", "SDA" -> "A2",
         "HPD" -> "A3", "CEC" -> "B1")),
-      BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "M21")),
       BoardDevice("CH340N", mapping = Map(
         "TXD" -> "E3", "RXD" -> "F3")),
       // UART brought out on the J11 header instead of the on-board CH340, for
@@ -1011,9 +1034,9 @@ object Board {
     name = "qmtech-xc7a100t",
     fpga = Some(FpgaDevice.XC7A100T.withGrade(2)),   // -2: docs/boards/qmtech-xc7a100t-board.md
     pllType = Some(PllType.XilinxDdr3ClkWiz),
+    clocks = Seq(BoardClock("CLK50M", 50 MHz, "U22")),
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3")),   // DDR3 pins managed by MIG IP
-      BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "U22")),
       BoardDevice("LED", mapping = Map("led0" -> "T23", "led1" -> "R23")),
       // KEY MUST BE "reset". PinResolver and JopTop look for that name (see the
       // EP4CGX150 SWITCH entry above); this said "sw2", so nothing ever emitted
@@ -1342,6 +1365,7 @@ object Board {
     fpga = Some(FpgaDevice.`10M08SAU169`),   // 10M08SAU169C8G, the default (slowest) grade
     pllType = Some(PllType.AlteraMax1000),
     entityTag = "Max1000Sdram",
+    clocks = Seq(BoardClock("CLK12M", 12 MHz, "PIN_H6")),
     devices = Seq(
       // SDRAM: W9864G6JT-6, 8 MB, 16-bit. Absent entirely until now, so a
       // generated project silently left every DRAM pin unplaced.
@@ -1361,7 +1385,6 @@ object Board {
         "DQ11" -> "PIN_D12", "DQ12" -> "PIN_C12", "DQ13" -> "PIN_B12",
         "DQ14" -> "PIN_B13", "DQ15" -> "PIN_A12",
         "DQM0" -> "PIN_E9", "DQM1" -> "PIN_F12")),
-      BoardDevice("CLOCK_12MHz", mapping = Map("clock" -> "PIN_H6")),
       // TXD/RXD were SWAPPED here before: the FT2232H drives ser_rxd on A4 and
       // receives ser_txd on B4, not the other way round.
       BoardDevice("FT2232H", mapping = Map(
@@ -1383,9 +1406,9 @@ object Board {
     fpga = Some(FpgaDevice.EP4CE6E22),   // EP4CE6E22C8, the default (slowest) grade
     pllType = Some(PllType.AlteraEp4ce6),
     entityTag = "Ep4ce6Sdram",
+    clocks = Seq(BoardClock("CLK50M", 50 MHz, "PIN_23")),
     devices = Seq(
       BoardDevice("W9864G6JT", role = Some("sdr")),
-      BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "PIN_23")),
       BoardDevice("CP2102N", mapping = Map(
         "TXD" -> "PIN_114", "RXD" -> "PIN_115")),
       BoardDevice("LED", mapping = Map(
@@ -1426,6 +1449,20 @@ case class SystemAssembly(
   require(boards.exists(_.hasFpga), s"SystemAssembly '$name': at least one board must carry an FPGA")
   require(ledBoard.forall(n => boards.exists(_.name == n)),
     s"SystemAssembly '$name': ledBoard ${ledBoard.getOrElse("")} is not one of its boards")
+  require(clocks.map(_.name).distinct.size == clocks.size,
+    s"SystemAssembly '$name': two of its boards name a clock alike (${clocks.map(_.name).mkString(", ")}); " +
+      "a design picks its clock by name")
+
+  /** Every clock the assembly's boards offer, board by board. Not just the
+    * FPGA board's: a base board's oscillator reaches the FPGA through the
+    * connector like any other signal. */
+  def clocks: Seq[BoardClock] = boards.flatMap(_.clocks)
+
+  /** The clock named `name`, which one of the boards must offer. */
+  def clock(name: String): BoardClock =
+    clocks.find(_.name == name).getOrElse(throw new IllegalArgumentException(
+      s"SystemAssembly '${this.name}' offers no clock named '$name' " +
+        s"(it offers ${if (clocks.isEmpty) "none" else clocks.map(_.name).mkString(", ")})"))
 
   /** All FPGA devices across all boards */
   def fpgaDevices: Seq[FpgaDevice] = boards.flatMap(_.fpga)
@@ -1495,9 +1532,6 @@ case class SystemAssembly(
     allDevices.filter(_.part == part).flatMap(_.mapping.flatMap { case (signal, ref) =>
       resolvePin(ref).map(signal -> _)
     }).toMap
-
-  /** Board oscillator frequency */
-  def boardClockFreq: spinal.core.HertzNumber = fpgaBoard.clockFreq
 
   /** The board whose LEDs drive the `led` port -- see `ledBoard`. */
   def ledSourceBoard: Board =

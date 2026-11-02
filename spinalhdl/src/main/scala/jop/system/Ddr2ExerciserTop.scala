@@ -341,6 +341,8 @@ case class Ddr2ExerciserTop(
 object Ddr2ExerciserDesign extends jop.config.BoardDesign {
   import jop.config._
   val assembly   = SystemAssembly.ae115fb
+  // The controller's PLL is built for the 25 MHz clock (ip-src/ddr2_64bit.v).
+  override val clockName = Some("CLK25M")
   val entityName = "Ddr2ExerciserTop"
   val designName = "ddr2-exerciser"
   val uartBaud   = 115200
@@ -353,7 +355,8 @@ object Ddr2ExerciserDesign extends jop.config.BoardDesign {
   val memType    = Some(MemoryType.SDRAM_DDR2)
   val fpga       = assembly.fpga
   val fpgaFamily = assembly.fpgaFamily
-  val clkMhz     = 25
+  /** The board clock's, which the default clock domain runs on. */
+  val clkMhz     = (inputClock.freq.toBigDecimal / 1000000).toIntExact
 }
 
 /** Emit everything Quartus needs for the DDR2 exerciser. */

@@ -103,9 +103,7 @@ object LpfGenerator {
     sb.append(TimingConstraints.forConfig(config).toLpf)
     sb.append("\n")
 
-    PinResolver.clockFpgaPin(assembly).foreach { p =>
-      sb.append("# Clock\n").append(pin("clk_in", p, io)).append("\n")
-    }
+    sb.append("# Clock\n").append(pin("clk_in", PinResolver.clockFpgaPin(config), io)).append("\n")
 
     config.resetInput.foreach { r =>
       sb.append(s"# Reset (active ${if (r.activeLow) "low" else "high"})\n")

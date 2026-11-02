@@ -29,12 +29,12 @@ object XdcGenerator {
     sb.append(s"# System: ${config.designName}\n\n")
 
     // Clock
-    PinResolver.clockFpgaPin(assembly).foreach { pin =>
-      val freqHz = assembly.boardClockFreq.toBigDecimal
+    {
+      val freqHz = config.inputClock.freq.toBigDecimal
       val periodNs = (BigDecimal("1000000000") / freqHz)
         .setScale(3, BigDecimal.RoundingMode.HALF_UP)
       sb.append("# System clock\n")
-      sb.append(pinConstraint(pin, "clk"))
+      sb.append(pinConstraint(PinResolver.clockFpgaPin(config), "clk"))
       sb.append(s"create_clock -period $periodNs -name sys_clk [get_ports {clk}]\n\n")
     }
 

@@ -619,7 +619,7 @@ case class JopTop(
       io.led(0) := mainArea.cluster.io.wd(0)(0)
 
     } else if (!isDdr3 && manufacturer.explicitClockPort) {
-      val boardClkFreqHz = board.clockFreq.toLong
+      val boardClkFreqHz = config.inputClock.freq.toLong
       val alteraMainHeartbeat = new ClockingArea(effectiveMainCd) {
         val hb = Reg(Bool()) init(False)
         val cnt = Reg(UInt(26 bits)) init(0)
@@ -660,7 +660,7 @@ case class JopTop(
       }
 
     } else if (isDdr3 || !manufacturer.explicitClockPort) {
-      val boardClkFreqHz = board.clockFreq.toLong
+      val boardClkFreqHz = config.inputClock.freq.toLong
       val halfPeriod = (boardClkFreqHz / 2 - 1).toInt
       val hbCounter = Reg(UInt(26 bits)) init(0)
       val heartbeat = Reg(Bool()) init(False)
@@ -875,7 +875,7 @@ case class JopTop(
     // Board Clock Domain: Heartbeat + Dual CDC + Dual HangDetector
     // ==================================================================
 
-    val boardClkFreqHz = board.clockFreq.toLong
+    val boardClkFreqHz = config.inputClock.freq.toLong
     val halfPeriod = (boardClkFreqHz / 2 - 1).toInt
     val hbCounter = Reg(UInt(26 bits)) init(0)
     val heartbeat = Reg(Bool()) init(False)

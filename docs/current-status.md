@@ -75,7 +75,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 34. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 35. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 36. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02); `jop.config` still holds both
+37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02). Boards now declare their clocks and designs pick one (step 5, 2026-11-02); next the designs' PLL definitions, family by family
 38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
 39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
 40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -4395,17 +4395,56 @@ frequency (`JopSpinalConfig`); whether anything in that build reads it is not
 checked. A PLL builder fed from the board's clocks would build from it. The
 board doc also calls the DDR2 reference a 27 MHz oscillator, which the IP
 contradicts. The EP4CGX150's and the CYC5000's hand-made PLLs match the
-clocks their boards declare.
+clocks their boards declare. Fixed in step 5, without changing a bitstream.
+
+**Order agreed 2026-11-02 (user):** first, each board declares all its
+clocks by name, with a test holding every hand-made PLL's input to the clock
+declared on its pin; then the PLL definitions move into the designs, one FPGA
+family at a time, ECP5 first since its builder exists.
+
+**Step 5 done 2026-11-02: a board offers its clocks, a design picks one.**
+`Board.clocks` declares every clock a board has, each a `BoardClock` with a
+name, frequency and pin. The ten `CLOCK_<n>MHz` devices became declared
+clocks, named as the board doc names them (the A-E115FB's CLK25M and CLK100M)
+or `CLK<MHz>M`. A design takes one in: `BoardDesign.inputClock` is the clock
+the design names (`clockName`) or the assembly's only one, and is refused on
+an assembly with several when the design names none. It replaces
+`Board.clockFreq`, which took a board's first clock or 50 MHz, and the old
+`PinResolver.clockFpgaPin`, which took the first clock of ANY board in the
+assembly while the frequency came from the FPGA board's -- two lookups that
+agreed only because no other board declared a clock. The generators,
+`JopSpinalConfig` and `JopTop` read the design's input clock.
+
+`BoardClockTest` (12 tests) was written first. It maps every file that states
+a PLL's input -- altpll files, the DDR2 MegaWizard variation, the clk_wiz
+scripts, the i9+ Makefile's `-in_freq` -- to the board clock that feeds it,
+and was red on exactly the A-E115FB's two. It refuses a PLL input anywhere in
+the tree that no row covers (proved red by dropping the i9+ row). It pins two
+files no row can check: the MAX1000's `max1000_pll.v` is a pass-through, and
+`fpga/ip/ep4ce6_pll.vhd`, which `PllType.AlteraEp4ce6` names, has never been
+committed, so the generic EP4CE6 cannot be built. The A-E115FB declares
+CLK25M and CLK100M; its presets and the DDR2 exerciser name CLK25M, and the
+exerciser's `clkMhz` now comes from that clock instead of a literal 25.
+
+Nothing built changes. The generated constraints of all 45 presets and the 7
+exerciser designs are identical before and after, except the A-E115FB
+designs' XDC clock period (20 -> 40 ns), a file its Quartus flow never reads.
+The Verilog of `ep4cgx150Serial`, `wukongDdr3`, `colorlightI5Sdram`,
+`ae115fbDdr2` and `ae115fbDdr2Eth` is byte-identical, so the wrong 50 MHz
+never reached a bitstream. The A-E115FB board doc's "27 MHz DDR2 reference",
+written before bring-up, now says what the IP says.
 
 **What is left:** the setup layer is done. Every fact the 2026-10-28 list
 put in the wrong layer -- the board designs' aliases, the serial registries,
 the network identity and the host's paths -- is in `setup/`, and the guard
-holds it there. The hardware layer is not started. It is to become an sbt
-subproject that does not depend on JOP, so the compiler holds the direction.
-The PLL goes first, since it is the only code in `Board.scala` that needs
-JOP; no step plan is agreed yet. Lab-specific TESTS (`InstanceTest`'s
-descriptor table) stay in `spinalhdl/src/test` for now; they would move with
-the setup if it gets a repository of its own.
+holds it there. The hardware layer has started: boards declare their clocks
+and designs pick one (step 5). Next, the designs' PLL definitions and a
+builder per FPGA family, ECP5 first; then the PLLs leave `Board`, which is
+the only code in `Board.scala` that needs JOP, and the hardware layer becomes
+an sbt subproject that does not depend on JOP, so the compiler holds the
+direction. Lab-specific TESTS (`InstanceTest`'s descriptor table) stay in
+`spinalhdl/src/test` for now; they would move with the setup if it gets a
+repository of its own.
 
 <a id="item-174"></a>
 

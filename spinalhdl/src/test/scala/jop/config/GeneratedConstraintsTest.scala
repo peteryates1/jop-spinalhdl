@@ -99,7 +99,7 @@ class GeneratedConstraintsTest extends AnyFunSuite {
         cfg.memType.contains(MemoryType.SDRAM_DDR2) &&
         cfg.fpgaFamily.manufacturer == Manufacturer.Altera
       val hasClockPort =
-        jop.generate.PinResolver.clockFpgaPin(cfg.assembly).isDefined && !phyOwnsClocks
+        jop.generate.PinResolver.clockFpgaPin(cfg).nonEmpty && !phyOwnsClocks
       if (hasClockPort) {
         val hasClock = body.contains("create_clock") || body.toLowerCase.contains("frequency")
         assert(hasClock,
@@ -111,7 +111,7 @@ class GeneratedConstraintsTest extends AnyFunSuite {
         // PIN, and the post-PLL frequency the preset declares is reached via
         // derive_pll_clocks. cyc5000Serial declares 80 MHz and correctly emits
         // -period 83.333, its 12 MHz crystal.
-        val oscHz    = cfg.assembly.boardClockFreq.toBigDecimal
+        val oscHz    = cfg.inputClock.freq.toBigDecimal
         val periodNs = (BigDecimal(1e9) / oscHz).setScale(3, BigDecimal.RoundingMode.HALF_UP)
         val periodRe = raw"-period\s+([0-9.]+)".r
         periodRe.findFirstMatchIn(body).foreach { m =>

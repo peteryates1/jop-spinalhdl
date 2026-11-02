@@ -376,7 +376,10 @@ case class JopConfig(
   /** DDR3 memory-clock profile, for boards whose system clock is MIG's ui_clk.
     * None everywhere else. See MigProfile for why this is an enum of measured
     * points rather than a frequency parameter. */
-  migProfile: Option[MigProfile] = None
+  migProfile: Option[MigProfile] = None,
+  /** The board clock this configuration takes in -- see BoardDesign. Named
+    * only on an assembly that offers several (the A-E115FB). */
+  override val clockName: Option[String] = None
 ) extends BoardDesign {
   require(systems.nonEmpty, "At least one JopSystem required")
 
@@ -1989,6 +1992,9 @@ object JopConfig {
    */
   def ae115fbDdr2 = JopConfig(
     assembly = SystemAssembly.ae115fb,
+    // The DDR2 controller's PLL takes the 25 MHz clock: its MegaWizard
+    // variation is built for it (ip-src/ddr2_64bit.v), and so is pll_125.
+    clockName = Some("CLK25M"),
     systems = Seq(JopSystem(
       name = "main",
       memory = "ddr2",

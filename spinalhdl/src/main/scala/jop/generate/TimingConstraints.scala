@@ -137,8 +137,7 @@ object TimingConstraints {
     val board = assembly.fpgaBoard
     val memType = config.memType
 
-    val boardClock = PinResolver.clockFpgaPin(assembly).map(_ =>
-      ClockConstraint("clk_in", assembly.boardClockFreq.toBigDecimal))
+    val boardClock = ClockConstraint("clk_in", config.inputClock.freq.toBigDecimal)
 
     // Which PLL outputs this design actually uses. AlteraDramPll drives the
     // system from c1, and on SDR additionally the SDRAM (c2) and VGA (c3).
@@ -258,7 +257,7 @@ object TimingConstraints {
     TimingConstraints(
       // A vendor DRAM PHY owns the board clock and its PLL, not the Ethernet
       // PHY's receive clock: e_rxc is ours either way.
-      clocks = (if (phyOwnsClocks) Nil else boardClock.toSeq) ++ phyRxClock ++ phyTxClock,
+      clocks = (if (phyOwnsClocks) Nil else Seq(boardClock)) ++ phyRxClock ++ phyTxClock,
       asyncGroups =
         if (phyOwnsClocks) Nil
         else Seq(dramGroup, vgaGroup, ethGroup, phyGroup, phyTxGroup).filter(_.nonEmpty),

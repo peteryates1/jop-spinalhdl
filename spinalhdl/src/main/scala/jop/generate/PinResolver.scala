@@ -29,11 +29,18 @@ object PinResolver {
     (0 to 31).map(i => s"sdram_DQ[$i]" -> s"DQ$i") ++
     (0 to 3).map(i => s"sdram_DQM[$i]" -> s"DQM$i")
 
-  /** Resolve clock FPGA pin from assembly's CLOCK_* device */
-  def clockFpgaPin(assembly: SystemAssembly): Option[String] =
-    assembly.allDevices
-      .find(_.part.startsWith("CLOCK_"))
-      .flatMap(d => assembly.pinMapping(d.part).get("clock"))
+  /** The FPGA pin of the board clock the design takes in (`inputClock`).
+    * Refuses a clock whose pin resolves to no FPGA pin: an unassigned clock
+    * input is left for the fitter to place wherever it likes.
+    *
+    * Until 2026-11-02 this took the first `CLOCK_*` device of ANY board in the
+    * assembly, while the frequency came from the first one on the FPGA board:
+    * two lookups that agreed only because no other board declared a clock. */
+  def clockFpgaPin(design: BoardDesign): String = {
+    val c = design.inputClock
+    design.assembly.resolvePin(c.pin).getOrElse(throw new IllegalArgumentException(
+      s"${design.designName}: clock ${c.name} is on ${c.pin}, which is no FPGA pin of ${design.assembly.name}"))
+  }
 
   /** Resolve reset FPGA pin from SWITCH device's "reset" mapping */
   def resetFpgaPin(assembly: SystemAssembly): Option[String] =

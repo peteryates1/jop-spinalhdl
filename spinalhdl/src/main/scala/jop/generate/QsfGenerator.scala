@@ -14,8 +14,7 @@ object QsfGenerator {
   def pinAssignments(config: BoardDesign): Seq[PinAssignment] = {
     val assembly = config.assembly
     
-    val clock = PinResolver.clockFpgaPin(assembly)
-      .map(PinAssignment(_, "clk_in")).toSeq
+    val clock = Seq(PinAssignment(PinResolver.clockFpgaPin(config), "clk_in"))
     val sdramClk =
       if (config.usesSdr)
         PinResolver.sdramClockFpgaPin(assembly).map(PinAssignment(_, "sdram_clk")).toSeq

@@ -7,7 +7,8 @@ Two-board system from Chinese manufacturer (A-E115FB):
 **Core board (A-E115FB V2)**:
 - **FPGA**: Altera Cyclone IV E — EP4CE115F23I7 (114,480 LEs, 3,888 Kbit M9K, 266 multipliers, 484-pin FBGA, industrial temp, speed grade 7)
 - **Memory**: DDR2 SODIMM socket with 1GB module (Hynix HYS64T128021, DDR2-667)
-- **Clock**: 27 MHz crystal oscillator (DDR2 PLL reference)
+- **Clocks**: CLK25M (25 MHz, AB11), the DDR2 PLL's reference, and CLK100M
+  (100 MHz, A11); see [Clocks](#clocks)
 - **Config**: Active Serial (EPCS) or JTAG
 
 **Bottom board (A-E115FB_bottom_2019)**:
@@ -32,7 +33,8 @@ Reference files: `/srv/git/cycloneEthernet/`
 
 **Altera DDR2 controller IP** (`ddr2_64bit`):
 - Altera ALTMEMPHY DDR2 High Performance Controller v13.1
-- PLL reference: 27 MHz → generates PHY clock
+- PLL reference: CLK25M, 25 MHz on AB11 (`ip-src/ddr2_64bit.v`:
+  `pll_ref_clk_mhz` 25.0) → generates the PHY clock
 - **Quartus version**: Must use **Quartus 18.1 or earlier**. Intel dropped
   DDR2 ALTMEMPHY support for Cyclone IV starting with Quartus 19.x. The IP
   may appear in newer Platform Designer catalogs (`alt_mem_if_civ_ddr2_emif`)
@@ -67,7 +69,12 @@ Reference files: `/srv/git/cycloneEthernet/`
 |--------|-----|-------|
 | CLK25M (25 MHz) | PIN_AB11 | Main user clock (core board oscillator) |
 | CLK100M (100 MHz) | PIN_A11 | Secondary clock |
-| CLK27M (27 MHz) | — | DDR2 PLL reference (on core board, not on connector) |
+| CLK27M (27 MHz) | — | Listed before bring-up as the DDR2 PLL reference, but the DDR2 IP is built for CLK25M; no FPGA pin known |
+
+`Board.AE115FB` declares CLK25M and CLK100M, and JOP's designs take CLK25M
+(status item 173). Until 2026-11-02 it declared one clock, `CLOCK_50MHz` on
+AB11; nothing built from it used the number, and `BoardClockTest` now holds
+both PLLs on AB11 (the DDR2 PHY's and `pll_125`) to the declared 25 MHz.
 
 ### Core Board Peripherals
 
@@ -630,7 +637,7 @@ GC pauses regardless of heap size.
 
 ### System Clock
 
-The DDR2 PLL reference is 27 MHz. The `phy_clk` output from the DDR2 controller
+The DDR2 PLL reference is CLK25M (25 MHz, AB11). The `phy_clk` output from the DDR2 controller
 runs at half the DDR2 rate. JOP would need a separate PLL for its system clock
 (80-100 MHz), with a clock-domain crossing between the JOP domain and the DDR2
 `phy_clk` domain — similar to the Artix-7 DDR3 path where JOP runs on the MIG

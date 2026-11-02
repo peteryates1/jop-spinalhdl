@@ -1257,6 +1257,8 @@ object Board {
   def QmtechEP4CGX150 = Board(
     name = "qmtech-ep4cgx150",
     fpga = Some(FpgaDevice.EP4CGX150DF27I7),
+    // Every clock the board offers, by name; a design picks one (item 173)
+    clocks = Seq(BoardClock("CLK50M", 50 MHz, "PIN_B14")),
     devices = Seq(
       BoardDevice("W9825G6JH6", mapping = Map(
         "CLK" -> "PIN_E22", "CKE" -> "PIN_K24",
@@ -1266,7 +1268,6 @@ object Board {
         "A0" -> "PIN_L25", "A1" -> "PIN_L26", /* ... */
         "DQ0" -> "PIN_B25", "DQ1" -> "PIN_B26", /* ... */
         "DQM0" -> "PIN_F26", "DQM1" -> "PIN_H24")),
-      BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "PIN_B14")),
       BoardDevice("LED", mapping = Map("led0" -> "PIN_A25", "led1" -> "PIN_A24")),
       BoardDevice("SWITCH", mapping = Map("sw0" -> "PIN_AD23", "sw1" -> "PIN_AD24"))),
     connectors = Seq("J2", "J3"))
@@ -1274,31 +1275,31 @@ object Board {
   def CYC5000 = Board(
     name = "cyc5000",
     fpga = Some(FpgaDevice.`5CEBA2F17A7`),
+    clocks = Seq(BoardClock("CLK12M", 12 MHz, "PIN_F14")),
     devices = Seq(
       BoardDevice("W9864G6JT", mapping = Map(/* ... */)),
-      BoardDevice("CLOCK_12MHz", mapping = Map(/* ... */)),
       BoardDevice("FT2232H", mapping = Map(/* JTAG + UART */)),
       BoardDevice("LED", mapping = Map(/* 5 LEDs */))))
 
   def AlchitryAuV2 = Board(
     name = "alchitry-au-v2",
     fpga = Some(FpgaDevice.XC7A35T),
+    clocks = Seq(BoardClock("CLK100M", 100 MHz, "N14")),
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K", mapping = Map(/* DDR3 pins */)),
-      BoardDevice("CLOCK_100MHz", mapping = Map(/* ... */)),
       BoardDevice("FT2232H", mapping = Map(/* JTAG + UART */))))
 
   // Wukong — single board with FPGA + two memory devices + peripherals
   def WukongXC7A100T = Board(
     name = "qmtech-wukong-xc7a100t",
     fpga = Some(FpgaDevice.XC7A100T),
+    clocks = Seq(BoardClock("CLK50M", 50 MHz, "M21")),
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3"), mapping = Map(/* DDR3 pins */)),
       BoardDevice("W9825G6JH6", role = Some("sdr"), mapping = Map(/* SDR SDRAM pins */)),
       BoardDevice("RTL8211EG", mapping = Map(/* Ethernet pins */)),
       BoardDevice("SD_CARD", mapping = Map(/* SD pins */)),
       BoardDevice("HDMI", mapping = Map(/* HDMI pins */)),
-      BoardDevice("CLOCK_50MHz", mapping = Map(/* ... */)),
       BoardDevice("LED", mapping = Map(/* ... */)),
       BoardDevice("SWITCH", mapping = Map(/* ... */))))
 
