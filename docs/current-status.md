@@ -75,7 +75,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 34. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 35. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 36. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: generic and hardware support still share packages (`jop.config` holds both)
+37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02); `jop.config` still holds both
 38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
 39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
 40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -4346,14 +4346,66 @@ outside `setup/` (red first on all 26 lines). It also fails on `jop.setup`
 read outside an entry point: red with `jop.setup.Instances.all` planted in
 `object Board`.
 
+**The hardware layer, agreed 2026-11-02 (user).** Boards and modules must be
+usable by any SpinalHDL project, not only by JOP. That splits the "hardware
+support" layer above in two:
+- **Hardware**: FPGA devices, other parts, boards, composite boards and the
+  board docs. It depends only on SpinalHDL.
+- **JOP's support for that hardware**: the presets, the clocks JOP asks for,
+  `DeviceInstance` (JOP's I/O devices), the `fpga/` Makefiles, and the JOP
+  settings still on `Board` (`useStackCache`, `entityTag`/`entitySuffix`). It
+  depends on the hardware layer and on generic JOP.
+
+The model (user):
+- A **Board depends on its FPGA**, never the reverse. The types already point
+  that way: `Board.fpga` is an `FpgaDevice`, and `Parts.scala` knows no board.
+- An **FPGA module is a Board** with an FPGA and other components on it; it
+  needs no type of its own.
+- **Boards contain boards.** A board's design declares the connector; a
+  composite board says which board sits in which connector, and composites
+  nest. `SystemAssembly` (a list of boards and a connector-mating map) is the
+  flat form, and is where [item 105](#item-105)'s `boards.head` lives.
+- **Clocks.** A board offers its clocks: every oscillator, with its frequency
+  and the pin it reaches. Some boards have several. A design's PLL definition
+  picks one as its reference and states the outputs it wants. Each FPGA
+  family supplies the mechanism that builds that PLL, reused by every design.
+  Families may share one: altpll serves Cyclone IV GX, Cyclone IV E and
+  MAX 10.
+
+Today: every board declares exactly one `CLOCK_*` device, and
+`Board.clockFreq` takes the first, defaulting to 50 MHz when there is none.
+The PLL hangs off the board: `pllType` names one of 8 `PllType`s, and
+`hasEthPll` adds a second PLL (`EthPll`, `pll_125.v`) on two boards. The
+family mechanism exists for one family: `PllVendor.generate(spec)`,
+implemented only for ECP5 (`LatticeEcpPll`, through ecppll), builds the i5's
+PLL from a `PllSpec`. But that spec sits on the board's `PllType`, with its
+input a literal 25 and its outputs JOP's. The EP4CGX150's PLL comes from a
+separate generator (`DramPllGen`) that hardcodes the board's 50 MHz; the
+others wrap IP made outside the generators. These PLLs are the only code in
+`Board.scala` that depends on JOP: the blackbox imports, and the i5's
+Ethernet frequency read from `jop.io.Rgmii100`.
+
+**Found 2026-11-02: the A-E115FB declares `CLOCK_50MHz` on AB11, which is a
+25 MHz clock.** Its board doc lists CLK25M on AB11 and CLK100M on A11, and
+both PLLs fed from AB11 -- the DDR2 PHY's and `pll_125.v` -- are built for a
+40000 ps input. It is latent: on this board the DDR2 PHY's own SDC times
+`clk_in` (the timing report shows 40 ns), and `TimingConstraints` leaves that
+clock to the PHY. The wrong number does set SpinalHDL's default clock-domain
+frequency (`JopSpinalConfig`); whether anything in that build reads it is not
+checked. A PLL builder fed from the board's clocks would build from it. The
+board doc also calls the DDR2 reference a 27 MHz oscillator, which the IP
+contradicts. The EP4CGX150's and the CYC5000's hand-made PLLs match the
+clocks their boards declare.
+
 **What is left:** the setup layer is done. Every fact the 2026-10-28 list
 put in the wrong layer -- the board designs' aliases, the serial registries,
 the network identity and the host's paths -- is in `setup/`, and the guard
-holds it there. Generic JOP and hardware support still share packages
-(`jop.config` holds both the core's types and the board designs and
-presets), so the agreed in-repo split of those two is not done. Lab-specific TESTS
-(`InstanceTest`'s descriptor table) stay in `spinalhdl/src/test` for now; they
-would move with the setup if it gets a repository of its own.
+holds it there. The hardware layer is not started. It is to become an sbt
+subproject that does not depend on JOP, so the compiler holds the direction.
+The PLL goes first, since it is the only code in `Board.scala` that needs
+JOP; no step plan is agreed yet. Lab-specific TESTS (`InstanceTest`'s
+descriptor table) stay in `spinalhdl/src/test` for now; they would move with
+the setup if it gets a repository of its own.
 
 <a id="item-174"></a>
 
