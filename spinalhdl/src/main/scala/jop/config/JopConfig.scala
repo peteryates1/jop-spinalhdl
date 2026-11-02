@@ -77,9 +77,19 @@ case class JopSystem(
   cpuCnt: Int = 1,
   coreConfig: JopCoreConfig = JopCoreConfig(),
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None,
-  devices: Map[String, DeviceInstance] = Map.empty
+  devices: Map[String, DeviceInstance] = Map.empty,
+  /** The PLL this system's clocks come from, defined by the DESIGN and built
+    * by its FPGA family (status item 173). None while the board's family has
+    * no builder: the board still declares its PLL (`Board.pllType`). */
+  pll: Option[PllDefinition] = None
 ) {
   require(cpuCnt >= 1, s"System '$name': cpuCnt must be at least 1")
+  // clkFreq feeds the UART divider and the timers, so a PLL running the system
+  // at another frequency detunes them -- which reads as a dead board.
+  for (p <- pll; o <- p.outputs.find(_.role == PllRole.System))
+    require(BigDecimal(o.mhz) * 1000000 == clkFreq.toBigDecimal,
+      s"System '$name' is built for ${clkFreq.toBigDecimal / 1000000} MHz, " +
+        s"but its PLL ${p.module} makes the system clock ${o.mhz} MHz")
   perCoreConfigs.foreach(pcc =>
     require(pcc.length == cpuCnt,
       s"System '$name': perCoreConfigs length (${pcc.length}) must match cpuCnt ($cpuCnt)"))
@@ -382,6 +392,12 @@ case class JopConfig(
   override val clockName: Option[String] = None
 ) extends BoardDesign {
   require(systems.nonEmpty, "At least one JopSystem required")
+  // One clock input today: a system's PLL takes the clock the design takes in.
+  for (s <- systems; p <- s.pll)
+    require(p.reference == inputClock.name,
+      s"System '${s.name}': its PLL ${p.module} takes ${p.reference}, but the design takes in " +
+        s"${inputClock.name}; a PLL on another board clock needs a second clock input, " +
+        "which the generated top does not have yet")
 
   // --- Single-system convenience ---
   def system: JopSystem = {
@@ -1497,6 +1513,24 @@ object JopConfig {
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongConsolePart))))))
 
+  /** The PLL every Colorlight i5 design here builds, from the module's 25 MHz
+    * CLK25M: 40 MHz system, 40 MHz SDRAM at 315 deg, 50 MHz RGMII TX
+    * (jop.io.Rgmii100.TxClockMhz). Until 2026-11-02 the BOARD declared it
+    * (PllType.LatticeEcp5I5); it is the design's choice, so it is here now,
+    * and the ECP5 family builds it (status item 173).
+    *
+    * 315 deg = -45 deg = -3.1 ns at 40 MHz, in DEGREES because that stays
+    * correct if the frequency moves. This is the hardware-validated PLL
+    * (PllVendorTest pins its dividers); the Eth output, added 2026-10-27,
+    * kept every existing divider and phase. The BRAM preset takes it whole,
+    * SDRAM and Eth outputs unused, so that a working BRAM build predicts the
+    * SDRAM one: the two instantiate the same PLL. */
+  val colorlightI5Pll = PllDefinition("CLK25M", Seq(
+      PllOutput(PllRole.System, 40),
+      PllOutput(PllRole.Sdram, 40, phaseDeg = 315),
+      PllOutput(PllRole.Eth, jop.io.Rgmii100.TxClockMhz)),
+    module = "pll_jop_i5", instance = "i5Pll")
+
   /**
    * Colorlight i5 v7.0 — serial download into BRAM. Stage 1 bring-up.
    *
@@ -1526,6 +1560,7 @@ object JopConfig {
       memory = "bram",
       bootMode = BootMode.Serial,
       clkFreq = 40 MHz,
+      pll = Some(colorlightI5Pll),
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 64 * 1024),
         // Matches colorlightI5Sdram. Keeping the two i5 cores identical apart
@@ -1570,6 +1605,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 40 MHz,
+      pll = Some(colorlightI5Pll),
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(
         hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
         // idiv/irem: same as every other hardware preset here.
@@ -1603,7 +1639,7 @@ object JopConfig {
    * 1), which is RJ1 on this base board -- measured by the RGMII bring-up
    * (fpga/bringup/colorlight-db-i5-eth, 2026-10-27). RGMII at 100 Mb/s through
    * jop.io.Rgmii100 on ECP5 output cells, TX on the PLL's 50 MHz Eth output
-   * (PllType.LatticeEcp5I5). The MAC runs in its 4-bit mode, so the PHY must
+   * (colorlightI5Pll). The MAC runs in its 4-bit mode, so the PHY must
    * not advertise gigabit; `ETH_GIGABIT = false` tells EthDriver. P4, the
    * PHYs' shared reset, is NOT driven (`noPhyReset`), as H2 is not on the i9+.
    */

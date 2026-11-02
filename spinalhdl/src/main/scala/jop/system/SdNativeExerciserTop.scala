@@ -50,7 +50,7 @@ case class SdNativeExerciserTop(
   // PLL: 50 MHz -> 80 MHz system clock
   // PLL from the BOARD, not a hardcoded vendor primitive. MemoryType.BRAM
   // selects the no-DRAM branch: a system clock and a locked signal.
-  val pllResult = jop.system.pll.Pll.create(board, jop.config.MemoryType.BRAM, io.clk_in)
+  val pllResult = jop.system.pll.Pll.forDesign(board, jop.config.MemoryType.BRAM, io.clk_in, clkMhz)
   val sysClk = pllResult.systemClk.get
   val pllLocked = pllResult.locked
 

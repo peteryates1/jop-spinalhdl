@@ -248,8 +248,12 @@ case class JopTop(
       // 2. PLL — not for DDR2: the ALTMEMPHY controller contains its own PLL,
       // takes the 25 MHz board oscillator as its reference, and sources phy_clk
       // for the whole system. Boards like the A-E115FB therefore declare no
-      // pllType, and Pll.create would throw.
-      if (!isDdr2) pllResult = Pll.create(board, memType, boardClk)
+      // pllType, and Pll.create would throw. A PLL the design defines is built
+      // by its FPGA family (status item 173); the rest are still the board's.
+      if (!isDdr2) pllResult = sys.pll match {
+        case Some(d) => Pll.build(d, config.fpgaFamily, config.inputClock, boardClk)
+        case None    => Pll.create(board, memType, boardClk)
+      }
 
       // 3. Ethernet PLL (boards with dedicated Ethernet PLL)
       if (sys.ethGmii && board.hasEthPll) {

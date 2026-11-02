@@ -1,7 +1,7 @@
 package jop.config
 
 import org.scalatest.funsuite.AnyFunSuite
-import jop.generate.LatticeEcpPll
+import spinal.core._
 import java.nio.file.{Files, Paths}
 
 /**
@@ -13,6 +13,9 @@ import java.nio.file.{Files, Paths}
  * (see PllSpecConsistencyTest).
  */
 class PllVendorTest extends AnyFunSuite {
+
+  /** The i5 designs' PLL, which the ECP5 family builds (status item 173). */
+  private def i5Spec = JopConfig.colorlightI5Pll.spec(SystemAssembly.colorlightI5)
 
   private val ecppllPresent = new java.io.File("/usr/bin/ecppll").canExecute
 
@@ -46,9 +49,7 @@ class PllVendorTest extends AnyFunSuite {
 
   test("the i5 spec regenerates the validated divider set") {
     assume(ecppllPresent, "ecppll not installed (Debian: fpga-trellis)")
-    val spec = Board.ColorlightI5.pllType.flatMap(_.spec)
-      .getOrElse(fail("Board.ColorlightI5 declares no PLL spec"))
-
+    val spec = i5Spec
     val dir = Files.createTempDirectory("ecppll").toString
     val out = LatticeEcpPll.generate(spec, "pll_jop_i5", dir)
     val got = dividers(new String(Files.readAllBytes(Paths.get(out)), "UTF-8"))
@@ -60,18 +61,30 @@ class PllVendorTest extends AnyFunSuite {
     }
   }
 
-  test("the generated module keeps the ports its blackbox declares") {
-    // I5Pll wires clkin / clkout0 / clkout1 / clkout2 / locked (clkout2: the
-    // 50 MHz RGMII TX clock). ecppll will happily name them something else,
-    // and the mismatch appears only at synthesis.
+  test("the builder instantiates the module it generates, port for port") {
+    // ecppll is told the port names (`command`); the blackbox `instantiate`
+    // declares them again. They must agree, and the mismatch would otherwise
+    // appear only at synthesis.
     assume(ecppllPresent, "ecppll not installed")
-    val spec = Board.ColorlightI5.pllType.flatMap(_.spec).get
+    val spec = i5Spec
     val dir = Files.createTempDirectory("ecppll").toString
-    val v = new String(Files.readAllBytes(
-      Paths.get(LatticeEcpPll.generate(spec, "pll_jop_i5", dir))), "UTF-8")
-    Seq("clkin", "clkout0", "clkout1", "clkout2", "locked").foreach { port =>
-      assert(v.contains(port), s"generated PLL has no '$port' port")
-    }
+    val module = new String(Files.readAllBytes(
+      Paths.get(LatticeEcpPll.generate(spec, "pll_x", dir))), "UTF-8")
+    val declared = """(?m)^\s*(?:input|output)\s+(\w+)""".r.findAllMatchIn(module).map(_.group(1)).toSet
+
+    SpinalConfig(mode = Verilog, targetDirectory = dir).generate(new Component {
+      setDefinitionName("PllTop")
+      val clk  = in Bool()
+      val outs = out Bits(spec.outputs.size + 1 bits)
+      val pll  = LatticeEcpPll.instantiate(spec, "pll_x", "thePll", clk)
+      outs := Cat(pll.outputs :+ pll.locked)
+    })
+    val top = new String(Files.readAllBytes(Paths.get(dir, "PllTop.v")), "UTF-8")
+    val inst = """(?s)pll_x\s+thePll\s*\((.*?)\);""".r.findFirstMatchIn(top)
+      .getOrElse(fail(s"no `pll_x thePll` instance in\n$top")).group(1)
+    val connected = """\.(\w+)\s*\(""".r.findAllMatchIn(inst).map(_.group(1)).toSet
+    assert(connected == declared, s"instance connects $connected, the module declares $declared")
+    assert(declared == Set("clkin", "locked") ++ spec.outputs.indices.map(i => s"clkout$i"))
   }
 
   test("the command follows the spec's roles and phases") {

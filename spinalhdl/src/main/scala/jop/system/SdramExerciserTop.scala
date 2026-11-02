@@ -43,7 +43,7 @@ case class SdramExerciserTop(
   // PLL from the BOARD. SDRAM_SDR selects the branch that also yields the
   // phase-shifted memory clock, which this design needs and the SD exercisers
   // do not -- the difference is in the spec, not in a different blackbox.
-  val pllResult = jop.system.pll.Pll.create(board, jop.config.MemoryType.SDRAM_SDR, io.clk_in)
+  val pllResult = jop.system.pll.Pll.forDesign(board, jop.config.MemoryType.SDRAM_SDR, io.clk_in, clkMhz)
   val sysClk = pllResult.systemClk.get
   val pllLocked = pllResult.locked
   io.sdram_clk := pllResult.sdramClk.get

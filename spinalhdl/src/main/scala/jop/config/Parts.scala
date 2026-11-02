@@ -40,6 +40,9 @@ sealed trait FpgaFamily {
   def manufacturer: Manufacturer
   def memoryStyle: MemoryStyle = MemoryStyle.Generic
   def quartusFamilyName: String = ""
+  /** How this family builds a PLL from a design's definition (status item
+    * 173), or None while its boards still declare their own PLLs. */
+  def pll: Option[PllVendor] = None
 }
 object FpgaFamily {
   case object CycloneIV  extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone IV GX" }
@@ -52,7 +55,7 @@ object FpgaFamily {
   case object CycloneV   extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone V" }
   case object MAX10      extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "MAX 10" }
   case object Artix7     extends FpgaFamily { val manufacturer = Manufacturer.Xilinx }
-  case object ECP5       extends FpgaFamily { val manufacturer = Manufacturer.Lattice }
+  case object ECP5       extends FpgaFamily { val manufacturer = Manufacturer.Lattice; override def pll = Some(LatticeEcpPll) }
 }
 
 /** A speed grade with its temperature grade, as an ordering code spells them:

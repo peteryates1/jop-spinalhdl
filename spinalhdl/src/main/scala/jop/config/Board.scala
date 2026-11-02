@@ -69,7 +69,7 @@ case class BoardClock(name: String, freq: spinal.core.HertzNumber, pin: String) 
 
 import spinal.core._
 import jop.system.{DramPll, Max1000Pll, Ep4ce6Pll, SdramExerciserClkWiz}
-import jop.system.pll.{Cyc5000Pll, WukongClkWizBlackBox, I5Pll, PllResult}
+import jop.system.pll.{Cyc5000Pll, WukongClkWizBlackBox, PllResult}
 import jop.ddr3.ClkWizBlackBox
 
 /** Where a PLL's IP file comes from. */
@@ -97,14 +97,6 @@ sealed trait PllType {
     * EP4CGX150's PLL: a Cyclone V project came out naming a file that does not
     * exist for it. */
   def ipFile: Option[PllIpFile] = None
-
-  /** What this generator PRODUCES, described without the vendor.
-    *
-    * Optional while the tree is converted: a PllType that still wires a
-    * hand-written blackbox has no spec to declare, and saying so is better than
-    * inventing one that nothing checks. Where it IS declared, the IP is
-    * generated from it and the declaration is verified against the result. */
-  def spec: Option[PllSpec] = None
 
   /** The instance name this PLL gets in the netlist, for timing constraints to
     * refer to.
@@ -159,47 +151,6 @@ object PllType {
       pll.io.rst := False
       PllResult(systemClk = Some(pll.io.outclk_0), locked = pll.io.locked,
         sdramClk = Some(pll.io.outclk_1))
-    }
-  }
-
-  /** Colorlight i5 (ECP5): EHXPLLL, 25 MHz -> 40 MHz system + 40 MHz/-3.1 ns
-    * SDRAM clock.
-    *
-    * `sdramClk` is returned unconditionally rather than only for
-    * MemoryType.SDRAM_SDR. The BRAM preset simply never reads it, and the
-    * unused PLL output costs nothing — whereas making it conditional means the
-    * BRAM and SDRAM builds instantiate different PLLs, which is exactly the
-    * kind of difference that makes a working BRAM build stop predicting
-    * anything about the SDRAM one. */
-  case object LatticeEcp5I5 extends PllType {
-    /** 25 MHz board oscillator -> 40 MHz system + 40 MHz SDRAM at 315 deg,
-      * plus 50 MHz for RGMII TX (jop.io.Rgmii100.TxClockMhz).
-      *
-      * 315 deg = -45 deg = -3.1 ns at 40 MHz. Expressed in DEGREES because that
-      * stays correct if the frequency moves; the equivalent nanosecond figure
-      * does not. This is the spec `pll_jop_i5.v` was generated from -- its own
-      * header records the ecppll command -- so the file is now produced from it
-      * rather than kept beside it.
-      *
-      * The Eth output was added 2026-10-27 for the i5's B50612D (RGMII at 100
-      * Mb/s on the base board). ecppll keeps the VCO at 600 MHz and every
-      * existing divider and phase -- PllVendorTest's hardware-validated set --
-      * and adds CLKOS2 = 600 / 12. A build without Ethernet leaves it unused. */
-    override val spec = Some(PllSpec(
-      inputMhz = 25,
-      outputs = Seq(
-        PllOutput(PllRole.System, 40),
-        PllOutput(PllRole.Sdram, 40, phaseDeg = 315),
-        PllOutput(PllRole.Eth, jop.io.Rgmii100.TxClockMhz))))
-
-    def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
-      val pll = I5Pll()
-      pll.io.clkin := inputClock
-      PllResult(
-        systemClk = Some(pll.io.clkout0),
-        locked = pll.io.locked,
-        sdramClk = Some(pll.io.clkout1),
-        ethClk = Some(pll.io.clkout2))
     }
   }
 
@@ -609,7 +560,8 @@ object Board {
    */
   def ColorlightI5 = Board(
     name = "colorlight-i5",
-    pllType = Some(PllType.LatticeEcp5I5),
+    // No pllType: the designs on it define their PLL from CLK25M, and the ECP5
+    // family builds it (JopConfig.colorlightI5Pll; status item 173).
     entitySuffix = "I5",
     fpga = Some(FpgaDevice.LFE5U25F),
     connectors = Map("SODIMM" -> ColorlightSodimm.SodimmI5),

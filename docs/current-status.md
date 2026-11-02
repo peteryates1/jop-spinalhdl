@@ -75,7 +75,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 34. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 35. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 36. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02). Boards now declare their clocks and designs pick one (step 5, 2026-11-02); next the designs' PLL definitions, family by family
+37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02). Boards now declare their clocks and designs pick one (step 5, 2026-11-02); designs define their PLLs and the ECP5 family builds them (step 6); next the Altera, Xilinx and Cyclone V builders
 38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
 39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
 40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -4442,17 +4442,60 @@ The Verilog of `ep4cgx150Serial`, `wukongDdr3`, `colorlightI5Sdram`,
 never reached a bitstream. The A-E115FB board doc's "27 MHz DDR2 reference",
 written before bring-up, now says what the IP says.
 
+**Step 6 done 2026-11-02: the first family, ECP5 -- a design defines its
+PLL, the family builds it.** A `PllDefinition` -- the board clock it takes,
+by name, what it must produce, and the names of its IP module and netlist
+instance -- belongs to a design's system (`JopSystem.pll`). `FpgaFamily.pll`
+supplies the builder: `PllVendor` GENERATES the IP with the vendor's tool and
+INSTANTIATES it. It moved from `jop.generate` to beside the families, since
+nothing in it is JOP's, and gained `instantiate`; ECP5's `LatticeEcpPll` is
+the first. The i5's PLL left its board (`PllType.LatticeEcp5I5`, the `I5Pll`
+blackbox): the four i5 presets share `JopConfig.colorlightI5Pll` -- CLK25M
+in; 40 MHz system, 40 MHz SDRAM at 315 deg, 50 MHz RGMII TX -- and
+`Board.scala` no longer reads JOP's RGMII code. A system built for another
+frequency than its PLL's system output is refused (a detuned UART reads as a
+dead board), and so is a PLL on another clock than the design takes in: one
+clock input today. `PllGenMain` generates from the design's definition and
+refuses a `--module` the design does not instantiate. The exercisers define
+their PLL from their `clkMhz` where the family has a builder
+(`Pll.forDesign`): on the i5 the SD exerciser builds its own one-output
+`pll_sys_40mhz` instead of borrowing JOP's three-output one.
+
+`PllDefinitionTest` (6 tests) was written first and did not compile against
+the old code: no `JopSystem.pll`, no family builder, no `PllDefinition`.
+`PllVendorTest` now elaborates the builder's instance and holds its ports to
+the module ecppll writes. The generated `pll_jop_i5.v` is byte-identical. The
+four i5 presets' Verilog is identical except SpinalHDL's names that embed
+`JopTop.scala` line numbers (`when_JopTop_l296` -> `l300`; four lines were
+added there). The SD exerciser's netlists on the EP4CGX150 and the Wukong are
+byte-identical.
+
+Built through the board's own flow (`make -C fpga/colorlight-db-i5`, whose
+`PllGenMain` call now reads the design's definition): post-route 41.61 MHz,
+PASS at 40. A control routed from the Verilog captured BEFORE the change, with
+the same tools, LPF and seed, gives exactly 41.61 MHz too, so the step moved
+nothing. On `jop-i5-1` it programmed through the unit's probe (`assert-device`
+read 41111043) and ran HelloWorld: download checksum OK at 1 Mbaud, 284 lines
+in 25 s; the board is parked in its handshake. NOT explained: the
+`colorlightDbI5Eth` build of 2026-10-28 routed at 50.72 MHz, about 9 MHz above
+this preset today; whether that is a different netlist's placement luck or a
+change since then is unsettled (no Fmax was recorded for `colorlightDbI5Sdram`
+then).
+
 **What is left:** the setup layer is done. Every fact the 2026-10-28 list
 put in the wrong layer -- the board designs' aliases, the serial registries,
 the network identity and the host's paths -- is in `setup/`, and the guard
 holds it there. The hardware layer has started: boards declare their clocks
-and designs pick one (step 5). Next, the designs' PLL definitions and a
-builder per FPGA family, ECP5 first; then the PLLs leave `Board`, which is
-the only code in `Board.scala` that needs JOP, and the hardware layer becomes
-an sbt subproject that does not depend on JOP, so the compiler holds the
-direction. Lab-specific TESTS (`InstanceTest`'s descriptor table) stay in
-`spinalhdl/src/test` for now; they would move with the setup if it gets a
-repository of its own.
+and designs pick one (step 5), and the ECP5 family builds the PLLs its
+designs define (step 6). Next, the other families' builders: Altera's altpll
+(which also gives the MAX1000 a real PLL and the generic EP4CE6 one at all,
+and makes `DramPllGen` and `pll_125` design definitions), Xilinx's clk_wiz
+(the MIG designs' reference clocks too), and Cyclone V's. Then the last
+`PllType`s leave `Board`, which is the only code in `Board.scala` that needs
+JOP, and the hardware layer becomes an sbt subproject that does not depend on
+JOP, so the compiler holds the direction. Lab-specific TESTS (`InstanceTest`'s
+descriptor table) stay in `spinalhdl/src/test` for now; they would move with
+the setup if it gets a repository of its own.
 
 <a id="item-174"></a>
 

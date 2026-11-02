@@ -57,3 +57,33 @@ case class PllSpec(inputMhz: Int, outputs: Seq[PllOutput]) {
   def of(role: PllRole): Option[PllOutput] = outputs.find(_.role == role)
   def systemMhz: Option[Int] = of(PllRole.System).map(_.mhz)
 }
+
+/**
+ * A design's PLL (status item 173): the board clock it takes, what it must
+ * produce, and the names its IP and its netlist instance get. The DESIGN owns
+ * this -- which clocks JOP or an exerciser runs on is the design's choice, not
+ * the board's -- and the FPGA family builds it (`FpgaFamily.pll`), the same
+ * mechanism for every design on that family.
+ *
+ * @param reference a clock the design's assembly offers, by name
+ * @param outputs   what it must produce, in the order the IP numbers them
+ * @param module    the IP's module name: the file the flow generates
+ *                  (`PllGenMain`) and synthesises
+ * @param instance  the netlist instance name, STATED so that constraints can
+ *                  name it (`PllType.instanceName` says why not inferred)
+ */
+case class PllDefinition(reference: String, outputs: Seq[PllOutput], module: String, instance: String) {
+  require(outputs.nonEmpty, s"PLL $module: a PLL with no outputs is not a PLL")
+
+  /** The spec the family builds, fed from `clock`, which must be the reference. */
+  def spec(clock: BoardClock): PllSpec = {
+    require(clock.name == reference, s"PLL $module takes $reference, not ${clock.name}")
+    val hz = clock.freq.toBigDecimal
+    require(hz % 1000000 == 0,
+      s"PLL $module: clock ${clock.name} is ${hz / 1000000} MHz, and a PllSpec takes whole megahertz")
+    PllSpec((hz / 1000000).toIntExact, outputs)
+  }
+
+  /** The spec on `assembly`, which must offer the reference clock. */
+  def spec(assembly: SystemAssembly): PllSpec = spec(assembly.clock(reference))
+}

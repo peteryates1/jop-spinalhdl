@@ -52,10 +52,10 @@ case class SdSpiExerciserTop(
 
   noIoPrefix()
 
-  // PLL from the BOARD, not a hardcoded vendor primitive. MemoryType.BRAM
-  // selects the no-DRAM branch, which returns exactly what this design needs:
-  // a system clock and a locked signal.
-  val pllResult = Pll.create(board, jop.config.MemoryType.BRAM, io.clk_in)
+  // PLL by the board's FPGA family, not a hardcoded vendor primitive: a system
+  // clock at clkMhz and a locked signal (Pll.forDesign; MemoryType.BRAM is the
+  // no-DRAM branch where the board still declares the PLL).
+  val pllResult = Pll.forDesign(board, jop.config.MemoryType.BRAM, io.clk_in, clkMhz)
   val sysClk = pllResult.systemClk.get
   val pllLocked = pllResult.locked
 

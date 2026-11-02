@@ -522,7 +522,8 @@ through yosys and nextpnr:
   because the data cells take the registers one raw cycle late. Rgmii100Test
   runs its TX check on both vendors' cells.
 - **Clocks:** TX on the i5 PLL's third output, 50 MHz
-  (`PllType.LatticeEcp5I5`; ecppll keeps the validated 40 MHz dividers and
+  (`JopConfig.colorlightI5Pll`, built by the ECP5 family -- the board's
+  `PllType.LatticeEcp5I5` until 2026-11-02; ecppll keeps the validated 40 MHz dividers and
   adds CLKOS2 = 600/12). RXC is constrained at 25 MHz, not 125: the PHY runs
   it at 125 MHz only while still at 1000BASE-T, before `EthDriver.init`
   drops it to 100 Mb/s, and all that time MacEth holds its receive domain in

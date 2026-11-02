@@ -37,40 +37,6 @@ class WukongClkWizBlackBox(instanceName: String = "bram_clk") extends BlackBox {
 }
 
 /**
- * Colorlight i5 PLL BlackBox — Lattice ECP5 EHXPLLL.
- *
- *   clkin   25 MHz board oscillator (P3)
- *   clkout0 40 MHz JOP system clock
- *   clkout1 40 MHz SDRAM clock, shifted 315 deg (-3.1 ns), unused by the BRAM
- *           preset
- *   clkout2 50 MHz RGMII TX clock (jop.io.Rgmii100.TxClockMhz), unused by a
- *           build without Ethernet
- *
- * The Verilog wrapper is GENERATED at build time by `jop.generate.PllGenMain`
- * into build/<config>/ip/pll_jop_i5.v; it used to be a tracked file in
- * fpga/colorlight-i5/, which is why an older version of this comment named that
- * path. It is `ecppll` output verbatim either way, so the divider set is one
- * the tool guarantees will lock:
- * Fpfd = 25/5 = 5 MHz, Fvco = 5 * 8 * 15 = 600 MHz (legal band 400-800),
- * CLKOP = 600/15 = 40 MHz, CLKOS2 = 600/12 = 50 MHz. Hand-picked dividers are the usual way to get an
- * illegal Fvco and a PLL that never asserts LOCK, which parks the whole core
- * in reset with no other symptom.
- */
-case class I5Pll() extends BlackBox {
-  setDefinitionName("pll_jop_i5")
-
-  val io = new Bundle {
-    val clkin   = in Bool()
-    val clkout0 = out Bool()
-    val clkout1 = out Bool()
-    val clkout2 = out Bool()
-    val locked  = out Bool()
-  }
-
-  noIoPrefix()
-}
-
-/**
  * Unified PLL result -- all clock outputs from the PLL subsystem.
  *
  * Different boards produce different subsets of clocks:
@@ -98,7 +64,9 @@ case class PllResult(
 )
 
 /**
- * PLL factory — delegates to PllType.create().
+ * PLL factory. A PLL the DESIGN defines is built by its FPGA family's builder
+ * (`build`, status item 173); a board whose family has no builder yet still
+ * declares its own (`create`, delegating to PllType.create()).
  */
 object Pll {
 
@@ -107,4 +75,39 @@ object Pll {
       throw new RuntimeException(s"Board '${board.name}' has no pllType defined"))
     pllType.create(memType, inputClock, systemIndex)
   }
+
+  /** The PLL `d` defines, fed from `clock` (its reference) on `inputClock`,
+    * built by `family`'s builder; its outputs are handed out by role. */
+  def build(d: PllDefinition, family: FpgaFamily, clock: BoardClock, inputClock: Bool): PllResult = {
+    val vendor = family.pll.getOrElse(throw new IllegalArgumentException(
+      s"PLL ${d.module}: $family has no PLL builder yet, so its boards still declare their PLLs"))
+    val spec   = d.spec(clock)
+    val clocks = vendor.instantiate(spec, d.module, d.instance, inputClock)
+    def out(r: PllRole): Option[Bool] =
+      Some(spec.outputs.indexWhere(_.role == r)).filter(_ >= 0).map(clocks.outputs)
+    PllResult(systemClk = out(PllRole.System), locked = clocks.locked, sdramClk = out(PllRole.Sdram),
+      migSysClk = out(PllRole.MigSys), migRefClk = out(PllRole.MigRef), ethClk = out(PllRole.Eth),
+      vgaClk = out(PllRole.Vga))
+  }
+
+  /** The PLL of a design that wants only a system clock, at `systemMhz`, from
+    * the board's one clock -- the exercisers. Where the board's FPGA family
+    * has a builder, that is the design's PLL; elsewhere the board's own, which
+    * must run at `systemMhz` until its family is converted. */
+  def forDesign(board: Board, memType: MemoryType, inputClock: Bool, systemMhz: Int): PllResult =
+    if (board.pllType.isDefined) create(board, memType, inputClock)
+    else {
+      require(memType == MemoryType.BRAM,
+        s"Board '${board.name}' declares no PLL; a $memType design must define its own (PllDefinition)")
+      val family = board.fpga.map(_.family).getOrElse(throw new IllegalArgumentException(
+        s"Board '${board.name}' carries no FPGA"))
+      val clock = board.clocks match {
+        case Seq(only) => only
+        case cs => throw new IllegalArgumentException(
+          s"Board '${board.name}' offers ${cs.size} clocks (${cs.map(_.name).mkString(", ")}); " +
+            "a design on it must define its PLL and name the one it takes")
+      }
+      build(PllDefinition(clock.name, Seq(PllOutput(PllRole.System, systemMhz)),
+        module = s"pll_sys_${systemMhz}mhz", instance = "pll"), family, clock, inputClock)
+    }
 }

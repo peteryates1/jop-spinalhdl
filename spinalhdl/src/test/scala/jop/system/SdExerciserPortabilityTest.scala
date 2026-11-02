@@ -12,16 +12,19 @@ import jop.config._
  * CLOCK, not by anything to do with SD. Its SD pins already resolved on all
  * three boards (see BoardDesignTest); it was the clock that could not move.
  *
- * Taking the PLL from `Board.pllType` fixes that, and this test is what keeps
+ * Taking the PLL from `Board.pllType` fixed that, and this test is what keeps
  * it fixed. A future top that reaches for a vendor primitive directly will pass
- * on its home board and fail here.
+ * on its home board and fail here. Since 2026-11-02 (status item 173) a board
+ * whose FPGA family has a PLL builder declares no PLL: on the i5 the exerciser
+ * defines its own -- CLK25M in, its 40 MHz out -- and the ECP5 family builds
+ * it, instead of borrowing JOP's three-output pll_jop_i5.
  */
 class SdExerciserPortabilityTest extends AnyFunSuite {
 
   private val boards: Seq[(String, Board, Int, String)] = Seq(
     ("EP4CGX150 (Altera Cyclone IV GX)", Board.QmtechEP4CGX150, 80,  "dram_pll"),
     ("Wukong (Xilinx Artix-7)",          Board.WukongXC7A100T, 100,  "bram_clk"),
-    ("Colorlight i5 (Lattice ECP5)",     Board.ColorlightI5,    40,  "pll_jop_i5"))
+    ("Colorlight i5 (Lattice ECP5)",     Board.ColorlightI5,    40,  "pll_sys_40mhz"))
 
   for ((label, board, mhz, primitive) <- boards) {
     test(s"SD SPI exerciser elaborates on $label") {

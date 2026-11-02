@@ -3,13 +3,15 @@ package jop.generate
 import jop.config._
 
 /**
- * Generate a design's PLL IP from the spec its board declares.
+ * Generate a design's PLL IP from the definition the design gives it, with
+ * its FPGA family's builder (status item 173).
  *
  *   sbt "runMain jop.generate.PllGenMain <preset> --module <name> --out <dir>"
  *
- * Only for boards whose PllType declares a spec. The rest still carry
- * hand-written IP and say so by declaring none, which is why this refuses
- * rather than inventing a default.
+ * Only for designs that define their PLL, on a family that has a builder. The
+ * rest still carry IP made by hand or by the board's flow, which is why this
+ * refuses rather than inventing a default. `--module` is the file name the
+ * flow synthesises; it must be the module the design's definition names.
  */
 object PllGenMain extends App {
   import jop.system.JopTopVerilog
@@ -30,17 +32,16 @@ object PllGenMain extends App {
   }.map(_._1)
 
   val config = JopTopVerilog.resolvePreset(preset, cfgArgs)
-  val board  = config.assembly.fpgaBoard
-  val spec = board.pllType.flatMap(_.spec).getOrElse(sys.error(
-    s"board '${board.name}' declares no PLL spec -- its IP is still hand-written"))
+  val pll = config.system.pll.getOrElse(sys.error(
+    s"$preset defines no PLL -- its board still declares one, with IP made by hand or by the board's flow"))
+  require(module == pll.module,
+    s"--module $module, but $preset's PLL is ${pll.module}: the flow would synthesise a file the design does not instantiate")
+  val vendor = config.fpgaFamily.pll.getOrElse(sys.error(
+    s"${config.fpgaFamily} has no PLL builder yet -- its IP is committed, " +
+      "and PllSpecConsistencyTest checks it against the spec"))
+  val spec = pll.spec(config.assembly)
 
-  val vendor: PllVendor = config.fpgaFamily.manufacturer match {
-    case Manufacturer.Lattice => LatticeEcpPll
-    case m => sys.error(s"no PLL generator for $m yet -- its IP is committed, " +
-                        s"and PllSpecConsistencyTest checks it against the spec")
-  }
-
-  val path = vendor.generate(spec, module, outDir)
-  println(s"Wrote $path  (${spec.inputMhz} MHz in, " +
+  val path = vendor.generate(spec, pll.module, outDir)
+  println(s"Wrote $path  (${pll.reference} ${spec.inputMhz} MHz in, " +
           spec.outputs.map(o => s"${o.role} ${o.mhz}MHz@${o.phaseDeg}deg").mkString(", ") + ")")
 }

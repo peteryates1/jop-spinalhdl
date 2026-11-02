@@ -97,7 +97,7 @@ class ColorlightDbI5EthTest extends AnyFunSuite {
   }
 
   test("the i5's PLL gives RGMII its 50 MHz") {
-    val spec = cfg.assembly.fpgaBoard.pllType.flatMap(_.spec).get
+    val spec = cfg.system.pll.getOrElse(fail("colorlightDbI5Eth defines no PLL")).spec(cfg.assembly)
     assert(spec.of(PllRole.Eth).map(_.mhz).contains(jop.io.Rgmii100.TxClockMhz), spec)
     assert(JopTopVerilog.configSummary("colorlightDbI5Eth", cfg).contains("Eth clock:   50 MHz"))
   }

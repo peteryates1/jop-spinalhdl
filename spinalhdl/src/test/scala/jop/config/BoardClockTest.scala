@@ -108,16 +108,22 @@ class BoardClockTest extends AnyFunSuite {
     assert(wrong.isEmpty, wrong.mkString("\n", "\n", ""))
   }
 
-  test("a generated PLL's input is the frequency of its board's clock") {
+  test("a generated PLL's input is the frequency of the board clock it takes") {
     assert(same(BigDecimal(DramPllGen.inputMhz), mhz(clockOf("qmtech-ep4cgx150", "CLK50M"))))
-    val specs = for (b <- boards.values.toSeq; t <- b.pllType; s <- t.spec) yield b -> s
-    assert(specs.nonEmpty, "no board's PLL declares a spec any more; this check covers nothing")
-    for ((b, s) <- specs) {
-      // A spec names no clock; until the designs' PLL definitions do, it can
-      // only be read against a board that has one.
-      assert(b.clocks.size == 1, s"${b.name} offers ${b.clocks.size} clocks; its PLL spec cannot say which it takes")
-      assert(same(BigDecimal(s.inputMhz), mhz(b.clocks.head)),
-        s"${b.name}'s PLL spec takes ${s.inputMhz} MHz, its ${b.clocks.head.name} is ${mhz(b.clocks.head)}")
+    // A design's PLL definition names its clock, and its spec is that clock's
+    // frequency by construction (PllDefinition.spec); what can still go wrong
+    // is naming a clock the assembly lacks, or another than the design takes in.
+    val defined = for {
+      m <- JopConfig.getClass.getMethods.toSeq
+      if m.getParameterCount == 0 && m.getReturnType == classOf[JopConfig]
+      cfg = m.invoke(JopConfig).asInstanceOf[JopConfig]
+      s <- cfg.systems; p <- s.pll
+    } yield (m.getName, cfg, p)
+    assert(defined.size >= 4, s"only ${defined.size} designs define their PLL")
+    for ((n, cfg, p) <- defined) {
+      val c = cfg.assembly.clock(p.reference)
+      assert(c == cfg.inputClock, s"$n: its PLL takes ${c.name}, the design takes in ${cfg.inputClock.name}")
+      assert(same(BigDecimal(p.spec(cfg.assembly).inputMhz), mhz(c)), n)
     }
   }
 
