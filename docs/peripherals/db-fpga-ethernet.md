@@ -128,7 +128,7 @@ Three clock domains, asynchronous to each other:
 | Clock | Source | Frequency | Domain |
 |-------|--------|-----------|--------|
 | system | DRAM PLL output c1 | 80 MHz on `ep4cgx150DbFull` | CPU, memory, I/O read mux |
-| TX | GMII: the FPGA's Ethernet PLL (`pll_125.v`, 50 MHz × 5/2), driven out on `e_gtxc`. MII: the PHY, on `e_txc` | 125 / 25 MHz | `MacTxBuffer` pop side, PHY TX |
+| TX | GMII: the design's Ethernet PLL (`pll_125`, `JopConfig.gmii125Pll`, 50 MHz × 5/2), driven out on `e_gtxc`. MII: the PHY, on `e_txc` | 125 / 25 MHz | `MacTxBuffer` pop side, PHY TX |
 | RX | the PHY, on `e_rxc` | 125 / 25 MHz | `MacRxBuffer` push side, byte packing |
 
 The dual-port RAMs in `MacRxBuffer` and `MacTxBuffer` cross between the PHY

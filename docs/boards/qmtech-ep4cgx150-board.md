@@ -38,7 +38,9 @@ Schematic: `QMTECH_EP4CGX150DF27_V2.pdf` (core board V2)
     60/50/36 MHz at 4/8/12 cores
   - c1 (SDR): the same frequency, -3000 ps -- SDRAM clock output
   - c2 (VGA designs): 25 MHz -- VGA pixel clock (640x480@60Hz)
-- **Ethernet PLL** (`pll_125`): 50 MHz → 125 MHz for GMII TX clock
+- **Ethernet PLL** (`pll_125`, instance `ethPll`): 50 MHz → 125 MHz for the
+  GMII TX clock -- a GMII design's second PLL (`JopConfig.gmii125Pll`), since
+  125 and 80 MHz cannot share a VCO; MII designs have none
 
 The -3000 ps is a delay, not an angle, at every clock: it sets the SDRAM
 chip's setup/hold margins, and a sweep found -4000 ps made no difference.

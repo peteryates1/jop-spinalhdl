@@ -240,7 +240,7 @@ class JopConfigTest extends AnyFunSuite {
     assert(custom.system.clkFreq == (100 MHz))
     assert(custom.assembly.name == "qmtech-ep4cgx150-db-v4")  // unchanged
     // The PLL moves with the clock: system and SDRAM outputs, phase kept.
-    assert(custom.system.pll.get.outputs ==
+    assert(custom.system.plls.head.outputs ==
       Seq(PllOutput(PllRole.System, 100), PllOutput(PllRole.Sdram, 100, phasePs = -3000)))
   }
 

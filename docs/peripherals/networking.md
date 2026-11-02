@@ -64,7 +64,7 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 │    └── Rgmii100  (RGMII at 100 Mb/s, Colorlight i9+ only)       │
 ├──────────────────────────────────────────────────────────────────┤
 │  FPGA Hardware                                                   │
-│    ├── pll_125.v    (125 MHz GMII TX clock, Altera boards)      │
+│    ├── pll_125      (125 MHz GMII TX clock, Altera; generated)  │
 │    ├── RX capture in I/O registers (generated constraints)      │
 │    └── PHY: RTL8211EG, 88E1111 or B50612D (GMII/MII/RGMII)      │
 └──────────────────────────────────────────────────────────────────┘
@@ -117,8 +117,7 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 
 | File | Purpose |
 |------|---------|
-| `fpga/qmtech-ep4cgx150-sdram/pll_125.v` | Altera altpll: 50 MHz → 125 MHz (GMII TX clock) |
-| `fpga/a-e115fb-ddr2/pll_125.v` | the same from the A-E115FB's 25 MHz |
+| `build/<config>/ip/pll_125.v` | Altera altpll, 125 MHz GMII TX clock: a GMII design's second PLL (`JopConfig.gmii125Pll`), 50 MHz × 5/2 on the EP4CGX150, 25 MHz × 5 on the A-E115FB, written by the ALTPLL builder (status item 173). The hand-written board files it replaced are gone |
 | `build/<config>/quartus/*.sdc` and `*.qsf`; `build/<config>/vivado/*.xdc` | Pins, clocks, clock groups and RX capture, generated from the preset (`TimingConstraints`, `QsfGenerator`, `XdcGenerator`); no hand-written Ethernet constraints remain |
 
 ### Test Applications
@@ -668,8 +667,8 @@ nothing else different.
 `ae115fbDdr2Eth` (DDR2, 75 MHz, console 2 Mbaud on the CH340). The bottom
 board's Marvell 88E1111, GMII on the core board's JTAG-side connector, pins from
 `docs/boards/ep4ce115-ddr2-board.md`. The connector carries no RX_ER or TX_ER,
-so the preset sets `noErPins`; GTX_CLK comes from `fpga/a-e115fb-ddr2/pll_125.v`,
-25 MHz to 125 MHz. Quartus 18.1, for the DDR2 PHY.
+so the preset sets `noErPins`; GTX_CLK comes from the design's `pll_125`
+(`JopConfig.gmii125Pll`), 25 MHz to 125 MHz. Quartus 18.1, for the DDR2 PHY.
 
 ```bash
 make -C fpga/a-e115fb-ddr2 eth

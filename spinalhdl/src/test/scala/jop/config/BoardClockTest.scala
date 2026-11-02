@@ -47,8 +47,6 @@ class BoardClockTest extends AnyFunSuite {
   private case class Source(path: String, inputs: String => Seq[BigDecimal], board: String, clock: String)
 
   private val sources = Seq(
-    Source("fpga/qmtech-ep4cgx150-sdram/pll_125.v", altpll, "qmtech-ep4cgx150", "CLK50M"),
-    Source("fpga/a-e115fb-ddr2/pll_125.v", altpll, "a-e115fb", "CLK25M"),
     // The DDR2 controller's own PLL, read from its committed MegaWizard
     // variation: the generated IP under ip/ is not in the tree.
     Source("fpga/a-e115fb-ddr2/ip-src/ddr2_64bit.v", megahertz(memPhyRef), "a-e115fb", "CLK25M"),
@@ -110,7 +108,7 @@ class BoardClockTest extends AnyFunSuite {
       m <- JopConfig.getClass.getMethods.toSeq
       if m.getParameterCount == 0 && m.getReturnType == classOf[JopConfig]
       cfg = m.invoke(JopConfig).asInstanceOf[JopConfig]
-      s <- cfg.systems; p <- s.pll
+      s <- cfg.systems; p <- s.plls
     } yield (m.getName, cfg, p)
     assert(defined.size >= 4, s"only ${defined.size} designs define their PLL")
     for ((n, cfg, p) <- defined) {
@@ -131,8 +129,7 @@ class BoardClockTest extends AnyFunSuite {
 
   test("every PLL file a board names is checked or excused") {
     val named = boards.values.toSeq.flatMap { b =>
-      b.pllType.flatMap(_.ipFile).collect { case PllIpFile.Static(p) => p }.toSeq ++
-        b.ethIpFiles.filter(_.endsWith(".v"))
+      b.pllType.flatMap(_.ipFile).collect { case PllIpFile.Static(p) => p }.toSeq
     }
     val known = sources.map(_.path).toSet
     assert(named.nonEmpty)

@@ -186,13 +186,11 @@ object TimingConstraints {
     // MII: the PHY drives TX_CLK as well as RX_CLK. GMII transmits on the
     // Ethernet PLL, RGMII on the board PLL's Ethernet output.
     val mii = hasEth && !ethParam("gmii") && !ethParam("rgmii")
-    // The Ethernet PLL exists only where JopTop instantiates it -- a GMII design
-    // on a board that has one. Naming it in an MII design's groups would name a
-    // clock nothing creates, and Quartus drops the whole set_clock_groups.
-    val ethGroup =
-      if (hasEth && ethParam("gmii") && board.hasEthPll)
-        Seq("ethPll|altpll_component|auto_generated|pll1|clk[0]")
-      else Nil
+    // The GMII transmit clock, named by role like the rest: the 125 MHz PLL a
+    // GMII design defines (status item 173). An MII design defines none, so
+    // its groups cannot name a clock nothing creates -- which Quartus answers
+    // by dropping the whole set_clock_groups.
+    val ethGroup = if (hasEth && ethParam("gmii")) designPll(PllRole.Eth) else Nil
     val phyGroup = if (hasEth) Seq("e_rxc") else Nil
     val phyTxGroup = if (mii) Seq("e_txc") else Nil
     // A GROUP THAT NAMES A CLOCK NOTHING CREATES IS DROPPED. This file put

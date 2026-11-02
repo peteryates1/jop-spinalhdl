@@ -129,8 +129,8 @@ object LatticeEcpPll extends PllVendor {
  * fails there. What the file states is only what the spec states: each
  * output's multiply/divide (reduced), its phase in picoseconds, the input
  * period. Everything else is the parameter set of the hand-written
- * `pll_125.v`, which ran GMII on the A-E115FB and the EP4CGX150;
- * AlteraAltpllTest holds the two to each other.
+ * `pll_125.v` that ran GMII on the A-E115FB and the EP4CGX150; the files are
+ * generated now, and AlteraAltpllTest holds the builder to that set.
  *
  * This replaces template-patching (DramPllGen rewrote five generics of a
  * 441-line MegaWizard file), which froze the output count and order in the

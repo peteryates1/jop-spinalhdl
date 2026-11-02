@@ -22,7 +22,7 @@ class PllDefinitionTest extends AnyFunSuite {
   test("the i5's PLL is its designs', not its board's") {
     assert(Board.ColorlightI5.pllType.isEmpty, "Board.ColorlightI5 still declares a PllType")
     for (d <- i5Designs) {
-      val p = d.system.pll.getOrElse(fail(s"${d.designName} defines no PLL"))
+      val p = d.system.plls.headOption.getOrElse(fail(s"${d.designName} defines no PLL"))
       assert(p.reference == "CLK25M" && p.module == "pll_jop_i5" && p.instance == "i5Pll")
       // The hardware-validated PLL (PllVendorTest), unchanged by the move.
       assert(p.spec(d.assembly) == PllSpec(25, Seq(
@@ -48,7 +48,7 @@ class PllDefinitionTest extends AnyFunSuite {
     val base = JopConfig.ae115fbDdr2
     val pll = PllDefinition("CLK100M", Seq(PllOutput(PllRole.System, 75)), module = "m", instance = "i")
     val e = intercept[IllegalArgumentException](
-      base.copy(systems = Seq(base.system.copy(pll = Some(pll)))))
+      base.copy(systems = Seq(base.system.copy(plls = Seq(pll)))))
     assert(e.getMessage.contains("CLK100M") && e.getMessage.contains("CLK25M"), e.getMessage)
   }
 

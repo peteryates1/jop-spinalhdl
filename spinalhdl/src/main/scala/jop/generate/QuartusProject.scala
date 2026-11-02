@@ -205,11 +205,6 @@ object QuartusProject {
     config.assembly.boards.flatMap(_.constraintFiles).distinct
       .foreach(f => sb.append(s"source ${up(f)}\n"))
 
-    // Ethernet IP only when the DESIGN drives Ethernet -- the board has the PHY
-    // and its PLL whether or not this configuration uses them.
-    val hasEth = config.devices.values.exists(_.deviceType.key == DeviceType.Ethernet.key)
-    if (hasEth) config.assembly.boards.flatMap(_.ethIpFiles).distinct
-      .foreach(f => g(ipAssignment(f), up(f)))
     // SDR needs the tri-state SDRAM controller; every Altera build needs the
     // LPM ROM/RAM the microcode store is built from.
     if (memType.contains(MemoryType.SDRAM_SDR)) {

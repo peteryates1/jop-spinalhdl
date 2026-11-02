@@ -32,10 +32,11 @@ object PllGenMain extends App {
   }.map(_._1)
 
   val config = JopTopVerilog.resolvePreset(preset, cfgArgs)
-  val pll = config.system.pll.getOrElse(sys.error(
-    s"$preset defines no PLL -- its board still declares one, with IP made by hand or by the board's flow"))
-  require(module == pll.module,
-    s"--module $module, but $preset's PLL is ${pll.module}: the flow would synthesise a file the design does not instantiate")
+  val pll = config.system.plls.find(_.module == module).getOrElse(sys.error(
+    if (config.system.plls.isEmpty)
+      s"$preset defines no PLL -- its board still declares one, with IP made by hand or by the board's flow"
+    else s"--module $module, but $preset's PLLs are ${config.system.plls.map(_.module).mkString(", ")}: " +
+      "the flow would synthesise a file the design does not instantiate"))
   val vendor = config.fpgaFamily.pll.getOrElse(sys.error(
     s"${config.fpgaFamily} has no PLL builder yet -- its IP is committed, " +
       "and PllSpecConsistencyTest checks it against the spec"))

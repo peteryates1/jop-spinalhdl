@@ -78,15 +78,24 @@ case class JopSystem(
   coreConfig: JopCoreConfig = JopCoreConfig(),
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None,
   devices: Map[String, DeviceInstance] = Map.empty,
-  /** The PLL this system's clocks come from, defined by the DESIGN and built
+  /** The PLLs this system's clocks come from, defined by the DESIGN and built
     * by its FPGA family (status item 173). None while the board's family has
-    * no builder: the board still declares its PLL (`Board.pllType`). */
-  pll: Option[PllDefinition] = None
+    * no builder (the board still declares its PLL, `Board.pllType`), or where
+    * a DRAM PHY makes the system clock (the A-E115FB's DDR2). Usually one;
+    * two where an output cannot share the system clock's VCO -- GMII's
+    * 125 MHz beside 80 needs 2000 MHz, past Cyclone IV's 1300. A design asks
+    * for clocks by ROLE, and each role comes from one output. */
+  plls: Seq[PllDefinition] = Nil
 ) {
   require(cpuCnt >= 1, s"System '$name': cpuCnt must be at least 1")
+  private def twice(xs: Seq[Any]) = xs.diff(xs.distinct).distinct
+  require(twice(plls.flatMap(_.outputs.map(_.role))).isEmpty,
+    s"System '$name': its PLLs give ${twice(plls.flatMap(_.outputs.map(_.role))).mkString(", ")} more than once")
+  require(twice(plls.map(_.module)).isEmpty && twice(plls.map(_.instance)).isEmpty,
+    s"System '$name': two PLLs share a module or an instance name: ${plls.map(p => p.module + "/" + p.instance)}")
   // clkFreq feeds the UART divider and the timers, so a PLL running the system
   // at another frequency detunes them -- which reads as a dead board.
-  for (p <- pll; o <- p.outputs.find(_.role == PllRole.System))
+  for (p <- plls; o <- p.outputs.find(_.role == PllRole.System))
     require(BigDecimal(o.mhz) * 1000000 == clkFreq.toBigDecimal,
       s"System '$name' is built for ${clkFreq.toBigDecimal / 1000000} MHz, " +
         s"but its PLL ${p.module} makes the system clock ${o.mhz} MHz")
@@ -94,10 +103,10 @@ case class JopSystem(
     require(pcc.length == cpuCnt,
       s"System '$name': perCoreConfigs length (${pcc.length}) must match cpuCnt ($cpuCnt)"))
 
-  /** This system at `mhz`, its PLL with it (`PllDefinition.atSystemClock`).
+  /** This system at `mhz`, its PLLs with it (`PllDefinition.atSystemClock`).
     * A preset derived at another clock -- `ep4cgx150Smp(8, 50)` -- would
     * otherwise keep its base's PLL and fail the check above. */
-  def atClock(mhz: Int): JopSystem = copy(clkFreq = mhz MHz, pll = pll.map(_.atSystemClock(mhz)))
+  def atClock(mhz: Int): JopSystem = copy(clkFreq = mhz MHz, plls = plls.map(_.atSystemClock(mhz)))
 
   // --- Derived paths from boot mode ---
   // The layout itself lives in MicrocodePaths, which is the only place it is
@@ -398,13 +407,13 @@ case class JopConfig(
 ) extends BoardDesign {
   require(systems.nonEmpty, "At least one JopSystem required")
   // One clock input today: a system's PLL takes the clock the design takes in.
-  for (s <- systems; p <- s.pll)
+  for (s <- systems; p <- s.plls)
     require(p.reference == inputClock.name,
       s"System '${s.name}': its PLL ${p.module} takes ${p.reference}, but the design takes in " +
         s"${inputClock.name}; a PLL on another board clock needs a second clock input, " +
         "which the generated top does not have yet")
 
-  override def plls: Seq[PllDefinition] = systems.flatMap(_.pll)
+  override def plls: Seq[PllDefinition] = systems.flatMap(_.plls)
 
   // --- Single-system convenience ---
   def system: JopSystem = {
@@ -699,6 +708,16 @@ object JopConfig {
         (if (vga) Seq(PllOutput(PllRole.Vga, 25)) else Nil),
       module = "ep4cgx150_pll", instance = "pll")
 
+  /**
+   * The GMII transmit clock's own PLL, 125 MHz from the clock the design takes
+   * in (status item 173): what the boards' hand-written pll_125.v were. Its
+   * own PLL because 125 MHz cannot share the system clock's VCO (80 and 125
+   * from 50 need 2000 MHz; Cyclone IV's VCO stops at 1300). Named `ethPll`,
+   * as the SDC has always named it.
+   */
+  def gmii125Pll(reference: String): PllDefinition =
+    PllDefinition(reference, Seq(PllOutput(PllRole.Eth, 125)), module = "pll_125", instance = "ethPll")
+
   def ep4cgx150Serial = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
     systems = Seq(JopSystem(
@@ -706,7 +725,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      pll = Some(ep4cgx150Pll(80, sdram = true)),
+      plls = Seq(ep4cgx150Pll(80, sdram = true)),
       // hasBackendFill: use the SDR backend's fast block-fill for GC zeroing
       // (~full SDR bandwidth) instead of the controller's per-word loop.
       // hasCardTable: HW card-marking barrier (generational GC, Stage 1), 16KB.
@@ -759,7 +778,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      pll = Some(ep4cgx150Pll(80, sdram = true, vga = true)),
+      plls = Seq(ep4cgx150Pll(80, sdram = true, vga = true)),
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(hasBackendFill = true, hasCardTable = true,
           cardTableBudgetBytes = 16 * 1024,
@@ -791,7 +810,9 @@ object JopConfig {
       systems = Seq(base.system.copy(devices = devs ++ Map(
         "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("RP2040")),
         "eth" -> devs("eth").copy(params = Map("gmii" -> true, "phyDataWidth" -> 8, "rxCapture" -> true)),
-        "sdNative" -> devs("sdNative").copy(params = Map("noCardDetect" -> true))))))
+        "sdNative" -> devs("sdNative").copy(params = Map("noCardDetect" -> true))),
+      // GMII transmits on its own 125 MHz PLL.
+      plls = base.system.plls :+ gmii125Pll("CLK50M"))))
   }
 
   /** `ep4cgx150DbV5Eth` with Ethernet at 100 Mb/s: MII, four data lines at
@@ -804,7 +825,9 @@ object JopConfig {
     val base = ep4cgx150DbV5Eth
     val devs = base.system.devices
     base.copy(systems = Seq(base.system.copy(devices = devs +
-      ("eth" -> devs("eth").copy(params = Map("phyDataWidth" -> 4, "rxCapture" -> true))))))
+      ("eth" -> devs("eth").copy(params = Map("phyDataWidth" -> 4, "rxCapture" -> true))),
+      // MII: the PHY drives TX_CLK, so not the GMII design's 125 MHz PLL.
+      plls = base.system.plls.filterNot(_.outputs.exists(_.role == PllRole.Eth)))))
   }
 
   /**
@@ -1026,7 +1049,7 @@ object JopConfig {
       // against their 32, and the read mux across the array adds ~1.2 ns: this
       // preset still missed by 0.431 ns at 60 when the others had cleared it.
       clkFreq = 50 MHz,
-      pll = Some(ep4cgx150Pll(50, sdram = false)),
+      plls = Seq(ep4cgx150Pll(50, sdram = false)),
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 512 * 1024),
         memoryStyle = Some(MemoryStyle.Generic)),
@@ -1098,7 +1121,7 @@ object JopConfig {
       // 60, for the read-data path described on ep4cgx150Bram. 2 Mbaud divides
       // 60 MHz exactly (30), so the console needs no scaling workaround.
       clkFreq = 60 MHz,
-      pll = Some(ep4cgx150Pll(60, sdram = false)),
+      plls = Seq(ep4cgx150Pll(60, sdram = false)),
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
@@ -1194,7 +1217,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
-      pll = Some(ep4cgx150Pll(100, sdram = true)),
+      plls = Seq(ep4cgx150Pll(100, sdram = true)),
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
@@ -1376,7 +1399,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      pll = Some(ep4cgx150Pll(80, sdram = true)),
+      plls = Seq(ep4cgx150Pll(80, sdram = true)),
       coreConfig = JopCoreConfig(
         supersetJumpTable = JumpTableInitData.serial),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
@@ -1405,7 +1428,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      pll = Some(sdram80Pll("CLK12M", "max1000_pll")),
+      plls = Seq(sdram80Pll("CLK12M", "max1000_pll")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("FT2232H"))))))
 
   /** Generic EP4CE6 — SDR SDRAM, no caches (6K LEs too small for O$/A$) */
@@ -1416,7 +1439,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      pll = Some(sdram80Pll("CLK50M", "ep4ce6_pll")),
+      plls = Seq(sdram80Pll("CLK50M", "ep4ce6_pll")),
       coreConfig = JopCoreConfig(memConfig = noCacheMemConfig),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
@@ -1598,7 +1621,7 @@ object JopConfig {
       memory = "bram",
       bootMode = BootMode.Serial,
       clkFreq = 40 MHz,
-      pll = Some(colorlightI5Pll),
+      plls = Seq(colorlightI5Pll),
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 64 * 1024),
         // Matches colorlightI5Sdram. Keeping the two i5 cores identical apart
@@ -1643,7 +1666,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 40 MHz,
-      pll = Some(colorlightI5Pll),
+      plls = Seq(colorlightI5Pll),
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(
         hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
         // idiv/irem: same as every other hardware preset here.
@@ -2111,7 +2134,9 @@ object JopConfig {
     base.copy(systems = Seq(base.system.copy(devices = base.system.devices +
       ("eth" -> DeviceInstance(DeviceType.Ethernet,
         params = Map("gmii" -> true, "phyDataWidth" -> 8, "noErPins" -> true, "rxCapture" -> true),
-        devicePart = Some("88E1111"))))))
+        devicePart = Some("88E1111"))),
+      // Only the GMII transmit clock's PLL: the DDR2 PHY makes the system clock.
+      plls = Seq(gmii125Pll("CLK25M")))))
   }
 
   /** A-E115FB EP4CE115 + 1 GB DDR2 — SMP.

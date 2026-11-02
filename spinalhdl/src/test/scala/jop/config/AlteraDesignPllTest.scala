@@ -25,7 +25,7 @@ class AlteraDesignPllTest extends AnyFunSuite {
     assert(Board.MAX1000.pllType.isEmpty, "the MAX1000 still declares a PLL")
     assert(Board.GenericEP4CE6.pllType.isEmpty, "the EP4CE6 still declares a PLL")
     for ((name, cfg, want) <- small) {
-      assert(cfg.system.pll.contains(want), s"$name defines ${cfg.system.pll}")
+      assert(cfg.system.plls == Seq(want), s"$name defines ${cfg.system.plls}")
       assert(cfg.plls == Seq(want), name)
     }
   }
@@ -111,7 +111,9 @@ class AlteraDesignPllTest extends AnyFunSuite {
           (if (s.memory == "sdr") Seq(PllOutput(PllRole.Sdram, mhz, phasePs = -3000)) else Nil) ++
           (if (s.effectiveDevices.values.exists(isVga)) Seq(PllOutput(PllRole.Vga, 25)) else Nil),
         module = "ep4cgx150_pll", instance = "pll")
-      assert(s.pll.contains(want), s"$name defines ${s.pll}")
+      // The GMII designs' second PLL, 125 MHz, is checked below.
+      val main = s.plls.filterNot(_.outputs.exists(_.role == PllRole.Eth))
+      assert(main == Seq(want), s"$name defines ${s.plls}")
     }
   }
 
@@ -143,5 +145,53 @@ class AlteraDesignPllTest extends AnyFunSuite {
   test("DramPllGen and its template are gone") {
     assert(getClass.getResource("/jop/config/dram_pll.template.vhd") == null)
     assert(scala.util.Try(Class.forName("jop.config.DramPllGen$")).isFailure)
+  }
+
+  // ---- the GMII Ethernet PLL (step 7d) ----
+
+  /** 125 MHz for the GMII transmit clock, from the clock the design takes in:
+    * what the boards' pll_125.v files were, now a design's second PLL. */
+  private def eth125(reference: String) =
+    PllDefinition(reference, Seq(PllOutput(PllRole.Eth, 125)), "pll_125", "ethPll")
+
+  test("a GMII design on an ALTPLL family defines its 125 MHz PLL; an MII design does not") {
+    val onAltpll = for {
+      m <- JopConfig.getClass.getMethods.toSeq
+      if m.getParameterCount == 0 && m.getReturnType == classOf[JopConfig]
+      cfg = m.invoke(JopConfig).asInstanceOf[JopConfig]
+      if cfg.fpgaFamily.pll.exists(_.generatedWithVerilog)
+    } yield (m.getName, cfg)
+    val names = onAltpll.map(_._1)
+    assert(names.contains("ae115fbDdr2Eth") && names.contains("ep4cgx150DbV5Eth") &&
+      names.contains("ep4cgx150DbV5Mii"), names)
+    for ((name, cfg) <- onAltpll; s <- cfg.systems) {
+      val eth = s.plls.filter(_.outputs.exists(_.role == PllRole.Eth))
+      if (s.ethGmii) assert(eth == Seq(eth125(cfg.inputClock.name)), s"$name: ${s.plls}")
+      else assert(eth.isEmpty, s"$name defines an Ethernet PLL it does not use: $eth")
+    }
+  }
+
+  test("the A-E115FB's GMII design has only the 125 MHz PLL: DDR2's PHY makes the system clock") {
+    assert(JopConfig.ae115fbDdr2Eth.system.plls == Seq(eth125("CLK25M")))
+    assert(JopConfig.ae115fbDdr2.system.plls.isEmpty)
+    assert(JopConfig.ep4cgx150DbV5Eth.system.plls ==
+      Seq(JopConfig.ep4cgx150Pll(80, sdram = true, vga = true), eth125("CLK50M")))
+  }
+
+  test("a design's PLLs give each role once") {
+    val sys = JopConfig.ep4cgx150DbV5Eth.system
+    assertThrows[IllegalArgumentException](sys.copy(plls = sys.plls :+ eth125("CLK50M").copy(module = "m2", instance = "i2")))
+  }
+
+  test("the GMII designs read the generated pll_125 and still name its clock ethPll's clk[0]") {
+    for ((name, cfg) <- Seq("ae115fbDdr2Eth" -> JopConfig.ae115fbDdr2Eth, "ep4cgx150DbV5Eth" -> JopConfig.ep4cgx150DbV5Eth)) {
+      val tcl = QuartusProject.generate(cfg, "rev", name, Seq(name))
+      assert(tcl.linesIterator.exists(l => l.contains("VERILOG_FILE") && l.contains(s"build/$name/ip/pll_125.v")), name)
+      assert(!tcl.contains("fpga/a-e115fb-ddr2/pll_125.v") && !tcl.contains("fpga/qmtech-ep4cgx150-sdram/pll_125.v"), name)
+      val sdc = TimingConstraints.forConfig(cfg).toSdc
+      assert(sdc.contains("ethPll|altpll_component|auto_generated|pll1|clk[0]"), s"$name\n$sdc")
+    }
+    for (f <- Seq("fpga/a-e115fb-ddr2/pll_125.v", "fpga/qmtech-ep4cgx150-sdram/pll_125.v"))
+      assert(!Files.exists(Paths.get(f)), s"$f is back")
   }
 }

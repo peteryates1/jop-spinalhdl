@@ -237,7 +237,6 @@ case class JopTop(
     var systemReset: Bool = null
     var ddr3Mig: MigBlackBox = null
     var ddr2Ctl: jop.ddr2.Ddr2BlackBox = null
-    var ethPll: EthPll = null
 
     val effectiveMainCd: ClockDomain = if (simulation) {
       ClockDomain.current
@@ -245,21 +244,16 @@ case class JopTop(
       // 1. Board Clock Source
       val boardClk = if (manufacturer.explicitClockPort) io.clk_in else ClockDomain.current.readClockWire
 
-      // 2. PLL — not for DDR2: the ALTMEMPHY controller contains its own PLL,
-      // takes the 25 MHz board oscillator as its reference, and sources phy_clk
-      // for the whole system. Boards like the A-E115FB therefore declare no
-      // pllType, and Pll.create would throw. A PLL the design defines is built
-      // by its FPGA family (status item 173); the rest are still the board's.
-      if (!isDdr2) pllResult = sys.pll match {
-        case Some(d) => Pll.build(d, config.fpgaFamily, config.inputClock, boardClk)
-        case None    => Pll.create(board, memType, boardClk)
-      }
-
-      // 3. Ethernet PLL (boards with dedicated Ethernet PLL)
-      if (sys.ethGmii && board.hasEthPll) {
-        ethPll = EthPll()
-        ethPll.io.inclk0 := boardClk
-      }
+      // 2. PLLs. Those the DESIGN defines are built by its FPGA family (status
+      // item 173), merged by role: the system clock's, and the GMII transmit
+      // clock's where it cannot share that VCO. A DDR2 design defines no system
+      // PLL -- the ALTMEMPHY controller contains its own, takes the 25 MHz board
+      // oscillator as its reference, and sources phy_clk for the whole system --
+      // but may define its GMII one. A board whose family has no builder yet
+      // still declares its PLL; the A-E115FB declares none, and Pll.create
+      // would throw.
+      if (sys.plls.nonEmpty) pllResult = Pll.build(sys.plls, config.fpgaFamily, config.assembly, boardClk)
+      else if (!isDdr2) pllResult = Pll.create(board, memType, boardClk)
 
       // 4. Reset Generation + Main Clock Domain
       val systemClk = if (!isDdr3 && !isDdr2) pllResult.systemClk.get else null
@@ -478,7 +472,7 @@ case class JopTop(
 
     // 6. Device Clock Domains (delegated to DeviceTopWiring)
     deviceClockDomains = {
-      val ctx = TopWiringContext(config, simulation, systemReset, pllResult, ethPll)
+      val ctx = TopWiringContext(config, simulation, systemReset, pllResult)
       sys.effectiveDevices.values.flatMap { inst =>
         DeviceTopWirings.forInstance(inst).map(_.createClockDomains(ctx, ioPinMap))
       }.foldLeft(DeviceClockDomains()) { (acc, cd) =>
@@ -597,7 +591,7 @@ case class JopTop(
       // Device Wiring (delegated to DeviceTopWiring)
       // ==============================================================
 
-      val wiringCtx = TopWiringContext(config, simulation, systemReset, pllResult, ethPll)
+      val wiringCtx = TopWiringContext(config, simulation, systemReset, pllResult)
       for ((instanceName, inst) <- sys.effectiveDevices) {
         DeviceTopWirings.forInstance(inst).foreach { wiring =>
           wiring.wireDevice(instanceName, cluster, ioPinMap, deviceClockDomains, wiringCtx)

@@ -27,17 +27,79 @@ class AlteraAltpllTest extends AnyFunSuite {
     read(family.pll.get.generate(spec, module, dir))
   }
 
-  // The two Ethernet PLLs ran on hardware: NetTest at 1 Gb/s on the A-E115FB,
-  // GMII TX on the EP4CGX150 DB_FPGA V5. A one-output spec at their ratio must
-  // give every altpll parameter they set, unchanged.
-  for ((file, family, inMhz) <- Seq(
-         ("fpga/a-e115fb-ddr2/pll_125.v", FpgaFamily.CycloneIVE, 25),
-         ("fpga/qmtech-ep4cgx150-sdram/pll_125.v", FpgaFamily.CycloneIV, 50)))
-    test(s"a 125 MHz spec gives the altpll parameters of $file") {
+  /** Every altpll parameter of the hand-written fpga/a-e115fb-ddr2/pll_125.v,
+    * which ran GMII at 1 Gb/s on the A-E115FB (NetTest). RECORDED, because
+    * the file is generated now and was deleted (status item 173, step 7d): a
+    * test whose oracle is removed does not fail, it cancels. Until then this
+    * compared against that file and the EP4CGX150's copy, which differed only
+    * in the three values its 50 MHz input and family set. */
+  private val validatedPll125: Map[String, String] = Map(
+    "bandwidth_type" -> "\"AUTO\"",
+    "clk0_divide_by" -> "1",
+    "clk0_duty_cycle" -> "50",
+    "clk0_multiply_by" -> "5",
+    "clk0_phase_shift" -> "\"0\"",
+    "compensate_clock" -> "\"CLK0\"",
+    "inclk0_input_frequency" -> "40000",
+    "intended_device_family" -> "\"Cyclone IV E\"",
+    "lpm_hint" -> "\"CBX_MODULE_PREFIX=pll_125\"",
+    "lpm_type" -> "\"altpll\"",
+    "operation_mode" -> "\"NORMAL\"",
+    "pll_type" -> "\"AUTO\"",
+    "port_activeclock" -> "\"PORT_UNUSED\"",
+    "port_areset" -> "\"PORT_UNUSED\"",
+    "port_clkbad0" -> "\"PORT_UNUSED\"",
+    "port_clkbad1" -> "\"PORT_UNUSED\"",
+    "port_clkloss" -> "\"PORT_UNUSED\"",
+    "port_clkswitch" -> "\"PORT_UNUSED\"",
+    "port_configupdate" -> "\"PORT_UNUSED\"",
+    "port_fbin" -> "\"PORT_UNUSED\"",
+    "port_inclk0" -> "\"PORT_USED\"",
+    "port_inclk1" -> "\"PORT_UNUSED\"",
+    "port_locked" -> "\"PORT_USED\"",
+    "port_pfdena" -> "\"PORT_UNUSED\"",
+    "port_phasecounterselect" -> "\"PORT_UNUSED\"",
+    "port_phasedone" -> "\"PORT_UNUSED\"",
+    "port_phasestep" -> "\"PORT_UNUSED\"",
+    "port_phaseupdown" -> "\"PORT_UNUSED\"",
+    "port_pllena" -> "\"PORT_UNUSED\"",
+    "port_scanaclr" -> "\"PORT_UNUSED\"",
+    "port_scanclk" -> "\"PORT_UNUSED\"",
+    "port_scanclkena" -> "\"PORT_UNUSED\"",
+    "port_scandata" -> "\"PORT_UNUSED\"",
+    "port_scandataout" -> "\"PORT_UNUSED\"",
+    "port_scandone" -> "\"PORT_UNUSED\"",
+    "port_scanread" -> "\"PORT_UNUSED\"",
+    "port_scanwrite" -> "\"PORT_UNUSED\"",
+    "port_clk0" -> "\"PORT_USED\"",
+    "port_clk1" -> "\"PORT_UNUSED\"",
+    "port_clk2" -> "\"PORT_UNUSED\"",
+    "port_clk3" -> "\"PORT_UNUSED\"",
+    "port_clk4" -> "\"PORT_UNUSED\"",
+    "port_clk5" -> "\"PORT_UNUSED\"",
+    "port_clkena0" -> "\"PORT_UNUSED\"",
+    "port_clkena1" -> "\"PORT_UNUSED\"",
+    "port_clkena2" -> "\"PORT_UNUSED\"",
+    "port_clkena3" -> "\"PORT_UNUSED\"",
+    "port_clkena4" -> "\"PORT_UNUSED\"",
+    "port_clkena5" -> "\"PORT_UNUSED\"",
+    "port_extclk0" -> "\"PORT_UNUSED\"",
+    "port_extclk1" -> "\"PORT_UNUSED\"",
+    "port_extclk2" -> "\"PORT_UNUSED\"",
+    "port_extclk3" -> "\"PORT_UNUSED\"",
+    "self_reset_on_loss_lock" -> "\"OFF\"",
+    "width_clock" -> "5"
+  )
+
+  for ((family, inMhz, changes) <- Seq(
+         (FpgaFamily.CycloneIVE, 25, Map.empty[String, String]),
+         (FpgaFamily.CycloneIV, 50, Map("clk0_divide_by" -> "2", "inclk0_input_frequency" -> "20000",
+                                        "intended_device_family" -> "\"Cyclone IV GX\""))))
+    test(s"a 125 MHz spec on $family gives the altpll parameters that ran GMII") {
       val gen  = params(generated(PllSpec(inMhz, Seq(PllOutput(PllRole.Eth, 125))), family, "pll_125"))
-      val hand = params(read(file))
-      assert(gen == hand, s"\n  generated: ${(gen.toSet -- hand.toSet).toSeq.sorted}\n  " +
-        s"hand-written: ${(hand.toSet -- gen.toSet).toSeq.sorted}")
+      val want = validatedPll125 ++ changes
+      assert(gen == want, s"\n  generated: ${(gen.toSet -- want.toSet).toSeq.sorted}\n  " +
+        s"validated: ${(want.toSet -- gen.toSet).toSeq.sorted}")
     }
 
   test("each output states its ratio, phase and port, in the spec's order") {

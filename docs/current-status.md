@@ -75,7 +75,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 34. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 35. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 36. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02). Boards now declare their clocks and designs pick one (step 5, 2026-11-02); designs define their PLLs and the ECP5 and ALTPLL families build them (steps 6-7: the i5, MAX1000, EP4CE6 and EP4CGX150); next the GMII designs' 125 MHz PLLs, then the Xilinx and Cyclone V builders
+37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02). Boards now declare their clocks and designs pick one (step 5, 2026-11-02); designs define their PLLs and the ECP5 and ALTPLL families build them (steps 6-7: the i5, MAX1000, EP4CE6, EP4CGX150 and the GMII designs' 125 MHz PLLs); next the Xilinx and Cyclone V builders
 38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
 39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
 40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -4543,15 +4543,34 @@ takes x6/5, its SDRAM output at -2917 ps (the nearest step to -3000 at that
 VCO), and meets timing (+0.775 ns). On `jop-ep4cgx150-1`, `ep4cgx150DbFull`
 passes DoAll 68/68; the board is parked in its handshake.
 
+7d: a GMII design defines its 125 MHz transmit-clock PLL
+(`JopConfig.gmii125Pll`), a second PLL beside its system one: 125 MHz cannot
+share an 80 MHz VCO from 50 (that needs 2000 MHz; Cyclone IV stops at 1300).
+A system's PLLs are `JopSystem.plls`. A role comes from one output across
+them, and `Pll.build` merges them by role. `ep4cgx150DbV5Eth` defines both;
+`ae115fbDdr2Eth` only the 125 MHz one, since its DDR2 PHY makes the system
+clock; MII designs none. `EthPll`, `Board.hasEthPll`, `Board.ethIpFiles` and
+both boards' `pll_125.v` are gone, and the builder is held to the hand-written
+files' recorded parameter set. Dumped before and after, every SDC is
+byte-identical (the clock is still `ethPll|...clk[0]`). The GMII projects read
+the generated file, and the three MII projects stop listing a `pll_125.v`
+they never instantiated. Quartus implements both PLLs as before (x5/1 from
+25 MHz, x5/2 from 50, 0 ps) and both builds meet timing (worst +0.132 and
++0.086 ns). `ep4cgx150DbV5Eth`'s slacks equal a control build at the previous
+commit exactly; its +0.224 ns system setup, down from +0.736 on 2026-10-12,
+predates this step. On `jop-ae115fb-1`: DoAll 68/68; NetTest linked at
+1000M, took a DHCP lease, answered ping 10/10 and UDP and TCP echo, and passed
+`net_echo_check.py`'s three checks. The board is parked in its handshake.
+
 **What is left:** the setup layer is done. Every fact the 2026-10-28 list
 put in the wrong layer -- the board designs' aliases, the serial registries,
 the network identity and the host's paths -- is in `setup/`, and the guard
 holds it there. The hardware layer has started: boards declare their clocks
 and designs pick one (step 5), the ECP5 family builds the PLLs its designs
-define (step 6), and so do the ALTPLL families (step 7a): the MAX1000, the
-EP4CE6 (7b) and the EP4CGX150 (7c). Next in step 7: the GMII designs define
-their 125 MHz PLL instead of `pll_125.v` (a second PLL per design, on the
-EP4CGX150 and the A-E115FB). Then Xilinx's clk_wiz
+define (step 6), and so do the ALTPLL families (step 7): the MAX1000, the
+EP4CE6, the EP4CGX150 and the GMII designs' 125 MHz PLLs -- every PLL the
+Cyclone IV and MAX 10 designs instantiate themselves (the A-E115FB's DDR2
+PHY keeps its own, inside the vendor IP). Next, Xilinx's clk_wiz
 (the MIG designs' reference clocks too) and Cyclone V's. Then the last
 `PllType`s leave `Board`, which is the only code in `Board.scala` that needs
 JOP, and the hardware layer becomes an sbt subproject that does not depend on

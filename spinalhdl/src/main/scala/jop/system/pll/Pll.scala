@@ -90,6 +90,29 @@ object Pll {
       vgaClk = out(PllRole.Vga))
   }
 
+  /** The PLLs `ds` define, each built by `family` from its reference clock on
+    * `assembly`, merged by ROLE: a role comes from one output (JopSystem holds
+    * that), and `locked` is the system clock's PLL's, so the reset waits on the
+    * clock it releases, as with one PLL. Where none makes the system clock --
+    * the A-E115FB's DDR2 design defines only its GMII PLL -- the first's. */
+  def build(ds: Seq[PllDefinition], family: FpgaFamily, assembly: SystemAssembly, inputClock: Bool): PllResult = {
+    require(ds.nonEmpty, "no PLLs to build")
+    val built = ds.map(d => build(d, family, assembly.clock(d.reference), inputClock))
+    def one(role: String, f: PllResult => Option[Bool]): Option[Bool] = built.flatMap(f(_)) match {
+      case Seq()  => None
+      case Seq(c) => Some(c)
+      case cs     => throw new IllegalArgumentException(s"${cs.size} PLLs give the $role clock")
+    }
+    PllResult(
+      systemClk = one("system", _.systemClk),
+      locked    = built.find(_.systemClk.isDefined).getOrElse(built.head).locked,
+      sdramClk  = one("SDRAM", _.sdramClk),
+      migSysClk = one("MIG system", _.migSysClk),
+      migRefClk = one("MIG reference", _.migRefClk),
+      ethClk    = one("Ethernet", _.ethClk),
+      vgaClk    = one("VGA", _.vgaClk))
+  }
+
   /** The PLL `d` defines, on `board`: built by the board's FPGA family, from
     * the clock of the board's that `d` names. */
   def build(d: PllDefinition, board: Board, inputClock: Bool): PllResult = {

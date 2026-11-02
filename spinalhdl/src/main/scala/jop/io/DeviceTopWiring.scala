@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.io.TriState
 import spinal.lib.com.eth._
 import jop.config._
-import jop.system.{JopCluster, EthPll, ResetGenerator}
+import jop.system.{JopCluster, ResetGenerator}
 import jop.system.pll.PllResult
 
 /** Direction and width of a top-level device port. */
@@ -29,8 +29,7 @@ case class TopWiringContext(
   config: JopConfig,
   simulation: Boolean,
   systemReset: Bool = null,
-  pllResult: PllResult = null,
-  ethPll: EthPll = null
+  pllResult: PllResult = null
 ) {
   val manufacturer: Manufacturer = config.fpgaFamily.manufacturer
   val isAltera: Boolean = manufacturer == Manufacturer.Altera
@@ -163,7 +162,8 @@ object EthernetTopWiring extends DeviceTopWiring {
           "RGMII needs an Ethernet clock from the board's PLL (PllResult.ethClk)")
         ctx.pllResult.ethClk.get
       }
-      else if (sys.ethGmii && ctx.ethPll != null) ctx.ethPll.io.c0
+      // GMII: the 125 MHz PLL output -- the design's own PLL on Altera (status
+      // item 173), the board's clock wizard's on Xilinx.
       else if (sys.ethGmii && ctx.pllResult != null && ctx.pllResult.ethClk.isDefined) ctx.pllResult.ethClk.get
       else ioPins.get("e_txc").map(_.asInstanceOf[Bool]).orNull
 
@@ -255,8 +255,7 @@ object EthernetTopWiring extends DeviceTopWiring {
     // GTX clock -- GMII only; an MII design has no e_gtxc port (topPins)
     if (sys.ethGmii) {
       val ethTxClk =
-        if (ctx.ethPll != null) ctx.ethPll.io.c0
-        else if (ctx.pllResult != null && ctx.pllResult.ethClk.isDefined) ctx.pllResult.ethClk.get
+        if (ctx.pllResult != null && ctx.pllResult.ethClk.isDefined) ctx.pllResult.ethClk.get
         else null
       ioPins("e_gtxc").asInstanceOf[Bool] := ethTxClk
     }

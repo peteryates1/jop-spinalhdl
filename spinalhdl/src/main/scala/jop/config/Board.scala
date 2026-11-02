@@ -221,7 +221,6 @@ case class Board(
     * inverts accordingly, instead of everyone assuming active-low. */
   resetActiveLow: Boolean = true,
   ddr3HasCs: Boolean = false,
-  hasEthPll: Boolean = false,
   useStackCache: Boolean = false,
   /** Default I/O standard for this board's user I/O. */
   ioStandard: String = "LVCMOS33",
@@ -252,9 +251,6 @@ case class Board(
     * The A-E115FB's DDR2 controller is the case: without its `.qip` Quartus
     * stops with "instantiates undefined entity ddr2_64bit". */
   extraIpFiles: Seq[String] = Seq.empty,
-  /** IP needed only when the DESIGN declares an Ethernet device. The board has
-    * the PHY and its PLL either way; a UART-only build must not list them. */
-  ethIpFiles: Seq[String] = Seq.empty,
   /** Vendor constraint files the generated project SOURCES rather than restates.
     *
     * For pins this project owns, `QsfGenerator` emits assignments from board
@@ -338,12 +334,10 @@ object Board {
    */
   def QmtechEP4CGX150 = Board(
     name = "qmtech-ep4cgx150",
-    ethIpFiles = Seq("fpga/qmtech-ep4cgx150-sdram/pll_125.v"),
     fpga = Some(FpgaDevice.EP4CGX150DF27.withGrade(7, 'I')),   // EP4CGX150DF27I7, docs/boards/qmtech-ep4cgx150-board.md
     // No pllType: its designs define their PLLs (JopConfig.ep4cgx150Pll) and
     // Cyclone IV GX builds them (status item 173), in place of DramPllGen's
     // template and its fixed four outputs.
-    hasEthPll = true,
     clocks = Seq(BoardClock("CLK50M", 50 MHz, "PIN_B14")),
     devices = Seq(
       // On-board SDRAM (direct FPGA pins, verified against jop_sdram.qsf)
@@ -764,8 +758,6 @@ object Board {
   def AE115FB = Board(
     name = "a-e115fb",
     extraIpFiles = Seq("fpga/a-e115fb-ddr2/ip/ddr2_64bit/ddr2_64bit.qip"),
-    ethIpFiles = Seq("fpga/a-e115fb-ddr2/pll_125.v"),
-    hasEthPll = true,
     // The DDR2 pin, I/O-standard and PHY assignments, lifted verbatim from the
     // vendor reference (DDR667_read_write/quartus/ddr2_sodimm.qsf). Sourced,
     // not restated -- see `constraintFiles`.
