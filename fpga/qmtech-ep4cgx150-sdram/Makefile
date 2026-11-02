@@ -155,14 +155,12 @@ full-sd-spi-exerciser: sd-spi program-sd-spi monitor
 #
 # Both are blocked on the same thing: the config-flash pads have no device
 # ALL THREE ARE CONVERTED NOW. The .sdc comes from TimingConstraints and the
-# PLL from DramPllGen, both into build/<config>/.
+# PLL from the design's own definition (DesignPlls, status item 173), both into
+# build/<config>/.
 #
-# dram_pll.vhd is GONE FROM THIS DIRECTORY. It was never a build product --
-# DramPllGen reads it as the template it rewrites the ratios into -- but sitting
-# here among the build output it looked like one, which is exactly why it got
-# deleted once and broke every EP4CGX150 build. It now lives with its consumer,
-# as spinalhdl/src/main/resources/jop/config/dram_pll.template.vhd, and `emit`
-# no longer takes a board directory (all nine call sites passed the same one).
+# dram_pll.vhd is GONE, template and all. It was never a build product --
+# DramPllGen read it as the template it rewrote the ratios into -- and since
+# 2026-11-02 the ALTPLL builder writes each design's PLL outright.
 # --------------------------------------------------------------------------
 
 # CONVERTED 2026-08-29. Both now go through quartus.mk like every other flow:

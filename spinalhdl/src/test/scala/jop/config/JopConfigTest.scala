@@ -235,12 +235,20 @@ class JopConfigTest extends AnyFunSuite {
   test("builder pattern with copy") {
     val base = JopConfig.ep4cgx150Serial
     val custom = base.copy(
-      systems = Seq(base.system.copy(
-        cpuCnt = 8,
-        clkFreq = 100 MHz)))
+      systems = Seq(base.system.copy(cpuCnt = 8).atClock(100)))
     assert(custom.system.cpuCnt == 8)
     assert(custom.system.clkFreq == (100 MHz))
     assert(custom.assembly.name == "qmtech-ep4cgx150-db-v4")  // unchanged
+    // The PLL moves with the clock: system and SDRAM outputs, phase kept.
+    assert(custom.system.pll.get.outputs ==
+      Seq(PllOutput(PllRole.System, 100), PllOutput(PllRole.Sdram, 100, phasePs = -3000)))
+  }
+
+  test("a system copied to a new clock without its PLL is refused") {
+    // It would keep its base's PLL and run at the old clock while the UART
+    // divider and the timers assumed the new one -- which reads as a dead board.
+    val base = JopConfig.ep4cgx150Serial
+    assertThrows[IllegalArgumentException](base.system.copy(clkFreq = 100 MHz))
   }
 
   // ==========================================================================

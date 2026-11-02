@@ -90,24 +90,40 @@ object Pll {
       vgaClk = out(PllRole.Vga))
   }
 
+  /** The PLL `d` defines, on `board`: built by the board's FPGA family, from
+    * the clock of the board's that `d` names. */
+  def build(d: PllDefinition, board: Board, inputClock: Bool): PllResult = {
+    val family = board.fpga.map(_.family).getOrElse(throw new IllegalArgumentException(
+      s"Board '${board.name}' carries no FPGA"))
+    val clock = board.clocks.find(_.name == d.reference).getOrElse(throw new IllegalArgumentException(
+      s"PLL ${d.module} takes ${d.reference}; board '${board.name}' offers " +
+        board.clocks.map(_.name).mkString(", ")))
+    build(d, family, clock, inputClock)
+  }
+
+  /** A PLL making only a system clock at `mhz` from `clock`: what a design on
+    * one clock needs -- the exercisers. Its module is named for what it makes,
+    * so designs at different clocks never share a file. A design declares it
+    * (`BoardDesign.plls`) so the generators write and list it; `forDesign`
+    * builds the same definition. */
+  def systemOnly(clock: BoardClock, mhz: Int): PllDefinition =
+    PllDefinition(clock.name, Seq(PllOutput(PllRole.System, mhz)), module = s"pll_sys_${mhz}mhz", instance = "pll")
+
   /** The PLL of a design that wants only a system clock, at `systemMhz`, from
     * the board's one clock -- the exercisers. Where the board's FPGA family
-    * has a builder, that is the design's PLL; elsewhere the board's own, which
+    * has a builder, that is `systemOnly`; elsewhere the board's own, which
     * must run at `systemMhz` until its family is converted. */
   def forDesign(board: Board, memType: MemoryType, inputClock: Bool, systemMhz: Int): PllResult =
     if (board.pllType.isDefined) create(board, memType, inputClock)
     else {
       require(memType == MemoryType.BRAM,
         s"Board '${board.name}' declares no PLL; a $memType design must define its own (PllDefinition)")
-      val family = board.fpga.map(_.family).getOrElse(throw new IllegalArgumentException(
-        s"Board '${board.name}' carries no FPGA"))
       val clock = board.clocks match {
         case Seq(only) => only
         case cs => throw new IllegalArgumentException(
           s"Board '${board.name}' offers ${cs.size} clocks (${cs.map(_.name).mkString(", ")}); " +
             "a design on it must define its PLL and name the one it takes")
       }
-      build(PllDefinition(clock.name, Seq(PllOutput(PllRole.System, systemMhz)),
-        module = s"pll_sys_${systemMhz}mhz", instance = "pll"), family, clock, inputClock)
+      build(systemOnly(clock, systemMhz), board, inputClock)
     }
 }

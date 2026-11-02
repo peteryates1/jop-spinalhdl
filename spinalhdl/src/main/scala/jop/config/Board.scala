@@ -68,15 +68,14 @@ case class BoardClock(name: String, freq: spinal.core.HertzNumber, pin: String) 
 // ==========================================================================
 
 import spinal.core._
-import jop.system.{DramPll, SdramExerciserClkWiz}
+import jop.system.SdramExerciserClkWiz
 import jop.system.pll.{Cyc5000Pll, WukongClkWizBlackBox, PllResult}
 import jop.ddr3.ClkWizBlackBox
 
-/** Where a PLL's IP file comes from. */
+/** Where a board-declared PLL's IP file comes from. A PLL a design defines is
+  * written by its family's builder instead (DesignPlls, status item 173). */
 sealed trait PllIpFile
 object PllIpFile {
-  /** Written per configuration into build/<config>/ip/ by DramPllGen. */
-  case class Generated(name: String) extends PllIpFile
   /** A hand-written file at a fixed repo-relative path. */
   case class Static(path: String) extends PllIpFile
 }
@@ -86,60 +85,17 @@ sealed trait PllType {
     * @param systemIndex differentiates multiple PLL instances in multi-system designs */
   def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0): PllResult
 
-  /** The IP file that defines this PLL, if a Quartus project must list one.
+  /** The IP file that defines this PLL, if a Quartus project must list one:
+    * a hand-written file at a fixed repo-relative path. Xilinx returns None --
+    * its IP is an .xci the project reads separately.
     *
-    * `Generated` means DramPllGen writes it per configuration into
-    * `build/<config>/ip/`; `Static` means a hand-written file at a fixed
-    * repo-relative path. Xilinx and Lattice return None -- their IP is an .xci
-    * the project reads separately, or a module generated beside the design.
-    *
-    * Stated here because the generator hardcoded `dram_pll.vhd`, which is the
+    * Stated here because the generator hardcoded `dram_pll.vhd`, which was the
     * EP4CGX150's PLL: a Cyclone V project came out naming a file that does not
     * exist for it. */
   def ipFile: Option[PllIpFile] = None
-
-  /** The instance name this PLL gets in the netlist, for timing constraints to
-    * refer to.
-    *
-    * STATED, not inferred. `create` builds the blackbox as a local `val pll`,
-    * which is not a component field, so SpinalHDL cannot see that name and
-    * falls back to the class name -- `DramPll` becomes `dramPll`. Relying on
-    * that implicitly is how `jop_sdram.sdc` came to name the instance `pll`
-    * and have its entire `set_clock_groups` silently discarded:
-    *
-    *   Warning (332049): Ignored set_clock_groups ... could not match any
-    *   element of the following types: ( clk )
-    *
-    * Empty for PLL types whose constraints are not generated yet. */
-  def instanceName: String = ""
-
-  /** Altera megafunction path from the instance to a numbered clock output.
-    * Quartus names altpll outputs `<inst>|altpll_component|auto_generated|pll1|clk[n]`. */
-  def alteraClockPath(n: Int): String =
-    s"$instanceName|altpll_component|auto_generated|pll1|clk[$n]"
 }
 
 object PllType {
-
-  /** EP4CGX150 (Cyclone IV GX): DramPll megafunction.
-    * SDR: c1=80MHz system, c2=80MHz/-3ns SDRAM, c3=25MHz VGA/Eth.
-    * BRAM: c1=100MHz system. */
-  case object AlteraDramPll extends PllType {
-    override val instanceName = "dramPll"
-    override val ipFile = Some(PllIpFile.Generated("dram_pll.vhd"))
-    def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
-      val pll = DramPll()
-      pll.io.inclk0 := inputClock
-      pll.io.areset := False
-      memType match {
-        case MemoryType.SDRAM_SDR =>
-          PllResult(systemClk = Some(pll.io.c1), locked = pll.io.locked,
-            sdramClk = Some(pll.io.c2), ethClk = Some(pll.io.c3), vgaClk = Some(pll.io.c3))
-        case _ =>
-          PllResult(systemClk = Some(pll.io.c1), locked = pll.io.locked)
-      }
-    }
-  }
 
   /** CYC5000 (Cyclone V): altera_pll megafunction.
     * 12 MHz -> outclk_0=80MHz system, outclk_1=80MHz/-2.5ns SDRAM. */
@@ -384,7 +340,9 @@ object Board {
     name = "qmtech-ep4cgx150",
     ethIpFiles = Seq("fpga/qmtech-ep4cgx150-sdram/pll_125.v"),
     fpga = Some(FpgaDevice.EP4CGX150DF27.withGrade(7, 'I')),   // EP4CGX150DF27I7, docs/boards/qmtech-ep4cgx150-board.md
-    pllType = Some(PllType.AlteraDramPll),
+    // No pllType: its designs define their PLLs (JopConfig.ep4cgx150Pll) and
+    // Cyclone IV GX builds them (status item 173), in place of DramPllGen's
+    // template and its fixed four outputs.
     hasEthPll = true,
     clocks = Seq(BoardClock("CLK50M", 50 MHz, "PIN_B14")),
     devices = Seq(

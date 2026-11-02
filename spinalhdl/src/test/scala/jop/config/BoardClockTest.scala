@@ -48,7 +48,6 @@ class BoardClockTest extends AnyFunSuite {
 
   private val sources = Seq(
     Source("fpga/qmtech-ep4cgx150-sdram/pll_125.v", altpll, "qmtech-ep4cgx150", "CLK50M"),
-    Source("spinalhdl/src/main/resources/jop/config/dram_pll.template.vhd", altpll, "qmtech-ep4cgx150", "CLK50M"),
     Source("fpga/a-e115fb-ddr2/pll_125.v", altpll, "a-e115fb", "CLK25M"),
     // The DDR2 controller's own PLL, read from its committed MegaWizard
     // variation: the generated IP under ip/ is not in the tree.
@@ -73,7 +72,6 @@ class BoardClockTest extends AnyFunSuite {
     "fpga/scripts/check_clk_ip.py"      -> "reads a built clk_wiz; states nothing",
     "fpga/scripts/test_check_clk_ip.py" -> "its test",
     "spinalhdl/src/main/scala/jop/config/Board.scala" -> "quotes the i9+ flow's -in_freq in a comment",
-    "spinalhdl/src/main/scala/jop/config/DramPllGen.scala" -> "checked below through DramPllGen.inputMhz",
     "spinalhdl/src/main/scala/jop/config/PllVendor.scala" ->
       "the ALTPLL builder writes inclk0_input_frequency from a design's definition, checked below through it",
     "spinalhdl/src/test/scala/jop/config/AlteraAltpllTest.scala" -> "the builder's test, asserting on what it writes",
@@ -105,7 +103,6 @@ class BoardClockTest extends AnyFunSuite {
   }
 
   test("a generated PLL's input is the frequency of the board clock it takes") {
-    assert(same(BigDecimal(DramPllGen.inputMhz), mhz(clockOf("qmtech-ep4cgx150", "CLK50M"))))
     // A design's PLL definition names its clock, and its spec is that clock's
     // frequency by construction (PllDefinition.spec); what can still go wrong
     // is naming a clock the assembly lacks, or another than the design takes in.

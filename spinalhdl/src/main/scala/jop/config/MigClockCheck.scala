@@ -6,8 +6,9 @@ import java.nio.file.{Files, Paths}
  * Cross-checks the Wukong DDR3 clock chain against the preset at generation time.
  *
  * WHY A CHECK AND NOT A GENERATOR. The EP4CGX150 PLL is generated from the
- * preset (see `DramPllGen`) because the multiply/divide pair is a pure function
- * of the target frequency — reduce the ratio against the input and you are done.
+ * preset (`JopConfig.ep4cgx150Pll`, `AlteraAltpll`) because the multiply/divide
+ * pair is a pure function of the target frequency — reduce the ratio against
+ * the input and you are done.
  * The MIG is not like that. For a given memory `TimePeriod` it dictates its own
  * `InputClkFreq` from an internal table we cannot compute:
  *

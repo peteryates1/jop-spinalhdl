@@ -49,12 +49,12 @@ case class PllOutput(role: PllRole, mhz: Int, phaseDeg: Int = 0, phasePs: Int = 
  *
  * WHY THIS EXISTS. There were nine PLL blackboxes in this tree for two vendor
  * primitives, because only the FREQUENCY was ever parameterised: `DramPllGen`
- * does not generate `dram_pll.vhd`, it text-patches a 441-line hand-written
+ * did not generate `dram_pll.vhd`, it text-patched a 441-line hand-written
  * file, so the shape -- how many outputs, at what phases -- was frozen in that
  * file and mirrored in a matching Scala blackbox. Every new shape needed a new
  * pair, and the wrappers ended up named for their first job: `DramPll`'s `c1`
- * is the SYSTEM clock, so a design with no DRAM still instantiates something
- * called `DramPll`.
+ * was the SYSTEM clock, so a design with no DRAM instantiated something called
+ * `DramPll` (until 2026-11-02, status item 173).
  *
  * Three bugs trace to that: the Wukong's no-DRAM branch ties the clock wizard's
  * reset ASSERTED (each branch hand-wires its own reset), a `set_clock_groups`
@@ -102,4 +102,10 @@ case class PllDefinition(reference: String, outputs: Seq[PllOutput], module: Str
 
   /** The spec on `assembly`, which must offer the reference clock. */
   def spec(assembly: SystemAssembly): PllSpec = spec(assembly.clock(reference))
+
+  /** This PLL with its system clock at `mhz`: the System output and the
+    * SDRAM's copy of it move, keeping their phases; every other output stays.
+    * For a design derived from another at a new clock (`JopSystem.atClock`). */
+  def atSystemClock(mhz: Int): PllDefinition = copy(outputs = outputs.map(o =>
+    if (o.role == PllRole.System || o.role == PllRole.Sdram) o.copy(mhz = mhz) else o))
 }

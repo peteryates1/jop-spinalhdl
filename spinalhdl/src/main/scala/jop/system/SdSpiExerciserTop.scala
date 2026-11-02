@@ -955,6 +955,9 @@ case class SdSpiExerciserTop(
  * and it is a separate change because it alters the netlist.
  */
 object SdSpiExerciserDesign extends jop.config.BoardDesign {
+  // Its PLL (status item 173): only a system clock, built by the board's
+  // FPGA family. Declared so the generators write and list it.
+  override def plls = Seq(jop.system.pll.Pll.systemOnly(inputClock, clkMhz))
   import jop.config._
   val assembly   = SystemAssembly.qmtechWithDb
   val entityName = "SdSpiExerciserTop"

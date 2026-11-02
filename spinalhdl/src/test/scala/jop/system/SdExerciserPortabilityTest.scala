@@ -17,12 +17,14 @@ import jop.config._
  * on its home board and fail here. Since 2026-11-02 (status item 173) a board
  * whose FPGA family has a PLL builder declares no PLL: on the i5 the exerciser
  * defines its own -- CLK25M in, its 40 MHz out -- and the ECP5 family builds
- * it, instead of borrowing JOP's three-output pll_jop_i5.
+ * it, instead of borrowing JOP's three-output pll_jop_i5. Likewise on the
+ * EP4CGX150 since step 7c, where the ALTPLL builder makes it in place of
+ * DramPllGen's dram_pll.
  */
 class SdExerciserPortabilityTest extends AnyFunSuite {
 
   private val boards: Seq[(String, Board, Int, String)] = Seq(
-    ("EP4CGX150 (Altera Cyclone IV GX)", Board.QmtechEP4CGX150, 80,  "dram_pll"),
+    ("EP4CGX150 (Altera Cyclone IV GX)", Board.QmtechEP4CGX150, 80,  "pll_sys_80mhz"),
     ("Wukong (Xilinx Artix-7)",          Board.WukongXC7A100T, 100,  "bram_clk"),
     ("Colorlight i5 (Lattice ECP5)",     Board.ColorlightI5,    40,  "pll_sys_40mhz"))
 

@@ -22,6 +22,7 @@ object AlteraUtilSweep extends App {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
+      pll = Some(JopConfig.ep4cgx150Pll(80, sdram = true)),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
   val baseCc = base.system.coreConfig
@@ -32,11 +33,16 @@ object AlteraUtilSweep extends App {
   def withCcAndBc(bc: Map[String, String], extra: JopCoreConfig => JopCoreConfig = identity): JopConfig =
     withCc(extra(baseCc.copy(bytecodes = baseCc.bytecodes ++ bc)))
 
+  // A design's PLL has the outputs its devices use (status item 173): a VGA
+  // variant's has the 25 MHz pixel clock, the others do not.
+  private def pllFor(devs: Map[String, DeviceInstance]) = Some(JopConfig.ep4cgx150Pll(80, sdram = true,
+    vga = devs.values.exists(d => d.deviceType == DeviceType.VgaText || d.deviceType == DeviceType.VgaDma)))
+
   def withDevices(devs: Map[String, DeviceInstance]): JopConfig =
-    base.copy(systems = Seq(base.system.copy(devices = devs)))
+    base.copy(systems = Seq(base.system.copy(devices = devs, pll = pllFor(devs))))
 
   def withCcAndDevices(cc: JopCoreConfig, devs: Map[String, DeviceInstance]): JopConfig =
-    base.copy(systems = Seq(base.system.copy(coreConfig = cc, devices = devs)))
+    base.copy(systems = Seq(base.system.copy(coreConfig = cc, devices = devs, pll = pllFor(devs))))
 
   // Common device instances for QMTECH daughter board
   private val uartDev = "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))

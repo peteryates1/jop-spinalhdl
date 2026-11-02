@@ -94,6 +94,11 @@ case class JopSystem(
     require(pcc.length == cpuCnt,
       s"System '$name': perCoreConfigs length (${pcc.length}) must match cpuCnt ($cpuCnt)"))
 
+  /** This system at `mhz`, its PLL with it (`PllDefinition.atSystemClock`).
+    * A preset derived at another clock -- `ep4cgx150Smp(8, 50)` -- would
+    * otherwise keep its base's PLL and fail the check above. */
+  def atClock(mhz: Int): JopSystem = copy(clkFreq = mhz MHz, pll = pll.map(_.atSystemClock(mhz)))
+
   // --- Derived paths from boot mode ---
   // The layout itself lives in MicrocodePaths, which is the only place it is
   // written down; see the note there on the simulation asymmetry.
@@ -676,6 +681,24 @@ object JopConfig {
   /** EP4CGX150 single-core, the primary board's default: UART only, though the
     * assembly includes the daughter board. Its Ethernet, VGA and SD are in
     * `ep4cgx150DbFull`. */
+  /**
+   * The EP4CGX150's PLL (status item 173): the system clock, and on SDR the
+   * SDRAM's copy of it 3 ns early, and 25 MHz where a VGA device needs it, all
+   * from the 50 MHz CLK50M. DramPllGen's template gave every design the same
+   * four outputs; a design now has the ones it uses.
+   *
+   * -3000 ps at every clock, as a DELAY: a deliberate sweep found it makes no
+   * measurable difference (-4000 ps left a 4-core run bit-identical), so it
+   * was kept from 80 MHz rather than re-derived per clock. Quartus implements
+   * it at the nearest phase step its VCO offers, -3125 ps at 80 MHz.
+   */
+  def ep4cgx150Pll(mhz: Int, sdram: Boolean, vga: Boolean = false): PllDefinition =
+    PllDefinition("CLK50M",
+      Seq(PllOutput(PllRole.System, mhz)) ++
+        (if (sdram) Seq(PllOutput(PllRole.Sdram, mhz, phasePs = -3000)) else Nil) ++
+        (if (vga) Seq(PllOutput(PllRole.Vga, 25)) else Nil),
+      module = "ep4cgx150_pll", instance = "pll")
+
   def ep4cgx150Serial = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
     systems = Seq(JopSystem(
@@ -683,6 +706,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
+      pll = Some(ep4cgx150Pll(80, sdram = true)),
       // hasBackendFill: use the SDR backend's fast block-fill for GC zeroing
       // (~full SDR bandwidth) instead of the controller's per-word loop.
       // hasCardTable: HW card-marking barrier (generational GC, Stage 1), 16KB.
@@ -735,6 +759,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
+      pll = Some(ep4cgx150Pll(80, sdram = true, vga = true)),
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(hasBackendFill = true, hasCardTable = true,
           cardTableBudgetBytes = 16 * 1024,
@@ -831,11 +856,11 @@ object JopConfig {
   }
 
   /** EP4CGX150 + daughter board — SMP, N cores */
-  // clkMhz IS the frequency: `JopTopVerilog` generates
-  // fpga/qmtech-ep4cgx150-sdram/generated/dram_pll.vhd from it (multiply/divide
-  // reduced against the 50 MHz input), so the PLL cannot disagree with the
-  // preset any more. It also reports the baud the board will actually manage
-  // and warns when the requested one is not achievable -- see DramPllGen.
+  // clkMhz IS the frequency: the system takes it with its PLL (`atClock`), and
+  // the ALTPLL builder writes that PLL (multiply/divide reduced against the 50
+  // MHz input), so the PLL cannot disagree with the preset any more -- a system
+  // whose PLL does not make its clock is refused. `JopTopVerilog` also reports
+  // the baud the board will actually manage, and warns when it is not exact.
   //
   // It used to be the other way round, and the comment here said "clkMhz must
   // match dram_pll.vhd". Nothing cross-checked them, the PLL decided the real
@@ -872,8 +897,8 @@ object JopConfig {
     // moving the address into the already-idle RAM_DELAY state and driving it
     // from the registered index — no extra cycles. Set useCmpSync = true if you
     // want the simpler global lock.
-    base.copy(systems = Seq(base.system.copy(name = s"smp$n", cpuCnt = n, clkFreq = clkMhz MHz,
-      coreConfig = base.system.coreConfig.copy(useCmpSync = cmpSync))))
+    base.copy(systems = Seq(base.system.copy(name = s"smp$n", cpuCnt = n,
+      coreConfig = base.system.coreConfig.copy(useCmpSync = cmpSync)).atClock(clkMhz)))
   }
 
   /**
@@ -983,8 +1008,9 @@ object JopConfig {
    * timing; nothing looked, because the board appeared to work. It appeared to
    * work because `dram_pll.vhd` used to be hardwired to 60 regardless of what
    * the preset declared, so the silicon ran at 60 while the .sdc claimed 80.
-   * `DramPllGen` builds the PLL from the preset now, so the declared frequency
-   * is the real one and the violation became real with it.
+   * The PLL has been built from the preset since (DramPllGen, then the design's
+   * own definition), so the declared frequency is the real one and the
+   * violation became real with it.
    *
    * NOTE the array-size term is secondary: 32 blocks is already 15.1 ns. Making
    * the memory smaller does not fix this, and lowering the clock is not a
@@ -1000,6 +1026,7 @@ object JopConfig {
       // against their 32, and the read mux across the array adds ~1.2 ns: this
       // preset still missed by 0.431 ns at 60 when the others had cleared it.
       clkFreq = 50 MHz,
+      pll = Some(ep4cgx150Pll(50, sdram = false)),
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 512 * 1024),
         memoryStyle = Some(MemoryStyle.Generic)),
@@ -1014,9 +1041,8 @@ object JopConfig {
   def ep4cgx150BramGc = {
     val base = ep4cgx150Bram
     base.copy(systems = Seq(base.system.copy(
-      clkFreq = 60 MHz,
       coreConfig = JopCoreConfig(
-        memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)))))
+        memConfig = JopMemoryConfig(mainMemSize = 128 * 1024))).atClock(60)))
   }
 
   /**
@@ -1046,8 +1072,8 @@ object JopConfig {
    * hardwired to 60 and the preset frequency "only feeds the SDC constraint and
    * the UART divider". That was true, and it is why three BRAM presets sat
    * violated at 80 for months without anyone noticing -- the declared frequency
-   * was understood to be decorative. `DramPllGen` generates the PLL from the
-   * preset now, so it is not.
+   * was understood to be decorative. The PLL is built from the preset now
+   * (the design's own definition, status item 173), so it is not.
    *
    * hasCardTable is required or IO_CARD_SHIFT reads 0, GC.init falls back to the
    * classic collector, and the run exercises nothing generational.
@@ -1057,10 +1083,9 @@ object JopConfig {
     base.copy(systems = Seq(base.system.copy(
       name = s"bram-smp$n",
       cpuCnt = n,
-      clkFreq = clkMhz MHz,
       coreConfig = base.system.coreConfig.copy(
         memConfig = JopMemoryConfig(mainMemSize = 128 * 1024,
-          hasCardTable = true, cardTableBudgetBytes = 16 * 1024)))))
+          hasCardTable = true, cardTableBudgetBytes = 16 * 1024))).atClock(clkMhz)))
   }
 
   /** EP4CGX150 — serial download into BRAM (128KB) */
@@ -1073,6 +1098,7 @@ object JopConfig {
       // 60, for the read-data path described on ep4cgx150Bram. 2 Mbaud divides
       // 60 MHz exactly (30), so the console needs no scaling workaround.
       clkFreq = 60 MHz,
+      pll = Some(ep4cgx150Pll(60, sdram = false)),
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
@@ -1168,6 +1194,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
+      pll = Some(ep4cgx150Pll(100, sdram = true)),
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
@@ -1349,6 +1376,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
+      pll = Some(ep4cgx150Pll(80, sdram = true)),
       coreConfig = JopCoreConfig(
         supersetJumpTable = JumpTableInitData.serial),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))

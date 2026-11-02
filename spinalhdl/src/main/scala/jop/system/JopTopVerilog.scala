@@ -79,7 +79,7 @@ object JopTopVerilog {
     // ep4cgx150Smp <cores> [clkMhz]. clkMhz drives the generated PLL — see the
     // note on JopConfig.ep4cgx150Smp. 4 cores needs 65; 1-2 run at 80.
     // ep4cgx150BramSmp <cores> [clkMhz] — the sim/hardware bridge, see the note
-    // on JopConfig.ep4cgx150BramSmp. Defaults to 60 MHz to match dram_pll.vhd.
+    // on JopConfig.ep4cgx150BramSmp. Defaults to 60 MHz, its base's clock.
     case "ep4cgx150BramSmp" =>
       val n   = args.drop(1).headOption.map(_.toInt).getOrElse(4)
       val mhz = args.drop(2).headOption.map(_.toInt).getOrElse(60)
@@ -307,18 +307,17 @@ object JopTopVerilog {
       f"  ROM:           ${sys.romPath} (${romData.length} entries)%n" +
       f"  RAM:           ${sys.ramPath} (${ramData.length} entries)%n"
 
-    // THE PLL AND THE BAUD, both derived from the preset rather than left for a
-    // human to keep in step. Getting either wrong produces the SAME symptom --
-    // "FPGA not responding (no ready signal)" -- which reads as a dead build,
-    // so both are computed here and the baud is checked rather than assumed.
+    // THE BAUD, checked rather than assumed: a rate the clock cannot make
+    // produces "FPGA not responding (no ready signal)", which reads as a dead
+    // build. The PLL is the design's own (designPllLines below).
     val pllLines = if (jopConfig.assembly.fpgaBoard.name == "qmtech-ep4cgx150") {
       val mhz  = (sys.clkFreq.toBigDecimal / 1000000).toInt
       val baud = sys.effectiveDevices.values.find(_.deviceType.key == "uart")
         .flatMap(_.params.get("baudRate").map(_.asInstanceOf[Int])).getOrElse(2000000)
-      val pll  = jop.config.DramPllGen.emit(mhz,
-                                            jop.generate.BuildLayout.default.configDir(presetName,
-                                              buildArgs.filterNot(_.equalsIgnoreCase("buildtree"))))
-      val eff  = jop.config.DramPllGen.effectiveBaud(mhz, baud)
+      // The rate the hardware actually transmits, from the generator the RTL
+      // uses (UartBaudTick: fractional, so most rates are exact).
+      val eff  = jop.io.UartBaudTick.actualRate(sys.clkFreq, baud, 5)
+        .setScale(0, BigDecimal.RoundingMode.HALF_UP).toInt
       val baudLine =
         if (eff == baud) f"  Baud check:  $baud exact at $mhz MHz%n"
         else
@@ -326,7 +325,7 @@ object JopTopVerilog {
           f"  *** transmit at $eff. The baud generator is FRACTIONAL (UartBaudTick),%n" +
           f"  *** so most rates are reachable from any clock; this one is not.%n" +
           f"  *** Download with: python3 fpga/scripts/download.py -e <app>.jop <tty> $eff%n"
-      f"  $pll%n" + baudLine
+      baudLine
     } else if (jopConfig.assembly.fpgaBoard.name.contains("wukong") && sys.memory == "ddr3") {
       // Emit the MIG + clk_wiz inputs for the preset's profile, then verify the
       // chain. The emit covers "someone forgot which numbers go together"; the

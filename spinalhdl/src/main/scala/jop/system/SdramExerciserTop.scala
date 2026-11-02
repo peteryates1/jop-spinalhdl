@@ -22,12 +22,16 @@ import jop.memory.{BmbSdramCtrl32, JopMemoryConfig, SdramDeviceInfo}
  */
 /** @param md     the SDRAM part to drive.
   * @param board  which board's PLL to instantiate -- see SdSpiExerciserTop.
-  * @param clkMhz the system clock this design is built for. */
+  * @param clkMhz the system clock this design is built for.
+  * @param pll    the design's PLL, where it defines one (status item 173): on
+  *               a board whose family builds PLLs, an SDRAM design must, for
+  *               the memory clock's phase is its choice. Else the board's. */
 case class SdramExerciserTop(
   md: MemoryDevice,
   board: jop.config.Board = SdramExerciserDesign.assembly.fpgaBoard,
   clkMhz: Int = SdramExerciserDesign.clkMhz,
-  uartBaud: Int = SdramExerciserDesign.uartBaud
+  uartBaud: Int = SdramExerciserDesign.uartBaud,
+  pll: Option[jop.config.PllDefinition] = None
 ) extends Component {
 
   val io = new Bundle {
@@ -40,10 +44,12 @@ case class SdramExerciserTop(
 
   noIoPrefix()
 
-  // PLL from the BOARD. SDRAM_SDR selects the branch that also yields the
-  // phase-shifted memory clock, which this design needs and the SD exercisers
-  // do not -- the difference is in the spec, not in a different blackbox.
-  val pllResult = jop.system.pll.Pll.forDesign(board, jop.config.MemoryType.SDRAM_SDR, io.clk_in, clkMhz)
+  // The design's PLL where it defines one; else the board's, whose SDRAM_SDR
+  // branch also yields the phase-shifted memory clock this design needs.
+  val pllResult = pll match {
+    case Some(d) => jop.system.pll.Pll.build(d, board, io.clk_in)
+    case None    => jop.system.pll.Pll.forDesign(board, jop.config.MemoryType.SDRAM_SDR, io.clk_in, clkMhz)
+  }
   val sysClk = pllResult.systemClk.get
   val pllLocked = pllResult.locked
   io.sdram_clk := pllResult.sdramClk.get
@@ -592,4 +598,6 @@ object SdramExerciserDesign extends jop.config.BoardDesign {
     * which run this board at 60 or 80. */
   val clkMhz     = 100
   val memoryDevice = assembly.memoryDevices.head._2
+  /** Its PLL (status item 173): the EP4CGX150 designs' shape, at 100 MHz. */
+  override def plls = Seq(JopConfig.ep4cgx150Pll(clkMhz, sdram = true))
 }

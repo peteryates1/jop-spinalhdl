@@ -20,9 +20,9 @@ object SdramExerciserBuild extends App {
     mode = Verilog,
     targetDirectory = layout.rtlDir(cfgName, Seq.empty),
     defaultClockDomainFrequency = FixedFrequency(HertzNumber(design.clkMhz * 1000000L))
-  ).generate(InOutWrapper(SdramExerciserTop(design.memoryDevice, board, design.clkMhz)))
+  ).generate(InOutWrapper(SdramExerciserTop(design.memoryDevice, board, design.clkMhz, pll = design.plls.headOption)))
 
-  DramPllGen.emit(design.clkMhz, cfgDir)
+  DesignPlls.emit(design, layout.ipDir(cfgName, Seq.empty))
 
   def write(path: String, body: String): Unit = {
     val f = new java.io.File(path)

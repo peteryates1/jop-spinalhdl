@@ -30,16 +30,20 @@ Schematic: `QMTECH_EP4CGX150DF27_V2.pdf` (core board V2)
 ## Clock
 
 - **Oscillator**: 50 MHz (PIN_B14)
-- **PLL** (`dram_pll`): 50 MHz input
-  - c0: 50 MHz (unused)
-  - c1: 80 MHz — system clock (JOP cores, memory controller)
-  - c2: 80 MHz, -3ns phase shift — SDRAM clock output
-  - c3: 25 MHz — VGA pixel clock (640x480@60Hz)
+- **PLL** (`ep4cgx150_pll`, instance `pll`): 50 MHz input. Each design
+  defines its own (`JopConfig.ep4cgx150Pll`), and the ALTPLL builder writes it
+  into `build/<config>/ip/` (status item 173); outputs in this order, only
+  those the design uses:
+  - c0: the system clock (JOP cores, memory controller) -- 80 MHz single-core,
+    60/50/36 MHz at 4/8/12 cores
+  - c1 (SDR): the same frequency, -3000 ps -- SDRAM clock output
+  - c2 (VGA designs): 25 MHz -- VGA pixel clock (640x480@60Hz)
 - **Ethernet PLL** (`pll_125`): 50 MHz → 125 MHz for GMII TX clock
 
-At 100 MHz (for 1-8 core configurations), the PLL is reconfigured manually
-in `dram_pll.vhd`. The -3ns phase shift on c2 ensures SDRAM clock setup/hold
-margins at the SDRAM chip.
+The -3000 ps is a delay, not an angle, at every clock: it sets the SDRAM
+chip's setup/hold margins, and a sweep found -4000 ps made no difference.
+Quartus implements it at the nearest phase step its VCO offers (-3125 ps at
+80 MHz).
 
 ## SDR SDRAM
 
@@ -164,7 +168,7 @@ presets (`ep4cgx150DbFull` and the V5 variants) add Ethernet, VGA and SD.
 
 What a build actually contains is printed in its summary,
 `build/<config>/rtl/<Entity>.summary.txt` — preset, clock, PLL (generated per
-build into `build/<config>/ip/dram_pll.vhd`), baud, devices and microcode. Read
+build into `build/<config>/ip/ep4cgx150_pll.v`), baud, devices and microcode. Read
 that rather than restating values here: `JopTop` overrides some `memConfig`
 fields a preset declares (status [item 130](../current-status.md#item-130)).
 

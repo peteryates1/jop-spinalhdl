@@ -14,8 +14,8 @@ import java.nio.file.{Files, Paths}
  * the tree with a Scala blackbox that must match it. `fpga/colorlight-i5/
  * pll_jop_i5.v` was 60 lines of EHXPLLL parameters whose own header records the
  * `ecppll` command that produced it: a generator invocation written down as a
- * file. `fpga/qmtech-ep4cgx150-sdram/dram_pll.vhd` is 441 lines of the same
- * thing, text-patched for frequency.
+ * file. `fpga/qmtech-ep4cgx150-sdram/dram_pll.vhd` was 441 lines of the same
+ * thing, text-patched for frequency (DramPllGen, until 2026-11-02).
  *
  * Divider selection is exactly the part not to do by hand. ecppll picks a set it
  * guarantees will lock -- Fvco inside the legal band -- and hand-tuning that, or

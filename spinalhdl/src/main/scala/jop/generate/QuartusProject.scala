@@ -168,8 +168,6 @@ object QuartusProject {
     // "dram_pll.vhd" -- the EP4CGX150's PLL -- so a Cyclone V project named a
     // file that does not exist for it.
     config.assembly.fpgaBoard.pllType.flatMap(_.ipFile).foreach {
-      case PllIpFile.Generated(name) =>
-        g("VHDL_FILE", layout.relativeTo(projectDir, layout.ipDir(preset, buildArgs) + "/" + name))
       case PllIpFile.Static(path) =>
         // By EXTENSION, not always VHDL_FILE: the MAX1000's PLL is Verilog, and
         // calling a .v file VHDL_FILE is the same class of error as pointing at
@@ -224,8 +222,8 @@ object QuartusProject {
 
     sb.append("# Timing constraints, generated from the same config (TimingConstraints).\n")
     sb.append("# The clock period comes from the board oscillator and the PLL instance\n")
-    sb.append("# name from PllType.instanceName -- the hand-written file named it `pll`\n")
-    sb.append("# where the design says `dramPll`, and Quartus discarded every group.\n")
+    sb.append("# name from the design's PLL definition -- the hand-written file named it\n")
+    sb.append("# `pll` where the design said `dramPll`, and Quartus discarded every group.\n")
     g("SDC_FILE", s"$revision.sdc")
     sb.append("\n")
 

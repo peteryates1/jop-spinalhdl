@@ -96,7 +96,7 @@ object MigProfile {
     // writes is GENERATED and goes under build/, board-scoped -- one board's IP
     // serves every configuration built from it (the Wukong's serves seven), so
     // build/<config>/ would be the wrong home. Same split as DramPllGen's
-    // template, which was deleted once for looking like a build product.
+    // template had, which was deleted once for looking like a build product.
     val template = Paths.get(boardDir, "vivado/ip/mig.prj")
     val outDir   = Paths.get("build", "ip", Paths.get(boardDir).getFileName.toString, "generated")
     if (!Files.exists(template))

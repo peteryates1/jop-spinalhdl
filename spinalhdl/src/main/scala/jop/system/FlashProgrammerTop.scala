@@ -34,24 +34,23 @@ case class FlashProgrammerTop() extends Component {
   noIoPrefix()
 
   // PLL: 50 MHz -> 80 MHz system clock
-  val pll = DramPll()
-  pll.io.inclk0 := io.clk_in
-  pll.io.areset := False
+  // The design's PLL, built by the board's FPGA family (status item 173).
+  val pll = jop.system.pll.Pll.build(FlashProgrammerDesign.plls.head, FlashProgrammerDesign.assembly.fpgaBoard, io.clk_in)
 
   // Reset generator
   val rawClockDomain = ClockDomain(
-    clock = pll.io.c1,
+    clock = pll.systemClk.get,
     config = ClockDomainConfig(resetKind = BOOT)
   )
   val resetGen = new ClockingArea(rawClockDomain) {
     val res_cnt = Reg(UInt(3 bits)) init (0)
-    when(pll.io.locked && res_cnt =/= 7) {
+    when(pll.locked && res_cnt =/= 7) {
       res_cnt := res_cnt + 1
     }
-    val int_res = !pll.io.locked || !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
+    val int_res = !pll.locked || !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
   }
   val mainClockDomain = ClockDomain(
-    clock = pll.io.c1,
+    clock = pll.systemClk.get,
     reset = resetGen.int_res,
     frequency = FixedFrequency(80 MHz),
     config = ClockDomainConfig(resetKind = SYNC, resetActiveLevel = HIGH)
@@ -286,6 +285,9 @@ case class FlashProgrammerTop() extends Component {
   * (clk_in, ser_txd); only the EPCS ports needed renaming, flash_* -> cf_*,
   * to match DeviceType.CfgFlash. */
 object FlashProgrammerDesign extends jop.config.BoardDesign {
+  // Its PLL (status item 173): only a system clock, built by the board's
+  // FPGA family. Declared so the generators write and list it.
+  override def plls = Seq(jop.system.pll.Pll.systemOnly(inputClock, clkMhz))
   import jop.config._
   val assembly   = SystemAssembly.qmtechWithDb
   val entityName = "FlashProgrammerTop"
@@ -318,7 +320,7 @@ object FlashProgrammerBuild extends App {
     defaultClockDomainFrequency = FixedFrequency(HertzNumber(design.clkMhz * 1000000L))
   ).generate(FlashProgrammerTop())
 
-  jop.config.DramPllGen.emit(design.clkMhz, cfgDir)
+  jop.generate.DesignPlls.emit(design, layout.ipDir(cfgName, Seq.empty))
 
   StandaloneBuild.summary(cfgName, design.entityName,
     board = design.assembly.fpgaBoard.name, fpga = design.fpga.name,

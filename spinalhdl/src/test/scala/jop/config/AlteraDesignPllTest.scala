@@ -73,4 +73,75 @@ class AlteraDesignPllTest extends AnyFunSuite {
       "pll|altpll_component|auto_generated|pll1|clk[1]")))
     assert(tc.derivePllClocks)
   }
+
+  // ---- the EP4CGX150 (step 7c) ----
+
+  private def isVga(d: DeviceInstance) =
+    d.deviceType.key == DeviceType.VgaText.key || d.deviceType.key == DeviceType.VgaDma.key
+
+  /** Every EP4CGX150 preset, and the parameterised ones at the points they run
+    * (ep4cgx150Smp: 4 cores at 60 MHz, 8 at 50, 12 at 36). */
+  private lazy val ep4cgx150Presets: Seq[(String, JopConfig)] = {
+    val named = for {
+      m <- JopConfig.getClass.getMethods.toSeq
+      if m.getParameterCount == 0 && m.getReturnType == classOf[JopConfig]
+      cfg = m.invoke(JopConfig).asInstanceOf[JopConfig]
+      if cfg.assembly.fpgaBoard.name == "qmtech-ep4cgx150"
+    } yield (m.getName, cfg)
+    named ++ Seq(
+      "ep4cgx150Smp(2)"         -> JopConfig.ep4cgx150Smp(2),
+      "ep4cgx150Smp(4, 60)"     -> JopConfig.ep4cgx150Smp(4, 60),
+      "ep4cgx150Smp(8, 50)"     -> JopConfig.ep4cgx150Smp(8, 50),
+      "ep4cgx150Smp(12, 36)"    -> JopConfig.ep4cgx150Smp(12, 36),
+      "ep4cgx150BramSmp(4, 50)" -> JopConfig.ep4cgx150BramSmp(4, 50))
+  }
+
+  test("the EP4CGX150's PLL belongs to its designs, not its board") {
+    assert(Board.QmtechEP4CGX150.pllType.isEmpty, "the EP4CGX150 still declares a PLL")
+  }
+
+  test("an EP4CGX150 design's PLL: its clock, the SDRAM's copy 3 ns early, VGA's 25 MHz, nothing else") {
+    // What DramPllGen's template gave every design, c1..c3, less the outputs
+    // a design does not use: its unused 50 MHz c0, and c3 without VGA.
+    assert(ep4cgx150Presets.size >= 17, ep4cgx150Presets.map(_._1).mkString(", "))
+    for ((name, cfg) <- ep4cgx150Presets; s <- cfg.systems) {
+      val mhz = (s.clkFreq.toBigDecimal / 1000000).toIntExact
+      val want = PllDefinition("CLK50M",
+        Seq(PllOutput(PllRole.System, mhz)) ++
+          (if (s.memory == "sdr") Seq(PllOutput(PllRole.Sdram, mhz, phasePs = -3000)) else Nil) ++
+          (if (s.effectiveDevices.values.exists(isVga)) Seq(PllOutput(PllRole.Vga, 25)) else Nil),
+        module = "ep4cgx150_pll", instance = "pll")
+      assert(s.pll.contains(want), s"$name defines ${s.pll}")
+    }
+  }
+
+  test("an EP4CGX150 project reads the generated PLL, and its SDC names the outputs by role") {
+    val tcl = QuartusProject.generate(JopConfig.ep4cgx150Serial, "rev", "ep4cgx150Serial", Seq("ep4cgx150Serial"))
+    assert(tcl.linesIterator.exists(l => l.contains("VERILOG_FILE") && l.contains("build/ep4cgx150Serial/ip/ep4cgx150_pll.v")))
+    assert(!tcl.contains("dram_pll"), "the project still names DramPllGen's file")
+    // VGA is its own domain (status item 65): system and SDRAM together, 25 MHz apart.
+    val groups = TimingConstraints.forConfig(JopConfig.ep4cgx150DbFull).asyncGroups
+    assert(groups.contains(Seq(
+      "pll|altpll_component|auto_generated|pll1|clk[0]",
+      "pll|altpll_component|auto_generated|pll1|clk[1]")), groups)
+    assert(groups.contains(Seq("pll|altpll_component|auto_generated|pll1|clk[2]")), groups)
+  }
+
+  test("the EP4CGX150 exercisers define their PLLs, and the Verilog generator writes them") {
+    import jop.system._
+    val sys80 = PllDefinition("CLK50M", Seq(PllOutput(PllRole.System, 80)), "pll_sys_80mhz", "pll")
+    for (d <- Seq[BoardDesign](UartTestDesign, ConfigFlashExerciserDesign, FlashProgrammerDesign,
+                               SdSpiExerciserDesign, SdNativeExerciserDesign))
+      assert(d.plls == Seq(sys80), d.designName)
+    assert(SdramExerciserDesign.plls == Seq(PllDefinition("CLK50M",
+      Seq(PllOutput(PllRole.System, 100), PllOutput(PllRole.Sdram, 100, phasePs = -3000)),
+      "ep4cgx150_pll", "pll")))
+    val dir = Files.createTempDirectory("ip").toString
+    assert(DesignPlls.emit(SdramExerciserDesign, dir) == Seq(Paths.get(dir, "ep4cgx150_pll.v").toString))
+  }
+
+  test("DramPllGen and its template are gone") {
+    assert(getClass.getResource("/jop/config/dram_pll.template.vhd") == null)
+    assert(scala.util.Try(Class.forName("jop.config.DramPllGen$")).isFailure)
+  }
 }

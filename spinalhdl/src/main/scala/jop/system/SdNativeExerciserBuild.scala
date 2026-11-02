@@ -12,6 +12,11 @@ object SdNativeExerciserBuild extends App {
   /** Clock override, for bisecting a hardware failure against the frequency the
     * hand-written project used. `sbt "runMain ... 60"` */
   val clkMhz   = args.headOption.map(_.toInt).getOrElse(design.clkMhz)
+  // The design declares its PLL at its own clock (status item 173), and the
+  // generators write that one: another clock here would instantiate a module
+  // no file defines.
+  require(clkMhz == design.clkMhz,
+    s"SdNativeExerciserDesign's PLL is defined at ${design.clkMhz} MHz; change its clkMhz, not the argument")
   val cfgName  = "sdNativeExerciser"
   val revision = "sd_native_exerciser"
   val layout   = BuildLayout.default
@@ -24,7 +29,7 @@ object SdNativeExerciserBuild extends App {
     defaultClockDomainFrequency = FixedFrequency(HertzNumber(clkMhz * 1000000L))
   ).generate(InOutWrapper(SdNativeExerciserTop(board, clkMhz)))
 
-  DramPllGen.emit(clkMhz, cfgDir)
+  DesignPlls.emit(design, layout.ipDir(cfgName, Seq.empty))
 
   def write(path: String, body: String): Unit = {
     val f = new java.io.File(path)

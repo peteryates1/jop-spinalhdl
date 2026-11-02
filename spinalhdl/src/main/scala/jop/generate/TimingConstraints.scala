@@ -69,7 +69,7 @@ case class TimingConstraints(
     val groups = asyncGroups.filter(_.nonEmpty)
     if (groups.size >= 2) {
       sb.append("\n# Mutually asynchronous clock domains. The PLL instance name comes\n")
-      sb.append("# from PllType.instanceName, not from a hand-copied string.\n")
+      sb.append("# from the design's PLL definition, not from a hand-copied string.\n")
       sb.append("set_clock_groups -asynchronous \\\n")
       sb.append(groups.map(g => "    -group {" + g.mkString(" ") + "}").mkString(" \\\n"))
       sb.append("\n")
@@ -139,28 +139,21 @@ object TimingConstraints {
 
     val boardClock = ClockConstraint("clk_in", config.inputClock.freq.toBigDecimal)
 
-    // Which PLL outputs this design actually uses. AlteraDramPll drives the
-    // system from c1, and on SDR additionally the SDRAM (c2) and VGA (c3).
-    // c2 is the SDRAM chip's copy of c1 and is timed with it.
+    // Which PLL outputs this design uses, named by ROLE: a PLL the design
+    // defines (status item 173) numbers its outputs in the order its
+    // definition lists them, and the family's builder says how the toolchain
+    // names each. The system clock and the SDRAM's copy of it are timed
+    // together.
     //
-    // c3 IS ITS OWN DOMAIN. The VGA side is built asynchronous -- a reset
-    // synchronizer, BufferCC on vBlank -- and grouping c3 with c1 had Quartus
-    // time every crossing against the 2.5 ns edge relationship of 80 and 25 MHz:
-    // ep4cgx150DbFull's 2026-11-01 rebuild missed it by 0.259 ns on the reset
-    // synchronizer's own input (status item 65). Named only when a VGA device
-    // uses it: a group naming a clock nothing drives is dropped whole.
-    val sdr = memType.contains(MemoryType.SDRAM_SDR)
+    // VGA IS ITS OWN DOMAIN. The VGA side is built asynchronous -- a reset
+    // synchronizer, BufferCC on vBlank -- and grouping its 25 MHz with the
+    // system clock had Quartus time every crossing against the 2.5 ns edge
+    // relationship of 80 and 25 MHz: ep4cgx150DbFull's 2026-11-01 rebuild
+    // missed it by 0.259 ns on the reset synchronizer's own input (status item
+    // 65). Named only when a VGA device uses it: a group naming a clock
+    // nothing drives is dropped whole.
     val hasVga = config.devices.values.exists(d =>
       d.deviceType.key == DeviceType.VgaText.key || d.deviceType.key == DeviceType.VgaDma.key)
-    val pllOutputs = if (sdr) Seq(1, 2) else Seq(1)
-
-    def alteraPll(outputs: Seq[Int]) = board.pllType.toSeq.flatMap { pt =>
-      if (pt.instanceName.isEmpty) Nil else outputs.map(pt.alteraClockPath)
-    }
-    // A PLL the DESIGN defines (status item 173) is named by ROLE: its outputs
-    // are numbered in the order the definition lists them, and the family's
-    // builder says how the toolchain names each. The fixed numbering above is
-    // the board-declared PLLs' until their families are converted.
     def designPll(roles: PllRole*): Seq[String] = for {
       d <- config.plls
       v <- config.fpgaFamily.pll.toSeq
@@ -168,12 +161,8 @@ object TimingConstraints {
       if roles.contains(o.role)
       path <- v.clockPath(d.instance, i)
     } yield path
-    val byDesign = config.plls.nonEmpty
-    val dramGroup = if (byDesign) designPll(PllRole.System, PllRole.Sdram) else alteraPll(pllOutputs)
-    val vgaGroup =
-      if (!hasVga) Nil
-      else if (byDesign) designPll(PllRole.Vga)
-      else if (sdr) alteraPll(Seq(3)) else Nil
+    val dramGroup = designPll(PllRole.System, PllRole.Sdram)
+    val vgaGroup = if (hasVga) designPll(PllRole.Vga) else Nil
     // The Ethernet PLL and the PHY's receive clock are separate domains -- but
     // only when the DESIGN instantiates Ethernet, not merely when the board
     // carries the chip. The hand-written jop_sdram.sdc keyed off the board and

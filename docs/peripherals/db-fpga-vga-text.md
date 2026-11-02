@@ -272,8 +272,9 @@ display as blank.
 VGA text is a device in the preset — `ep4cgx150DbFull` lists
 `"vgaText" -> DeviceInstance(DeviceType.VgaText, devicePart = Some("VGA"))`.
 
-The VGA pixel clock domain (25 MHz) is output c3 of the board's generated PLL
-(`DramPllGen`), handed to the device as `vgaCd` by `DeviceTopWiring`.
+The VGA pixel clock domain (25 MHz) is the design PLL's VGA output -- a VGA
+design's `JopConfig.ep4cgx150Pll(..., vga = true)`, c2 -- handed to the device
+as `vgaCd` by `DeviceTopWiring`.
 
 Key source files:
 
@@ -286,7 +287,7 @@ Key source files:
 | `build/<config>/java/gen/com/jopdesign/sys/Const.java` | Generated per preset: `IO_VGA = IO_BASE + 0x40` on `ep4cgx150DbFull` |
 | `java/apps/Small/src/test/VgaTest.java` | Hardware test app |
 | `build/<config>/quartus/*.qsf` | VGA pin assignments, generated from `Board.scala` |
-| `spinalhdl/src/main/scala/jop/config/DramPllGen.scala` | The generated PLL, with the 25 MHz c3 output |
+| `spinalhdl/src/main/scala/jop/config/JopConfig.scala` | `ep4cgx150Pll`: the design's PLL, with the 25 MHz VGA output |
 
 ## Troubleshooting
 
