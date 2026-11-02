@@ -29,6 +29,7 @@ PROJECT_ROOT   = ../..
 CFG_DIR       := $(ROOT)/build/$(CFG)
 CFG_NAME      := $(CFG)
 include ../unit.mk
+include ../ecp5.mk
 GENDIR        := $(CFG_DIR)/rtl
 BUILD         := $(CFG_DIR)/nextpnr
 LPF           := $(BUILD)/$(TOP).lpf
@@ -64,12 +65,11 @@ UCODE     := $(wildcard $(ROOT)/build/microcode/serial/mem_*.dat)
 $(GENDIR)/$(TOP).v: $(SCALA_SRC) $(UCODE)
 	$(MAKE) generate
 
-# --- 2. Synthesis: in $(GENDIR), where the $readmemb files are --------------
-$(BUILD)/$(TOP).json: $(GENDIR)/$(TOP).v
+# --- 2. Synthesis: in $(GENDIR), where the $readmemb files are, with the block
+# RAM's clock-to-out (../ecp5.mk, status item 175) ----------------------------
+$(BUILD)/$(TOP).json: $(GENDIR)/$(TOP).v $(ECP5_DP16KD)
 	mkdir -p $(BUILD)
-	cd $(GENDIR) && yosys -p "read_verilog $(TOP).v $(abspath $(CFG_DIR))/ip/pll_jop_i5.v; \
-	    synth_ecp5 -top $(TOP) -json $(abspath $(BUILD))/$(TOP).json" \
-	    > $(abspath $(BUILD))/yosys.log 2>&1 || { tail -20 $(abspath $(BUILD))/yosys.log; exit 1; }
+	cd $(GENDIR) && $(call ecp5_synth,$(TOP),$(TOP).v $(abspath $(CFG_DIR))/ip/pll_jop_i5.v,$(abspath $(BUILD))/$(TOP).json,$(abspath $(BUILD))/yosys.log)
 
 synth: $(BUILD)/$(TOP).json
 

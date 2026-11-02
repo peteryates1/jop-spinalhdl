@@ -122,6 +122,7 @@ cold-check:
 .PHONY: check-build
 check-build:
 	@.github/scripts/check-generated-deps.sh
+	@.github/scripts/check-ecp5-bram-timing.sh
 	@.github/scripts/check-sim-xstate.sh
 	@.github/scripts/check-guard-discipline.sh
 	@.github/scripts/check-console-baud.sh

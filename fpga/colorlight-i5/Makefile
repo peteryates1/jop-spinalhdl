@@ -73,6 +73,7 @@ PROJECT_ROOT := $(ROOT)
 CFG        := $(PRESET)
 CFG_NAME   := $(PRESET)
 include ../unit.mk
+include ../ecp5.mk
 TTY         = $(shell $(ROOT)/fpga/scripts/usb_serial_map --by-id $(CONSOLE_ALIAS) 2>/dev/null)
 BAUD       := 1000000
 # THE APP COMES FROM THIS CONFIG'S OWN JAVA TREE, like every other board.
@@ -127,12 +128,12 @@ $(GENDIR)/$(TOP).v: $(SCALA_SRC) $(UCODE)
 # --- 2. Synthesis -----------------------------------------------------------
 # yosys must run with $(GENDIR) as its working directory: the $readmemb paths in
 # the generated Verilog are bare filenames, resolved relative to the cwd. Hence
-# the absolute output path.
-$(BUILD)/$(TOP).json: $(GENDIR)/$(TOP).v
+# the absolute output paths. With the block RAM's clock-to-out: ../ecp5.mk,
+# status item 175. The log is no longer piped through tee, whose exit status
+# hid a failed synthesis and let the previous netlist be placed.
+$(BUILD)/$(TOP).json: $(GENDIR)/$(TOP).v $(ECP5_DP16KD)
 	mkdir -p $(BUILD)
-	cd $(GENDIR) && yosys -p "read_verilog $(TOP).v $(abspath $(CFG_DIR))/ip/pll_jop_i5.v; \
-	    synth_ecp5 -top $(TOP) -json $(abspath $(BUILD))/$(TOP).json" \
-	    2>&1 | tee $(abspath $(BUILD))/yosys.log
+	cd $(GENDIR) && $(call ecp5_synth,$(TOP),$(TOP).v $(abspath $(CFG_DIR))/ip/pll_jop_i5.v,$(abspath $(BUILD))/$(TOP).json,$(abspath $(BUILD))/yosys.log)
 
 synth: $(BUILD)/$(TOP).json
 
@@ -143,7 +144,7 @@ $(BUILD)/$(TOP).config: $(BUILD)/$(TOP).json
 	    --lpf $(LPF) \
 	    --seed $(SEED) \
 	    --textcfg $(BUILD)/$(TOP).config \
-	    2>&1 | tee $(BUILD)/nextpnr.log
+	    > $(BUILD)/nextpnr.log 2>&1 || { tail -20 $(BUILD)/nextpnr.log; exit 1; }
 
 pnr: $(BUILD)/$(TOP).config
 
