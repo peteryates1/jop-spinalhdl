@@ -4476,11 +4476,28 @@ PASS at 40. A control routed from the Verilog captured BEFORE the change, with
 the same tools, LPF and seed, gives exactly 41.61 MHz too, so the step moved
 nothing. On `jop-i5-1` it programmed through the unit's probe (`assert-device`
 read 41111043) and ran HelloWorld: download checksum OK at 1 Mbaud, 284 lines
-in 25 s; the board is parked in its handshake. NOT explained: the
-`colorlightDbI5Eth` build of 2026-10-28 routed at 50.72 MHz, about 9 MHz above
-this preset today; whether that is a different netlist's placement luck or a
-change since then is unsettled (no Fmax was recorded for `colorlightDbI5Sdram`
-then).
+in 25 s; the board is parked in its handshake.
+
+**The 9 MHz below `colorlightDbI5Eth` (50.72 MHz on 2026-10-28) is not a
+regression, settled 2026-11-02.** A control build at that day's commit
+(107305c) routes this preset at exactly 41.61 MHz, and its Verilog is today's
+once line-number names are normalised; the 10-28 Ethernet netlist and today's
+route identically, seed for seed. Over seeds 1-8 Ethernet gives 48.30-53.15 MHz
+and this preset 41.61-46.89 (seed 1 is its worst), so about 6.6 MHz is the
+netlist and the rest the seed. The netlist part is synthesis. The fetch stages'
+RTL is identical in both, but yosys maps the bytecode RAM -> microcode ROM
+address cone (the critical path) in 13 LUT levels here and 10 there. yosys
+0.52's ECP5 `DP16KD` model carries no timing, so ABC9 takes the RAM's outputs
+as arriving with the clock (nextpnr: 5.8 ns later) and lets its area recovery
+deepen that cone up to the slowest path it does see: here memory controller ->
+UART RX FIFO pop (14 levels, 6591 ps), with Ethernet a shallower one (5800 ps).
+Giving `DP16KD` a clock-to-out confirms it (a `cells_sim.v` copy with
+`(posedge CLKx => (DOxN : DIxN)) = <ps>` arcs, read before `synth_ecp5 -run
+coarse:`): 46.68-49.52 MHz at 5300 ps, the physical value (ABC then deepens
+the flop paths instead), and 48.98-54.02 MHz at 2500 ps, scaled to ABC's wire
+model, for 136 more LUTs. The board flows do not do this. It may also be
+why item 129's comparator in the memory controller's IDLE chain cost the i5
+7 MHz on a path through the fetch stage (unverified).
 
 **What is left:** the setup layer is done. Every fact the 2026-10-28 list
 put in the wrong layer -- the board designs' aliases, the serial registries,
