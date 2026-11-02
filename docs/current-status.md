@@ -307,6 +307,7 @@ Marked closed in the heading or here, sorted by ID.
 - **[171](#item-171)** — ~~NetTest's TCP echo never serves again after a connection that does not close cleanly~~ — CLOSED 2026-10-31: every pool slot serves a client, aborted connections are released, silent ones dropped after 30 s; `net_echo_check.py`
 - **[172](#item-172)** — ~~Parts.scala named every Artix-7 at speed grade -1, and three Vivado boards build -2~~ — CLOSED 2026-10-28: a part lists its grades with the slowest as default, each board sets its own; `FpgaPartTest`
 - **[174](#item-174)** — ~~every JOP image has the same MAC and IP, so two boards cannot share the LAN~~ — CLOSED 2026-10-31: board instances give each unit on the LAN its own MAC and hostname, and NetTest takes a DHCP lease; `InstanceTest`
+- **[175](#item-175)** — ~~the i5's Fmax moved with unrelated logic: yosys gives ABC9 no block-RAM clock-to-out~~ — CLOSED 2026-11-02: both i5 board flows read a DP16KD model with one; `colorlightDbI5Sdram` 41.61 -> 48.98 MHz; `check-ecp5-bram-timing.sh`
 
 ### Records
 
@@ -4495,9 +4496,10 @@ Giving `DP16KD` a clock-to-out confirms it (a `cells_sim.v` copy with
 `(posedge CLKx => (DOxN : DIxN)) = <ps>` arcs, read before `synth_ecp5 -run
 coarse:`): 46.68-49.52 MHz at 5300 ps, the physical value (ABC then deepens
 the flop paths instead), and 48.98-54.02 MHz at 2500 ps, scaled to ABC's wire
-model, for 136 more LUTs. The board flows do not do this. It may also be
-why item 129's comparator in the memory controller's IDLE chain cost the i5
-7 MHz on a path through the fetch stage (unverified).
+model, for 136 more LUTs. Both i5 flows do this since [item 175](#item-175),
+which put this preset at 48.98 MHz. It may also be why item 129's comparator
+in the memory controller's IDLE chain cost the i5 7 MHz on a path through
+the fetch stage (unverified).
 
 **What is left:** the setup layer is done. Every fact the 2026-10-28 list
 put in the wrong layer -- the board designs' aliases, the serial registries,
@@ -4590,6 +4592,79 @@ NetTest's DHCP path itself: it has no simulation, so it is checked on hardware.
 .227 and `jop-i5-1` -> .228. On a simultaneous boot it offered both units the
 same address; the second REQUEST got a NAK, and that client restarted with a
 new transaction ID and bound .228 -- the race step 3's fixes are for.
+
+<a id="item-175"></a>
+
+### Item 175 — ~~The i5's Fmax moved with unrelated logic: yosys gives ABC9 no block-RAM clock-to-out~~ — CLOSED 2026-11-02: both i5 board flows read a DP16KD model that has one
+
+**Found 2026-11-02**, settling the 9 MHz in [item 173](#item-173)'s step 6
+(the investigation is there). `colorlightDbI5Sdram` routed at 41.61 MHz and
+`colorlightDbI5Eth` at 50.72, with byte-identical fetch RTL. yosys 0.52's ECP5
+`DP16KD` is a blackbox with no timing, so ABC9 takes the RAM's outputs as
+arriving with the clock; nextpnr has them 5.8 ns after it. ABC9 maps for
+delay, then recovers area on every path up to one global ceiling, the slowest
+path it can see. So the RAM-fed fetch path -- bytecode RAM -> jump table ->
+microcode ROM address, JOP's critical path on the i5 -- was deepened to match
+whatever flop-to-flop logic happened to be slowest: 13 LUT levels without
+Ethernet, 10 with.
+
+**The fix.** `fpga/ecp5_dp16kd.v` is yosys's own `DP16KD` declaration plus one
+clock-to-out arc on each of its 36 data outputs. `fpga/ecp5.mk`'s
+`ecp5_synth` runs `synth_ecp5`'s `begin` step, which reads the stock library;
+replaces `DP16KD` with the model; then runs the rest of `synth_ecp5`
+unchanged. Both i5 flows synthesise through it, and their netlists depend on
+the model, so a new value re-synthesises. On the way, the ext-board flow
+stopped piping yosys and nextpnr into `tee`. Its exit status had hidden both
+failures: a failed place and route went on to `ecppack`, which packs
+whatever placement is on disk -- seen while building this, and caught only
+because no `.config` existed yet. The two bring-up designs keep stock yosys:
+their READMEs record timing measured with it.
+
+**The value, 2500 ps,** is the RAM's lateness in ABC9's units, not
+nextpnr's. A flop's clock-to-out is 0.5 ns in nextpnr and 0 in yosys's model,
+so the RAM is 5.3 ns behind a flop: about four routed LUT levels, and ABC9
+prices a level at 0.5-0.7 ns (LUT delay plus `-W 300`). The physical 5300 ps
+over-weights the RAM, so ABC9 deepens the flop paths instead (46.68-49.52 MHz
+on `colorlightDbI5Sdram`). Post-route system clock over nextpnr seeds 1-8
+(min-max, mean; LUTs at seed 1):
+
+| preset | stock | 2000 ps | **2500 ps** | 3000 ps |
+|---|---|---|---|---|
+| `colorlightDbI5Sdram` | 41.61-46.89, 44.19; 12,886 | 49.36-55.56, 52.71; 13,673 | **48.98-54.02, 51.93; 13,022** | 50.85-54.79, 52.98; 12,507 |
+| `colorlightDbI5Eth` | 48.30-53.15, 50.81; 14,320 | 49.30-54.38, 52.24; 14,192 | **50.70-53.87, 52.09; 14,139** | 49.62-57.84, 53.28; 13,981 |
+| `colorlightI5Sdram` | 48.11-55.06, 51.44; 13,171 | 50.22-56.22, 52.95; 13,622 | **50.61-56.42, 52.52; 12,915** | 49.09-52.82, 51.24; 12,624 |
+| `colorlightI5Bram` | 44.05-49.32, 45.93; 12,638 | 45.72-48.96, 47.34; 12,580 | **46.94-50.46, 47.99; 12,225** | 43.35-48.52, 46.61; 12,147 |
+
+Only 2500 ps raised every preset's mean and its worst seed. 3000 ps drops
+`colorlightI5Bram`'s worst seed below stock and `colorlightI5Sdram`'s mean;
+2000 ps costs up to 787 LUTs. The three means differ by less than the seed
+spread (about ±2 MHz over eight seeds), so the derived value stands, not the
+best-looking one. In `colorlightDbI5Sdram` the fetch cone goes from 13 LUT
+levels to 8. The presets stay at 40 MHz; what changed is the margin, 1.61 ->
+8.98 MHz at seed 1 on `colorlightDbI5Sdram`.
+
+**Verified.** Each flow's netlist is the one measured, cell for cell, and its
+seed-1 figure matches the table: `colorlightDbI5Sdram` 48.98 MHz (was 41.61),
+`colorlightDbI5Eth` 53.12 (was 50.72), `colorlightI5Sdram` 53.83 and
+`colorlightI5Bram` 47.34. On `jop-i5-1`, the only i5 (the ext board is
+empty), through `hw_verify.py` with timing MET: DoAll 68/68 on both
+base-board presets. NetTest on `colorlightDbI5Eth` took a DHCP lease
+(192.168.0.227, MAC 02:4A:4F:50:00:02) and answered ping 10/10 and UDP and
+TCP echo by name, and `net_echo_check.py`'s echo, reset and idle checks all
+passed. The board is parked in its handshake. Building the ext-board flow
+also found its bare `make` building nothing (it ran `unit-info`, item 173's
+step 3): fixed in d4128f1, guarded by `check-board-default-goal.sh`.
+
+Guard: `.github/scripts/check-ecp5-bram-timing.sh`. It enumerates every
+Makefile under `fpga/` that calls `nextpnr-ecp5`. Each must synthesise through
+`$(call ecp5_synth)`, with the model as a prerequisite of its netlist in
+`make -p`, or be a declared bring-up design. The model must keep one arc per
+data output at a single value, and no flow may pipe nextpnr into `tee`.
+Where yosys is installed, the model must also match its `DP16KD` byte for
+byte, and `brams_map.v` must still map only to `NOREG`, which is the case the
+delay assumes. Red on the tree before the fix (both flows named twice), on a
+dropped prerequisite, a deleted arc, a changed parameter default, an unequal
+arc and the ext-board flow's old nextpnr rule.
 
 <a id="item-69"></a>
 
