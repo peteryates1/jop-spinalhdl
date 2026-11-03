@@ -8,8 +8,13 @@ CFG          ?= wukongDdr3
 # The probe and console are the unit's: fpga/unit.mk asks setup/units.toml.
 
 include ../vivado.mk
-BITSTREAM := vivado/build/wukong_jop_bram/wukong_jop_bram.runs/impl_1/JopBramWukongTop.bit
-SDRAM_BITSTREAM := vivado/build/wukong_sdram_exerciser/SdramExerciserWukongTop.bit
+# Where each build leaves its bitstream. The BRAM flow's and the SDRAM
+# exerciser's named this directory's vivado/build/ until 2026-11-03: their
+# builds moved to build/ (2026-08-29), their program steps did not, and
+# `make program` -- this board's default flow -- looked where nothing writes.
+# Deferred (=): both directories are defined further down.
+BITSTREAM = $(BRAM_CFG_DIR)/vivado/build/wukong_jop_bram/wukong_jop_bram.runs/impl_1/JopBramWukongTop.bit
+SDRAM_BITSTREAM = $(SDR_EX_DIR)/vivado/build/SdramExerciserWukongTop.bit
 JOP_SDRAM_BITSTREAM = $(SDRAM_CFG_DIR)/vivado/build/JopSdramWukongTop.bit
 DUAL_BITSTREAM = $(DUAL_CFG_DIR)/vivado/build/JopDualWukongTop.bit
 

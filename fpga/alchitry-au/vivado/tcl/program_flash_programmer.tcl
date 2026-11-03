@@ -1,17 +1,16 @@
 # Program the FPGA with the UART Flash Programmer bitstream.
 # After loading, use flash_program.py --sst26 to program the SPI flash.
 
-set script_dir [file dirname [file normalize [info script]]]
-set repo_root  [file normalize [file join $script_dir ../..]]
-# The bitstream path comes from the caller. It was hardcoded to
-# vivado/build/... -- the pre-build-tree location -- which after the 2026-08-26
-# conversion is a stale file or none at all, and programming a stale bitstream
-# succeeds silently.
-if {[info exists ::env(JOP_BIT_FILE)] && $::env(JOP_BIT_FILE) ne ""} {
-  set bit_file [file normalize $::env(JOP_BIT_FILE)]
-} else {
-  set bit_file [file join $repo_root vivado/build/flash_programmer/flash_programmer.runs/impl_1/FlashProgrammerDdr3Top.bit]
+# The bitstream path comes from the caller, and there is no default. It was
+# hardcoded to vivado/build/... -- the pre-build-tree location -- which after the
+# 2026-08-26 conversion is a stale file or none at all, and programming a stale
+# bitstream succeeds silently. That path stayed on as the default for an unset
+# JOP_BIT_FILE until 2026-11-03, and `make flash-programmer` never set it.
+if {![info exists ::env(JOP_BIT_FILE)] || $::env(JOP_BIT_FILE) eq ""} {
+  puts "ERROR: JOP_BIT_FILE is not set: the caller names the bitstream (make flash-programmer)"
+  exit 1
 }
+set bit_file [file normalize $::env(JOP_BIT_FILE)]
 
 if {![file exists $bit_file]} {
   puts "ERROR: Bitstream not found: $bit_file"

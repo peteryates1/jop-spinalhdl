@@ -5000,9 +5000,9 @@ build summary records; `make monitor` on `jop-au-1` showed the exerciser's
 PASS lines. The guard now FAILS on a board with its own console target; the
 i5 (`colorlight-i5`, `BAUD := 1000000`) is the one named exception, and the
 guard fails too if it stops being one. Red first: on the unfixed tree it named
-`alchitry-au-ddr3-test`. Its `make program` still points at a bitstream path
-under the board directory that nothing writes since the build moved to
-`build/ddr3Exerciser/`.
+`alchitry-au-ddr3-test`. Its `make program` pointed at a bitstream path under
+the board directory that nothing writes since the build moved to
+`build/ddr3Exerciser/`; fixed the same day, with five more like it (item 94).
 
 
 <a id="item-71"></a>
@@ -5963,6 +5963,9 @@ gone in favour of the rate the build records.
 - `program_bitstream.tcl` hardcoded `vivado/build/jop_ddr3/...`, the
   pre-build-tree path. Once the project moved, `make program` would have loaded
   a **stale bitstream, silently**. It takes the path from the caller now.
+  (2026-11-03: `program_flash_programmer.tcl` took it too, but `make
+  flash-programmer` never passed one, so it loaded the old path; both scripts
+  now refuse an unset `JOP_BIT_FILE` -- item 94.)
 - `project-flash` and `bitstream-flash` had no dependency on `generate-flash`,
   so they would have built from whatever was left in `spinalhdl/generated` --
   pre-conversion bytes. Both now depend on it and fail with the item 82
@@ -6200,6 +6203,40 @@ spelling.
 
 `uart_test` was a bonus find: a `.qsf` and RTL with **no Makefile target at
 all**, so neither could be built by anything. Converted and given a target.
+
+**2026-11-03: six steps that LOAD a bitstream stayed behind.** The builds
+moved on 2026-08-29; not every step reading their output moved with them.
+`make program` on the Au's DDR3 exerciser ran a Vivado script of its own that
+looked in `fpga/alchitry-au-ddr3-test/vivado/build/` and programmed whichever
+JTAG target hw_server listed first. The guard written for it found five more:
+
+| board | step | loaded | now |
+|---|---|---|---|
+| Au | DDR3 exerciser `program` | its own `vivado/build/` | openFPGALoader, the unit's probe and loader, as hw_verify loads it |
+| Au | `flash-programmer` | the script's default, `vivado/build/` | the Makefile passes `JOP_BIT_FILE` |
+| Wukong | `program`, `program-flash` (the default flow, BRAM) | `vivado/build/wukong_jop_bram/` | `build/wukongBram/` |
+| Wukong | `sdram-program` | `vivado/build/wukong_sdram_exerciser/` | `build/sdramExerciserWukong/` |
+| A-E115FB | `exerciser-program` | `output_files/ddr2_exerciser.sof` | the shared `program-sof` in the exerciser's flow (`assert-device`, cable by serial) |
+
+The Au's flash programmer is the item 90 fix done by half: its script had
+taken the path from its caller since then, but `make flash-programmer` never
+passed one, so it fell back to the old path. Both Au program scripts now
+refuse an unset `JOP_BIT_FILE` instead -- a default pointing where nothing
+writes is the old path surviving the conversion.
+
+**Guard: `check-no-intree-bitstream.sh`** (in `make check-build`). In the
+fpga/ flows' code, a path to a `.bit`/`.rbf`/`.sof`/`.jic`/`.pof` must start
+at a directory the flow computes, or at `build/` through `../`. Red first on
+the unfixed tree: six lines in four boards. It cannot see a variable that is
+itself a source-tree directory (the bring-up jigs build beside their sources on
+purpose).
+
+**Checked:** on `jop-au-1`, `make program` loaded the exerciser through the
+unit's probe and `make run` showed 131,981 PASS lines and no FAIL; the Au is
+parked on `auSerial` again. The other four by dry run only (`make -n` names
+the build-tree file and the unit's probe or cable): none of their builds
+exists here. Both Au scripts' new refusal was run in Vivado batch, which stops
+before the hardware manager opens.
 
 <a id="item-95"></a>
 

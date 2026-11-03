@@ -133,6 +133,7 @@ check-build:
 	@.github/scripts/check-workflow-sbt-setup.sh
 	@.github/scripts/check-no-legacy-rtl-path.sh
 	@.github/scripts/check-no-intree-jop-path.sh
+	@.github/scripts/check-no-intree-bitstream.sh
 	@.github/scripts/check-probe-selection.sh
 	@.github/scripts/check-setup-layer.sh
 	@python3 fpga/scripts/test_hw_verify.py

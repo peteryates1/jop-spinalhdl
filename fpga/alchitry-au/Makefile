@@ -185,7 +185,8 @@ flash-programmer:
 	JOP_PROJ=flash_programmer JOP_BUILD_DIR=$(ABS_BUILD) \
 	  JOP_BIT=FlashProgrammerDdr3Top.bit \
 	  $(RUN_VIVADO) $(PRJ_TCL)
-	$(RUN_VIVADO) vivado/tcl/program_flash_programmer.tcl
+	JOP_BIT_FILE=$(ABS_BUILD)/flash_programmer/flash_programmer.runs/impl_1/FlashProgrammerDdr3Top.bit \
+	  $(RUN_VIVADO) vivado/tcl/program_flash_programmer.tcl
 
 program-flash: $(UNIT_DESC)
 	sudo python3 ../scripts/flash_program.py --sst26 \

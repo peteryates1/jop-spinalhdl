@@ -9,7 +9,7 @@
 #   make ips       - Generate Vivado IPs (reuses from alchitry-au if available)
 #   make project   - Create Vivado project
 #   make bitstream - Full Vivado build (synth + impl + bitstream)
-#   make program   - Program FPGA via JTAG
+#   make program   - Load the bitstream through the unit's probe (openFPGALoader)
 #   make monitor   - Monitor UART output (console.mk: the unit's console, at
 #                    the rate the build summary records)
 #   make all       - generate + ips + project + bitstream
@@ -86,6 +86,8 @@ CREATE_TCL := $(PROJECT_ROOT)/fpga/scripts/vivado_create_project.tcl
 BUILD_TCL  := $(PROJECT_ROOT)/fpga/scripts/vivado_build_project.tcl
 # Standalone top: build under its own config directory, not in the board dir.
 ABS_BUILD  := $(PROJECT_ROOT)/build/ddr3Exerciser/vivado/build
+# Where `bitstream` leaves it: the project's own implementation run.
+BIT_FILE    = $(ABS_BUILD)/ddr3_test/ddr3_test.runs/impl_1/Ddr3ExerciserTop.bit
 AU_IP      := $(PROJECT_ROOT)/build/ip/alchitry-au
 
 project:
@@ -107,8 +109,20 @@ bitstream:
 # FPGA programming and monitoring
 # --------------------------------------------------------------------------
 
-program:
-	$(RUN_VIVADO) vivado/tcl/program_bitstream.tcl
+# Loaded as hw_verify loads this board: by openFPGALoader, through the probe of
+# the unit this design runs on (fpga/unit.mk), with the loader the unit names.
+# Until 2026-11-03 this ran a Vivado script of its own, which looked for the
+# bitstream in this directory's vivado/build/ -- where nothing has written
+# since the build moved to build/ddr3Exerciser/ -- and programmed whichever
+# JTAG target hw_server listed first.
+LOADER = $(if $(call unit_fact,LOADER_BOARD),-b $(call unit_fact,LOADER_BOARD),-c $(call unit_fact,LOADER_CABLE))
+
+program: $(UNIT_DESC)
+	@test -n "$(BOARD_ALIAS)" || { echo "make: no unit has a probe for $(UNIT_DESIGN) (setup/units.toml)" >&2; exit 1; }
+	@test -f "$(BIT_FILE)" || { echo "make: no bitstream at $(BIT_FILE) -- run: make bitstream" >&2; exit 1; }
+	busdev=$$($(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --busdev $(BOARD_ALIAS)) && \
+	  sudo openFPGALoader $(LOADER) --busdev-num $$busdev $(BIT_FILE)
+	@echo "=== programmed: $(BIT_FILE) ==="
 
 # monitor (and download/reset, which refuse: the UART only transmits) come
 # from console.mk.

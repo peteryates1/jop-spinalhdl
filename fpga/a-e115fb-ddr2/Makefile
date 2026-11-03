@@ -110,13 +110,18 @@ eth-program:
 # the generated project sources, carries them.
 # --------------------------------------------------------------------------
 
-exerciser:
-	$(MAKE) generate build CFG=ddr2Exerciser REV=ddr2_exerciser \
-	  GEN_MAIN=jop.system.Ddr2ExerciserBuild GEN_ARGS= GEN_MAKES_PROJECT=yes
+EXERCISER_FLOW = CFG=ddr2Exerciser REV=ddr2_exerciser \
+  GEN_MAIN=jop.system.Ddr2ExerciserBuild GEN_ARGS= GEN_MAKES_PROJECT=yes
 
-exerciser-program: assert-device
-	$(QUARTUS_BIN)/quartus_pgm -c "$$($(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --cable $(BOARD_ALIAS))" \
-	    -m JTAG -o "p;output_files/ddr2_exerciser.sof"
+exerciser:
+	$(MAKE) generate build $(EXERCISER_FLOW)
+
+# The shared program-sof, in the exerciser's flow: the .sof that `exerciser`
+# built under build/ddr2Exerciser/. Until 2026-11-03 this loaded
+# output_files/ddr2_exerciser.sof from this directory, where nothing has
+# written since the conversion above.
+exerciser-program:
+	$(MAKE) program-sof $(EXERCISER_FLOW)
 
 # In-tree leftovers only; the generated tree is quartus.mk's `quartus-clean`.
 clean:
