@@ -14,6 +14,11 @@
 # priority list, and deleting that entry breaks 1..N contiguity -- so the red
 # proof had to close the LAST item to isolate check 6. A guard set that
 # interlocks is good; it also means proving one check red takes care.
+# FLAKY until 2026-11-03 (check 6): it piped each closed item's body into
+#   grep -q under pipefail, and a long body lost the race to SIGPIPE -- item
+#   173 was reported ungoverned in 2 of 30 runs, first in a cold clone. Now
+#   a here-string: 0 failures in 200 runs, and still red on item 173 with
+#   its Guard: lines removed.
 # If you change this guard, re-prove it: a guard that cannot fail is worse
 # than none, because it gets quoted as evidence.
 #
@@ -257,7 +262,11 @@ while IFS= read -r n; do
     }
     seen { print }
   ' "$f")
-  printf '%s' "$body" | grep -qE '(^|[^A-Za-z])Guard:|\*\*No guard\.\*\*' && continue
+  # A here-string, NOT `printf | grep -q`: under pipefail, grep -q exits at its
+  # first match and printf, still writing a long body, dies of SIGPIPE -- so
+  # the pipeline failed and a governed item was reported ungoverned. Item
+  # 173's 40 KB body did that in 2 of 30 runs on 2026-11-03.
+  grep -qE '(^|[^A-Za-z])Guard:|\*\*No guard\.\*\*' <<<"$body" && continue
   ungoverned="$ungoverned $n"
 done < <(grep -oE '^### (~~Item [0-9]+~~|Item [0-9]+ ).*~~.*(DONE|FIXED|CLOSED|COMPLETE|RESOLVED|WITHDRAWN|MERGED)' "$f" \
          | grep -oE 'Item [0-9]+' | grep -oE '[0-9]+' | sort -un)

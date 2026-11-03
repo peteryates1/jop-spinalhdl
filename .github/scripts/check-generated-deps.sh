@@ -163,8 +163,8 @@ alchitry_au_v2.xdc|tracked has NO create_clock at all while the generated file a
     for f in $(sed -e 's:#.*::' "fpga/$b/Makefile" 2>/dev/null \
                | command grep -oE '\$\((CONSTRAINTS|XDC|SHARED_XDC)\)/[A-Za-z0-9_]+\.(xdc|lpf)' \
                | sed 's:.*/::'); do
-      if printf '%s' "$by_design" | command grep -q "^$f|"; then n_design=$(( n_design + 1 ))
-      elif printf '%s' "$gap" | command grep -q "^$f|"; then n_gap=$(( n_gap + 1 ))
+      if command grep -q "^$f|" <<<"$by_design"; then n_design=$(( n_design + 1 ))
+      elif command grep -q "^$f|" <<<"$gap"; then n_gap=$(( n_gap + 1 ))
       else undeclared="$undeclared        fpga/$b/Makefile -> $f"$'\n'; fi
       case " $seen " in *" $f "*) ;; *) seen="$seen $f" ;; esac
     done
