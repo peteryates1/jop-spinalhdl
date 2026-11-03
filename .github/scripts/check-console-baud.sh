@@ -2,6 +2,9 @@
 #
 # DISCIPLINE: docs/testing-discipline.md — "assert on content, never an exit status".
 # PROVED RED 2026-09-04 by changing console.mk's guard message, so the phrase this asserts no longer appears.
+# PROVED RED 2026-11-03 (coverage) on alchitry-au-ddr3-test's own `monitor`, which
+# called a script that does not exist (named, exit 1); and with cyc5000-sdram, which
+# uses console.mk, added to known_own_console (named as no longer an exception).
 # If you change this guard, re-prove it: a guard that cannot fail is worse
 # than none, because it gets quoted as evidence.
 #
@@ -113,16 +116,43 @@ fi
 
 echo "  all console flows refuse an unknown baud"
 
-# COVERAGE, STATED RATHER THAN ASSUMED. A board with its own download target
-# does not import the guard, so a green run above says nothing about it. Report
-# those instead of letting the pass imply a completeness it does not have.
+# COVERAGE: A BOARD WITH ITS OWN CONSOLE TARGET FAILS. It does not import the
+# guard, so a green run above says nothing about it. This used to be a note,
+# printed on every green run and read by nobody: alchitry-au-ddr3-test's
+# `make monitor` sat under it calling ../alchitry-au/monitor.py, a script that
+# does not exist, at a rate a Makefile constant chose (found 2026-11-03).
+#
+# The one exception is named with the item that owns it, so the list cannot
+# grow silently -- and it must still be one, or the entry goes.
+known_own_console="colorlight-i5"   # hardcodes BAUD := 1000000, status item 70
 uncovered=""
 for mk in fpga/*/Makefile; do
   board=$(basename "$(dirname "$mk")")
-  grep -qE 'include \.\./(console|quartus|vivado)\.mk' "$mk" && continue
-  grep -qE '^(download|monitor|reset|redownload):' "$mk" && uncovered="$uncovered $board"
+  own=no
+  if ! grep -qE 'include \.\./(console|quartus|vivado)\.mk' "$mk" &&
+     grep -qE '^(download|monitor|reset|redownload):' "$mk"; then
+    own=yes
+  fi
+  case " $known_own_console " in
+    *" $board "*)
+      if [ "$own" = yes ]; then
+        echo "  note: $board keeps its own console (status item 70)"
+      else
+        echo "FAIL — $board no longer has its own console: drop it from known_own_console"
+        fail=1
+      fi ;;
+    *) [ "$own" = yes ] && uncovered="$uncovered $board" ;;
+  esac
 done
 if [ -n "$uncovered" ]; then
-  echo "  note: own console, NOT covered by this guard:$uncovered"
-  echo "        (colorlight-i5 hardcodes BAUD := 1000000 — status item 70)"
+  cat <<EOF
+FAIL — own console targets, not console.mk's:$uncovered
+
+  Such a board's port, rate and monitor script are its own copy, which nothing
+  above checks. Include ../console.mk (directly, or through quartus.mk or
+  vivado.mk); an exerciser names its design with GEN_MAIN=jop.system.XxxBuild
+  so fpga/unit.mk finds its unit, and states its rate in its build summary.
+EOF
+  fail=1
 fi
+[ "$fail" -eq 0 ] || exit 1

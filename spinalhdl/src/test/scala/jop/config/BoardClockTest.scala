@@ -171,6 +171,7 @@ class BoardClockTest extends AnyFunSuite {
     val designs = presets ++ Seq[(String, BoardDesign)](
       "ConfigFlashExerciserDesign" -> jop.system.ConfigFlashExerciserDesign,
       "Ddr2ExerciserDesign"        -> jop.system.Ddr2ExerciserDesign,
+      "Ddr3ExerciserDesign"        -> jop.system.Ddr3ExerciserDesign,
       "FlashProgrammerDesign"      -> jop.system.FlashProgrammerDesign,
       "SdNativeExerciserDesign"    -> jop.system.SdNativeExerciserDesign,
       "SdSpiExerciserDesign"       -> jop.system.SdSpiExerciserDesign,

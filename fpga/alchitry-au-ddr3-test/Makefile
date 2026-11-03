@@ -10,7 +10,8 @@
 #   make project   - Create Vivado project
 #   make bitstream - Full Vivado build (synth + impl + bitstream)
 #   make program   - Program FPGA via JTAG
-#   make monitor   - Monitor UART output (1 Mbaud)
+#   make monitor   - Monitor UART output (console.mk: the unit's console, at
+#                    the rate the build summary records)
 #   make all       - generate + ips + project + bitstream
 #   make run       - program + monitor
 #
@@ -25,18 +26,23 @@ RUN_VIVADO   = VIVADO_HOME=$(VIVADO_HOME) ../alchitry-au/scripts/run_vivado.sh
 # Project paths
 PROJECT_ROOT = ../..
 
-# Serial port for UART: the console of the unit this board is, found as the
-# unit an auSerial build runs on (fpga/unit.mk; status item 173). No fallback
-# path: a console that does not resolve must stop `monitor`, not guess.
-CFG      ?= auSerial
-CFG_NAME := $(CFG)
-CFG_DIR   = $(PROJECT_ROOT)/build/$(CFG_NAME)
-include ../unit.mk
-SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id $(CONSOLE_ALIAS) 2>/dev/null)
-BAUD_RATE = 1000000
+# The serial console is console.mk's, as on every other board: the console of
+# the unit this design runs on, at the rate its build summary records. The
+# design is named by its generator, GEN_MAIN=...Build, so fpga/unit.mk asks
+# for jop.system.Ddr3ExerciserDesign. Until 2026-11-03 this file kept its own:
+# a 1 Mbaud constant, and a `monitor` calling ../alchitry-au/monitor.py, which
+# does not exist. The exerciser's UART only transmits.
+CFG            = ddr3Exerciser
+CFG_NAME      := $(CFG)
+CFG_DIR        = $(PROJECT_ROOT)/build/$(CFG_NAME)
+GEN_MAIN       = jop.system.Ddr3ExerciserBuild
+CONSOLE_TXONLY = yes
+include ../console.mk
+# console.mk's first rule (fpga/unit.mk's unit-info) would be the default goal.
+.DEFAULT_GOAL := all
 GENERATED_V = $(PROJECT_ROOT)/build/ddr3Exerciser/rtl/Ddr3ExerciserTop.v
 
-.PHONY: all generate ips project bitstream program monitor run clean
+.PHONY: all generate ips project bitstream program run clean
 
 all: generate ips project bitstream
 
@@ -47,7 +53,7 @@ run: program monitor
 # --------------------------------------------------------------------------
 
 generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.Ddr3ExerciserTopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain $(GEN_MAIN)"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
 
 # --------------------------------------------------------------------------
@@ -104,9 +110,8 @@ bitstream:
 program:
 	$(RUN_VIVADO) vivado/tcl/program_bitstream.tcl
 
-monitor: $(UNIT_DESC)
-	@test -n "$(SERIAL_PORT)" || { echo "make: console '$(CONSOLE_ALIAS)' did not resolve" >&2; exit 1; }
-	python3 ../alchitry-au/monitor.py $(SERIAL_PORT) $(BAUD_RATE)
+# monitor (and download/reset, which refuse: the UART only transmits) come
+# from console.mk.
 
 # --------------------------------------------------------------------------
 # Cleanup

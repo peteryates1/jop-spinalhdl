@@ -166,7 +166,7 @@ case class Ddr3ExerciserTop() extends Component {
     val uartCtrl = new UartCtrl(UartCtrlGenerics(
       preSamplingSize = 1, samplingSize = 3, postSamplingSize = 1
     ))
-    uartCtrl.io.config.setClockDivider(1000000 Hz)
+    uartCtrl.io.config.setClockDivider(Ddr3ExerciserDesign.uartBaud Hz)
     uartCtrl.io.config.frame.dataLength := 7
     uartCtrl.io.config.frame.parity := UartParityType.NONE
     uartCtrl.io.config.frame.stop := UartStopType.ONE
@@ -648,9 +648,6 @@ case class Ddr3ExerciserTop() extends Component {
   io.led(7 downto 4) := 0
 }
 
-/**
- * Generate Verilog for Ddr3ExerciserTop
- */
 object Ddr3ExerciserTop {
   /** Its PLL: what the Au's hand-made `clk_wiz_0` gave it, less the 125 MHz
     * output it never used (status item 173). */
@@ -658,22 +655,54 @@ object Ddr3ExerciserTop {
     instance = "clkWiz")
 }
 
-object Ddr3ExerciserTopVerilog extends App {
+/** Which board this design is on, and what it drives. What fpga/unit.mk asks
+  * (through HwVerifyDescriptor) for the unit it runs on -- and so console.mk
+  * for its console -- the way every other exerciser is found. Until
+  * 2026-11-03 its Makefile kept a console of its own instead: a 1 Mbaud
+  * constant and a `make monitor` calling a script that did not exist. */
+object Ddr3ExerciserDesign extends jop.config.BoardDesign {
+  import jop.config._
+  val assembly   = SystemAssembly.alchitryAuV2
+  override val clockName = Some(Ddr3ExerciserTop.pll.reference)
+  val entityName = "Ddr3ExerciserTop"
+  val designName = "ddr3-exerciser"
+  // The rate, stated once: the UART is built for it and the build summary,
+  // which console.mk reads, records it.
+  val uartBaud   = 1000000
+  val devices    = Map(
+    "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("FT2232H"),
+                             params = Map("txOnly" -> true, "baudRate" -> uartBaud)))
+  val resetInput = jop.generate.PinResolver.resetFpgaPin(assembly)
+                     .map(ResetInput("resetn", _, assembly.fpgaBoard.resetActiveLow))
+  val usesSdr    = false
+  val memType    = Some(MemoryType.SDRAM_DDR3)
+  val fpga       = assembly.fpga
+  val fpgaFamily = assembly.fpgaFamily
+  override val plls = Seq(Ddr3ExerciserTop.pll)
+  val clkMhz     = 100
+}
+
+/** Emit the DDR3 exerciser: its RTL, its clk_wiz definition and the summary. */
+object Ddr3ExerciserBuild extends App {
+  import jop.generate._
+  val design  = Ddr3ExerciserDesign
+  val cfgName = "ddr3Exerciser"
+  val layout  = BuildLayout.default
+
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = jop.generate.StandaloneBuild.rtlDir("ddr3Exerciser"),
-    defaultClockDomainFrequency = FixedFrequency(100 MHz),
+    targetDirectory = layout.rtlDir(cfgName, Seq.empty),
+    defaultClockDomainFrequency = FixedFrequency(HertzNumber(design.clkMhz * 1000000L)),
     defaultConfigForClockDomains = ClockDomainConfig(
       resetKind = SYNC,
       resetActiveLevel = LOW
     )
   ).generate(InOutWrapper(Ddr3ExerciserTop()))
   // The clk_wiz definition the flow sources (JOP_PLL_TCL), beside the RTL.
-  jop.config.XilinxClkWiz.generate(
-    Ddr3ExerciserTop.pll.spec(jop.config.SystemAssembly.alchitryAuV2), Ddr3ExerciserTop.pll.module,
-    jop.generate.BuildLayout.default.ipDir("ddr3Exerciser", Seq.empty))
+  DesignPlls.emit(design, layout.ipDir(cfgName, Seq.empty))
 
-  jop.generate.StandaloneBuild.summary("ddr3Exerciser", "Ddr3ExerciserTop",
-    board = "alchitry-au-v2", fpga = "XC7A35T", clkMhz = 100, uartBaud = Some(1000000))
-  println(s"Generated: ${jop.generate.StandaloneBuild.rtlDir("ddr3Exerciser")}/Ddr3ExerciserTop.v")
+  StandaloneBuild.summary(cfgName, design.entityName,
+    board = design.assembly.fpgaBoard.name, fpga = design.fpga.name,
+    clkMhz = design.clkMhz, uartBaud = Some(design.uartBaud))
+  println(s"Generated: ${layout.rtlDir(cfgName, Seq.empty)}/${design.entityName}.v")
 }

@@ -4989,6 +4989,21 @@ demonstrated. Then:
 the config directory instead of a baud and read the summary. That removes the
 guess at the point where it actually bites, without touching any preset.
 
+**2026-11-03: one board's own console fewer.** `alchitry-au-ddr3-test` kept a
+console of its own -- a `BAUD_RATE = 1000000` constant and a `make monitor`
+calling `../alchitry-au/monitor.py`, which does not exist -- and
+`check-console-baud.sh` only printed it as a note, on every green run. The
+exerciser now has a design object (`Ddr3ExerciserDesign`, stating its rate
+once) and a `Ddr3ExerciserBuild` main, like the other exercisers, so its
+Makefile takes `monitor` from console.mk: the unit's console, at the rate its
+build summary records; `make monitor` on `jop-au-1` showed the exerciser's
+PASS lines. The guard now FAILS on a board with its own console target; the
+i5 (`colorlight-i5`, `BAUD := 1000000`) is the one named exception, and the
+guard fails too if it stops being one. Red first: on the unfixed tree it named
+`alchitry-au-ddr3-test`. Its `make program` still points at a bitstream path
+under the board directory that nothing writes since the build moved to
+`build/ddr3Exerciser/`.
+
 
 <a id="item-71"></a>
 
