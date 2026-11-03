@@ -162,8 +162,8 @@ build: create-project
 program:
 	$(MAKE) program-bit BIT_FILE=$(BITSTREAM)
 
-program-flash:
-	sudo openFPGALoader -c $(LOADER_CABLE) $(BUSDEV) --write-flash $(BITSTREAM)
+program-flash: $(UNIT_DESC)
+	sudo openFPGALoader $(LOADER) $(BUSDEV) --write-flash $(BITSTREAM)
 
 bram-monitor:
 	$(MAKE) monitor CFG=wukongBram

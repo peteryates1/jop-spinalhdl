@@ -5964,8 +5964,8 @@ gone in favour of the rate the build records.
   pre-build-tree path. Once the project moved, `make program` would have loaded
   a **stale bitstream, silently**. It takes the path from the caller now.
   (2026-11-03: `program_flash_programmer.tcl` took it too, but `make
-  flash-programmer` never passed one, so it loaded the old path; both scripts
-  now refuse an unset `JOP_BIT_FILE` -- item 94.)
+  flash-programmer` never passed one, so it loaded the old path -- item 94.
+  Both scripts are gone now; see the end of this item.)
 - `project-flash` and `bitstream-flash` had no dependency on `generate-flash`,
   so they would have built from whatever was left in `spinalhdl/generated` --
   pre-conversion bytes. Both now depend on it and fail with the item 82
@@ -5977,6 +5977,21 @@ it claims the Alchitry's FT2232H and ignores the CYC5000's Arrow blaster and
 both dirtyJtag Picos. So `[lindex $hw_targets 0]` is correct -- by accident
 rather than by selection, so both program scripts now refuse and list the
 targets if more than one appears.
+
+**2026-11-03: the Au loads through its probe, and both scripts are gone.**
+Refusing a second target still was not selecting this one, and hw_verify had
+loaded the Au through openFPGALoader since its probe was added (2026-09-11:
+`-b alchitry_au`, bus:dev from `jtag_probe_map`). `make program` and `make
+flash-programmer` now use vivado.mk's `program-bit`, like every other Vivado
+board. It takes the loader from the unit (`LOADER` in fpga/unit.mk) rather
+than a `LOADER_CABLE ?= dirtyJtag` default -- a second copy of
+setup/units.toml, and the reason the Au could not use it.
+`check-probe-selection.sh` now fails on a make target that loads through
+hw_server; red first, on these two. Every other load target's command is
+unchanged: the twelve across the i9+, XC7A100T, Wukong and the DDR3
+exerciser, diffed with `make -n` before and after. On `jop-au-1`, `make
+program` replaced the running DDR3 exerciser with `auSerial`, whose ready
+bytes (0xAA at 2 Mbaud) then appeared.
 
 **Fit moved the way the DB_FPGA's did:**
 
@@ -6213,16 +6228,17 @@ JTAG target hw_server listed first. The guard written for it found five more:
 | board | step | loaded | now |
 |---|---|---|---|
 | Au | DDR3 exerciser `program` | its own `vivado/build/` | openFPGALoader, the unit's probe and loader, as hw_verify loads it |
-| Au | `flash-programmer` | the script's default, `vivado/build/` | the Makefile passes `JOP_BIT_FILE` |
+| Au | `flash-programmer` | the script's default, `vivado/build/` | openFPGALoader through the unit's probe (item 90) |
 | Wukong | `program`, `program-flash` (the default flow, BRAM) | `vivado/build/wukong_jop_bram/` | `build/wukongBram/` |
 | Wukong | `sdram-program` | `vivado/build/wukong_sdram_exerciser/` | `build/sdramExerciserWukong/` |
 | A-E115FB | `exerciser-program` | `output_files/ddr2_exerciser.sof` | the shared `program-sof` in the exerciser's flow (`assert-device`, cable by serial) |
 
 The Au's flash programmer is the item 90 fix done by half: its script had
 taken the path from its caller since then, but `make flash-programmer` never
-passed one, so it fell back to the old path. Both Au program scripts now
-refuse an unset `JOP_BIT_FILE` instead -- a default pointing where nothing
-writes is the old path surviving the conversion.
+passed one, so it fell back to the old path -- a default pointing where
+nothing writes is the old path surviving the conversion. Both Au program
+scripts went later the same day: the Au loads through openFPGALoader now
+(item 90).
 
 **Guard: `check-no-intree-bitstream.sh`** (in `make check-build`). In the
 fpga/ flows' code, a path to a `.bit`/`.rbf`/`.sof`/`.jic`/`.pof` must start
@@ -6235,8 +6251,7 @@ purpose).
 unit's probe and `make run` showed 131,981 PASS lines and no FAIL; the Au is
 parked on `auSerial` again. The other four by dry run only (`make -n` names
 the build-tree file and the unit's probe or cable): none of their builds
-exists here. Both Au scripts' new refusal was run in Vivado batch, which stops
-before the hardware manager opens.
+exists here.
 
 <a id="item-95"></a>
 

@@ -102,9 +102,12 @@ bitstream:
 	  JOP_SUMMARY=$(CFG_DIR)/rtl/JopDdr3Top.summary.txt \
 	  $(RUN_VIVADO) $(PRJ_TCL)
 
+# Through the unit's probe and loader, as every Vivado board loads and as
+# hw_verify always loaded this one (vivado.mk's program-bit). Until 2026-11-03
+# this ran program_bitstream.tcl through Vivado's hw_server, which took the
+# first JTAG target it listed -- refusing a second, not selecting this one.
 program:
-	JOP_BIT_FILE=$(CFG_DIR)/vivado/build/jop_ddr3/jop_ddr3.runs/impl_1/JopDdr3Top.bit \
-	  $(RUN_VIVADO) vivado/tcl/program_bitstream.tcl
+	$(MAKE) program-bit BIT_FILE=$(CFG_DIR)/vivado/build/jop_ddr3/jop_ddr3.runs/impl_1/JopDdr3Top.bit
 
 
 check-board:
@@ -185,8 +188,7 @@ flash-programmer:
 	JOP_PROJ=flash_programmer JOP_BUILD_DIR=$(ABS_BUILD) \
 	  JOP_BIT=FlashProgrammerDdr3Top.bit \
 	  $(RUN_VIVADO) $(PRJ_TCL)
-	JOP_BIT_FILE=$(ABS_BUILD)/flash_programmer/flash_programmer.runs/impl_1/FlashProgrammerDdr3Top.bit \
-	  $(RUN_VIVADO) vivado/tcl/program_flash_programmer.tcl
+	$(MAKE) program-bit BIT_FILE=$(ABS_BUILD)/flash_programmer/flash_programmer.runs/impl_1/FlashProgrammerDdr3Top.bit
 
 program-flash: $(UNIT_DESC)
 	sudo python3 ../scripts/flash_program.py --sst26 \

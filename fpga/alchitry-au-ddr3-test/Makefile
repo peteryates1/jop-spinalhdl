@@ -110,13 +110,11 @@ bitstream:
 # --------------------------------------------------------------------------
 
 # Loaded as hw_verify loads this board: by openFPGALoader, through the probe of
-# the unit this design runs on (fpga/unit.mk), with the loader the unit names.
+# the unit this design runs on, with the loader the unit names (fpga/unit.mk).
 # Until 2026-11-03 this ran a Vivado script of its own, which looked for the
 # bitstream in this directory's vivado/build/ -- where nothing has written
 # since the build moved to build/ddr3Exerciser/ -- and programmed whichever
 # JTAG target hw_server listed first.
-LOADER = $(if $(call unit_fact,LOADER_BOARD),-b $(call unit_fact,LOADER_BOARD),-c $(call unit_fact,LOADER_CABLE))
-
 program: $(UNIT_DESC)
 	@test -n "$(BOARD_ALIAS)" || { echo "make: no unit has a probe for $(UNIT_DESIGN) (setup/units.toml)" >&2; exit 1; }
 	@test -f "$(BIT_FILE)" || { echo "make: no bitstream at $(BIT_FILE) -- run: make bitstream" >&2; exit 1; }

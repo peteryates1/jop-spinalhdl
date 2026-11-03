@@ -36,6 +36,10 @@
 # Quartus fallback, named), one whose units.toml had no unit with a probe (the
 # tripwire), and one naming a probe the registry lacks (jop_setup.py refuses
 # it before this guard runs).
+# EXTENDED 2026-11-03: a load goes through the unit's probe, never through
+# Vivado's hw_server (the last section). PROVED RED the same day on the tree
+# before the Au moved to openFPGALoader: it named fpga/alchitry-au/Makefile's
+# `program` and `flash-programmer`.
 # If you change this guard, re-prove it: a guard that cannot fail is worse
 # than none, because it gets quoted as evidence.
 # ---------------------------------------------------------------------------
@@ -187,4 +191,32 @@ if [ "$fail" -ne 0 ]; then
   exit 1
 fi
 
+# --- a load goes through the unit's probe, not Vivado's hw_server ---------
+# Vivado's hw_server takes whatever JTAG targets it finds, and nothing here
+# maps a unit's probe onto one of them: jtag_probe_map resolves a probe to a
+# bus:dev for openFPGALoader and to a cable for quartus_pgm. The Au's program
+# scripts took hw_server's first target (refusing a second), and its DDR3
+# exerciser's took the first outright, while hw_verify loaded the same board
+# through its probe. A make target that runs a script which loads through
+# hw_server -- program_hw_devices, program_hw_cfgmem -- fails here.
+hw_loads=""
+while IFS= read -r t; do
+  [ -f "$t" ] || continue
+  sed -e 's/#.*//' "$t" | command grep -qE 'program_hw_(devices|cfgmem)' || continue
+  s=$(basename "$t")
+  while IFS= read -r m; do
+    [ -f "$m" ] || continue
+    h=$(sed -e 's/#.*//' "$m" | command grep -nF "$s" | sed "s|^|$m:|")
+    [ -n "$h" ] && hw_loads="$hw_loads$h"$'\n'
+  done < <(git ls-files --cached --others --exclude-standard -- 'fpga/*Makefile' 'fpga/*.mk')
+done < <(git ls-files --cached --others --exclude-standard -- 'fpga/*.tcl')
+if [ -n "$hw_loads" ]; then
+  echo "  FAIL a make target loads an FPGA through Vivado's hw_server, not the unit's probe:"
+  printf '%s' "$hw_loads" | sed 's/^/        /'
+  echo "       Load through openFPGALoader with the unit's loader and probe, as"
+  echo "       vivado.mk's program-bit and hw_verify do (fpga/unit.mk: LOADER, BOARD_ALIAS)."
+  exit 1
+fi
+
 echo "  $instances board instances with a probe, all reachable and on a tool that can drive it"
+echo "  no make target loads an FPGA through Vivado's hw_server"

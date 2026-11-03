@@ -33,10 +33,11 @@
 # board, so `xc7a100t` cannot drift, but the Wukong's Pico 2 W is a standalone
 # cable -- move it onto the DB_FPGA V5 and `--assert-device wukong` still
 # passes. Two probes have no idcode on purpose, because the check could not
-# run: `alchitry` is programmed through Vivado's hw_server, which neither scan
-# backend drives, and quartus_pgm never enumerates the CYC5000's Arrow blaster
-# (`quartus_pgm -l` on 18.1 and 25.1, measured 2026-09-04; openFPGALoader's
-# arrow-usb-blaster cable was not tried).
+# run: `alchitry` is an FT2232H, a kind neither scan backend drives (it was
+# loaded through Vivado's hw_server until 2026-11-03, openFPGALoader with
+# `-b alchitry_au` since), and quartus_pgm never enumerates the CYC5000's
+# Arrow blaster (`quartus_pgm -l` on 18.1 and 25.1, measured 2026-09-04;
+# openFPGALoader's arrow-usb-blaster cable was not tried).
 
 [terasic]
 serial = "91d28408"
@@ -157,8 +158,8 @@ reworked and cleaned). VERIFIED 2026-10-27 through it: IDCODE 41111043
 serial = "000000"
 kind = "ftdi-xilinx"
 description = '''
-Alchitry Au V2 (XC7A35T + DDR3) — onboard FT2232H, programmed by Vivado
-hw_server (see fpga/alchitry-au). Shares vid:pid 0403:6010 with the
+Alchitry Au V2 (XC7A35T + DDR3) — onboard FT2232H, loaded by openFPGALoader
+(-b alchitry_au, selected by bus:dev). Shares vid:pid 0403:6010 with the
 CYC5000's Arrow blaster; the serial and product string are what separate
 them. fpga/alchitry-au-ddr3-test is a second PROJECT on this same board, not
 another board'''

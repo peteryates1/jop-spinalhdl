@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# THE UNIT A BUILD RUNS ON: its probe and its console (status item 173, step 3).
+# THE UNIT A BUILD RUNS ON: its probe, loader and console (item 173, step 3).
 # Included by quartus.mk, vivado.mk and console.mk, after CFG_DIR is defined.
 #
 # Which physical unit a preset is built for, and how that unit is reached, is
@@ -45,6 +45,11 @@ $(CFG_DIR)/unit%desc: $(UNIT_DESC_SRC)
 unit_fact     = $(shell sed -n 's/^$(1)=//p' $(UNIT_DESC) 2>/dev/null)
 BOARD_ALIAS   = $(call unit_fact,PROBE_ALIAS)
 CONSOLE_ALIAS = $(call unit_fact,CONSOLE_ALIAS$(if $(SYSTEM),_$(SYSTEM)))
+# How openFPGALoader reaches the unit, chosen as hw_verify chooses it: the
+# board the unit names (-b alchitry_au), else its cable (-c dirtyJtag). Empty
+# for a unit that quartus_pgm programs.
+LOADER        = $(if $(call unit_fact,LOADER_BOARD),-b $(call unit_fact,LOADER_BOARD),$(if \
+                  $(call unit_fact,LOADER_CABLE),-c $(call unit_fact,LOADER_CABLE)))
 
 .PHONY: unit-info
 unit-info: $(UNIT_DESC)

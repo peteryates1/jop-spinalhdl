@@ -454,7 +454,6 @@ make full-flash-boot
 | `fpga/alchitry-au/vivado/tcl/create_project_flash_programmer.tcl` | Flash programmer Vivado project |
 | `fpga/alchitry-au/vivado/tcl/build_bitstream_flash_programmer.tcl` | Flash programmer bitstream build |
 | `fpga/alchitry-au/vivado/tcl/program_flash.tcl` | JTAG program flash-boot bitstream |
-| `fpga/alchitry-au/vivado/tcl/program_flash_programmer.tcl` | JTAG program flash programmer |
 | `fpga/scripts/make_flash_image.py` | Flash image builder (bitstream + .jop) |
 | `fpga/scripts/flash_program.py` | Python UART flash programmer (W25Q128 + SST26) |
 | `fpga/alchitry-au/Makefile` | Build targets for flash boot flow |

@@ -4,12 +4,11 @@
 # The board sets:
 #   PROJECT_ROOT   path to the repo root
 #   CFG            preset invocation, e.g. wukongDdr3 or "wukongSmp 4"
-# The probe (BOARD_ALIAS) and console (CONSOLE_ALIAS) are the unit's, from
-# fpga/unit.mk (status item 173), not the board's.
+# The probe (BOARD_ALIAS), the loader (LOADER) and the console (CONSOLE_ALIAS)
+# are the unit's, from fpga/unit.mk (status item 173), not the board's.
 # and may set:
 #   VIVADO_VERSION default 2025.2; VIVADO_BIN defaults to that version's
 #                  vivado where this host keeps it (setup/host.toml, ../host.mk)
-#   LOADER_CABLE   openFPGALoader -c value, default dirtyJtag
 #   GEN_MAIN       generator main, default jop.system.JopTopVerilog
 #   GEN_ARGS       its arguments, default "$(CFG) buildtree"
 #
@@ -49,7 +48,6 @@ VIVADO_LOGS   = $(PROJECT_ROOT)/build/vivado-logs
 VIVADO        = $(shell mkdir -p $(VIVADO_LOGS)) $(VIVADO_BIN) \
                 -journal $(VIVADO_LOGS)/vivado.jou -log $(VIVADO_LOGS)/vivado.log
 VIVADO_ENV   ?= export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
-LOADER_CABLE ?= dirtyJtag
 
 # A bare preset is a Scala identifier, so sanitising it is the identity and
 # costs no call; only a multi-argument invocation pays for the sbt round trip.
@@ -181,9 +179,16 @@ BUSDEV ?= --busdev-num $(shell $(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --bus
 # Colorlight i9+ idle image, ~55 ms) finishes first, and the bitstream lands
 # on a running FPGA: `done 1`, but no flip-flop starts from INIT. See
 # bringup/colorlight-db-i9plus-eth/README.md.
+#
+# THE LOADER IS THE UNIT'S TOO (fpga/unit.mk): `-c dirtyJtag` for the Picos,
+# `-b alchitry_au` for the Au's FT2232H. It was `-c $(LOADER_CABLE)`, default
+# dirtyJtag -- a second copy of setup/units.toml, and wrong for the one Vivado
+# unit not on a dirtyJtag probe, so until 2026-11-03 the Au loaded through
+# Vivado's hw_server instead, taking whichever target that listed first.
 program-bit: $(UNIT_DESC)
 	@test -n "$(BOARD_ALIAS)" || { echo "make: no unit has a probe for CFG=$(CFG) (setup/units.toml)" >&2; exit 1; }
-	sudo openFPGALoader -c $(LOADER_CABLE) $(BUSDEV) $(BIT_FILE)
+	@test -n "$(LOADER)" || { echo "make: the unit for CFG=$(CFG) names no openFPGALoader board or cable (setup/units.toml)" >&2; exit 1; }
+	sudo openFPGALoader $(LOADER) $(BUSDEV) $(BIT_FILE)
 	@echo "=== programmed: $(BIT_FILE) ==="
 
 vivado-clean:

@@ -116,9 +116,10 @@ console = "ae115fb"
 # The Alchitry Au V2; no network connection (user, 2026-10-31), so no MAC. Its
 # probe was added 2026-09-11: without one hw_verify refused the board outright,
 # so it was the one attached board that could not be hardware-verified at all.
-# openFPGALoader (`-b alchitry_au`), not the Vivado hw_server path its Makefile
-# uses: it shares vid:pid 0403:6010 with the CYC5000's Arrow blaster, so its
-# probe must be selected by bus:dev like every other one here.
+# openFPGALoader (`-b alchitry_au`), which both its Makefiles use too since
+# 2026-11-03 (they loaded through Vivado's hw_server before): it shares
+# vid:pid 0403:6010 with the CYC5000's Arrow blaster, so its probe must be
+# selected by bus:dev like every other one here.
 [jop-au-1]
 assemblies = ["alchitry-au-v2"]
 probe = "alchitry"
