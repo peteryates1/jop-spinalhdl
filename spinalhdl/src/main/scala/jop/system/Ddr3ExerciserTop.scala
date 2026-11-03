@@ -54,7 +54,7 @@ case class Ddr3ExerciserTop() extends Component {
   // with the board's reset as the hand-made wizard was.
   // ========================================================================
 
-  private val board = jop.config.Board.AlchitryAuV2
+  private val board = hw.Board.AlchitryAuV2
   val clkWiz = jop.system.pll.Pll.build(Ddr3ExerciserTop.pll, board.fpga.get.family,
     board.clocks.find(_.name == Ddr3ExerciserTop.pll.reference).get,
     ClockDomain.current.readClockWire, Some(!ClockDomain.current.readResetWire))
@@ -651,7 +651,7 @@ case class Ddr3ExerciserTop() extends Component {
 object Ddr3ExerciserTop {
   /** Its PLL: what the Au's hand-made `clk_wiz_0` gave it, less the 125 MHz
     * output it never used (status item 173). */
-  val pll = jop.config.JopConfig.migPll("CLK100M", jop.config.MigProfile.Ddr3_400, gmii = false,
+  val pll = jop.config.JopConfig.migPll("CLK100M", hw.MigProfile.Ddr3_400, gmii = false,
     instance = "clkWiz")
 }
 
@@ -662,6 +662,7 @@ object Ddr3ExerciserTop {
   * constant and a `make monitor` calling a script that did not exist. */
 object Ddr3ExerciserDesign extends jop.config.BoardDesign {
   import jop.config._
+  import hw._
   val assembly   = SystemAssembly.alchitryAuV2
   override val clockName = Some(Ddr3ExerciserTop.pll.reference)
   val entityName = "Ddr3ExerciserTop"

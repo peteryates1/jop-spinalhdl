@@ -75,39 +75,38 @@ nothing depends on ranks below a measurement that could mislead someone.
 34. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 35. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 36. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02). Boards now declare their clocks and designs pick one (step 5, 2026-11-02); designs define their PLLs and every FPGA family builds them (steps 6-9: ECP5, ALTPLL -- Cyclone IV, MAX 10 and Cyclone V -- and clk_wiz); no board declares a PLL, so `Board.scala` no longer depends on JOP; next, the hardware layer as an sbt subproject
-38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
-39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
-40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-41. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
-42. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
-43. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-44. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-45. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-46. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-47. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-48. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-49. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-50. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-51. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-52. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-53. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-54. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-55. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
-56. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
-57. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
-58. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
-59. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
-60. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
-61. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
-62. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
-63. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
-64. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
-65. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
-66. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
-67. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-68. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
-69. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
+37. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
+38. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
+39. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+40. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
+41. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
+42. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+43. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+44. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+45. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+46. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+47. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+48. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+49. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+50. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+51. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+52. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+53. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+54. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+55. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
+56. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
+57. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
+58. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
+59. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
+60. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
+61. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
+62. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
+63. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
+64. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
+65. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
+66. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
+67. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
+68. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
 
 ## 2. All items — summary
 
@@ -215,7 +214,6 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[167](#item-167)** — REGRESSION: the A-E115FB's minor-GC copy phase is 13.5 % slower than in August
 - **[168](#item-168)** — `xc7a100tDbEth` misses timing by 0.058 ns, on a core path
 - **[170](#item-170)** — the XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s when the data toggles, and each loss blacks the receiver out
-- **[173](#item-173)** — generic JOP, hardware support and one lab's setup are not separated
 
 ### Closed
 
@@ -306,6 +304,7 @@ Marked closed in the heading or here, sorted by ID.
 - **[169](#item-169)** — ~~stray bytes in the serial-boot handshake shift the microcode stack, and the checksum leak then overwrites the constant table~~ — CLOSED 2026-10-28: the loader's stack is balanced, test-first (`SerialBootStackTest`); the i5 boots cleanly through 10 and 20 stray bytes
 - **[171](#item-171)** — ~~NetTest's TCP echo never serves again after a connection that does not close cleanly~~ — CLOSED 2026-10-31: every pool slot serves a client, aborted connections are released, silent ones dropped after 30 s; `net_echo_check.py`
 - **[172](#item-172)** — ~~Parts.scala named every Artix-7 at speed grade -1, and three Vivado boards build -2~~ — CLOSED 2026-10-28: a part lists its grades with the slowest as default, each board sets its own; `FpgaPartTest`
+- **[173](#item-173)** — ~~generic JOP, hardware support and one lab's setup are not separated~~ — CLOSED 2026-11-03: the setup is `setup/`, the hardware layer `hardware/` -- an sbt project that does not depend on JOP, so the compiler holds the direction -- and JOP `spinalhdl/`; `check-setup-layer.sh`, `check-generated-deps.sh`
 - **[174](#item-174)** — ~~every JOP image has the same MAC and IP, so two boards cannot share the LAN~~ — CLOSED 2026-10-31: board instances give each unit on the LAN its own MAC and hostname, and NetTest takes a DHCP lease; `InstanceTest`
 - **[175](#item-175)** — ~~the i5's Fmax moved with unrelated logic: yosys gives ABC9 no block-RAM clock-to-out~~ — CLOSED 2026-11-02: both i5 board flows read a DP16KD model with one; `colorlightDbI5Sdram` 41.61 -> 48.98 MHz; `check-ecp5-bram-timing.sh`
 
@@ -4162,7 +4161,7 @@ before the fix on the four mismatched flows.
 
 <a id="item-173"></a>
 
-### Item 173 — Generic JOP, hardware support and one lab's setup are not separated
+### Item 173 — ~~Generic JOP, hardware support and one lab's setup are not separated~~ — CLOSED 2026-11-03: the setup is `setup/`, and the hardware an sbt project of its own that does not depend on JOP
 
 **Raised 2026-10-28** by the user, planning per-board MAC addresses for more
 i9+ modules on Atari-800-derived base boards. Three layers:
@@ -4707,21 +4706,76 @@ names. Rebuilt at this commit on 2026-11-03, with the same results,
 the free-memory floor steady after the same 114,688-byte drop as on
 2026-09-14), and is parked in its handshake.
 
-**What is left:** the setup layer is done. Every fact the 2026-10-28 list
-put in the wrong layer -- the board designs' aliases, the serial registries,
-the network identity and the host's paths -- is in `setup/`, and the guard
-holds it there. The hardware layer has started: boards declare their clocks
-and designs pick one (step 5), the ECP5 family builds the PLLs its designs
-define (step 6), and so do the ALTPLL families (step 7): the MAX1000, the
-EP4CE6, the EP4CGX150 and the GMII designs' 125 MHz PLLs -- every PLL the
-Cyclone IV and MAX 10 designs instantiate themselves (the A-E115FB's DDR2
-PHY keeps its own, inside the vendor IP) -- Artix-7 builds every one its
-designs define (step 8), and Cyclone V the CYC5000's (step 9). No board
-declares a PLL, so `Board.scala` no longer needs JOP. Next, the hardware layer
-becomes an sbt subproject that does not depend on JOP, so the compiler holds
-the direction. Lab-specific TESTS (`InstanceTest`'s
-descriptor table) stay in `spinalhdl/src/test` for now; they would move with
-the setup if it gets a repository of its own.
+**Step 10 (2026-11-03): the hardware layer is an sbt project of its own.**
+`hardware/` (package `hw`) holds the FPGA devices and families, the boards
+and their assemblies, and each family's PLL builder -- `Parts.scala`,
+`Board.scala`, `ColorlightSodimm.scala`, `PllSpec.scala`, `PllVendor.scala`
+and `MigProfile.scala`, moved from `jop.config` -- and depends on SpinalHDL
+alone. The root project depends on it (`build.sbt`), so a hardware source
+that names a JOP type does not compile: the compiler holds the direction.
+Red first: compiled on their own, the six files failed on one JOP type,
+`MemoryStyle`, six times, all of it `FpgaFamily.memoryStyle`. Three JOP
+choices moved off the hardware, with the same answers: how JOP builds its
+memories on a family (`MemoryStyle.of`: LPM on Altera, Generic elsewhere);
+what JOP names its top entity on a board and whether an SDR build gets the
+stack cache (`JopBoardSettings`, keyed by board name, for the seven boards
+that set `Board.entityTag`, `entitySuffix` or `useStackCache`); and where the
+MIG configuration is written (`jop.generate.MigPrjGenerator`, which was
+`MigProfile.emit` and writes into the flows' `build/ip/`). The compiler could
+not see the last two, since a string or a flag names no JOP type. As agreed
+with the user, `BoardDesign` and the constraint generators stay on JOP's
+side: `BoardDesign` names JOP's `DeviceInstance`, so they move only with a
+device type that is not JOP's. `AlteraAltpllTest` moved with the layer
+(12 tests; CI runs `hardware/testOnly hw.*` before the unit suites, under the
+same no-tests-ran check); the other PLL and clock tests take their specs from
+JOP's presets and stay.
+
+**Found on the way, and guarded first:** every flow found the Scala sources it
+regenerates from by searching `spinalhdl/src/main/scala` -- four copies of
+one `find` in `quartus.mk`, `vivado.mk` and the two ECP5 boards, and the unit
+descriptor's own in `unit.mk`. After the move a changed pin, clock or PLL
+builder would have rebuilt nothing, and the build would have succeeded on
+the previous run's RTL and constraints. `check-generated-deps.sh`'s new
+section 3 holds every rule that elaborates from Scala to every main source of
+every sbt project in the tree (the unit descriptor to the hardware layer's).
+It was red on 27 rules in 15 boards with the files moved and the flows
+unchanged, then green once `fpga/scala.mk` (one search over each top-level
+`*/src/main/scala`) replaced the four copies and `unit.mk` took the hardware
+layer in. Four more proofs are in its header; one of them found the check
+passing a board whose Makefile stops on an error, because make prints what it
+read before stopping, so the check now also fails a board that make cannot read.
+
+**Nothing built changes.** Dumped before and after for all 45 presets and 8
+designs: entity names, stack-cache decisions and spill regions, resolved and
+MIF-overridden memory styles, and the generated QSF, XDC, LPF, SDC, Quartus
+project and PLL files are identical, except that each generated PLL file's
+header names its generator `hw.AlteraAltpll` or `hw.XilinxClkWiz`. The RTL of
+12 presets is identical too. They cover every family and memory type, every
+board with a JOP setting, and a two-system build. The only differences are the
+build summaries' timestamps and the signal names SpinalHDL takes from source
+line numbers (`when_JopTop_l632` is now `l633`, for one added import line).
+CI's unit-test command as the workflow now runs it passes: the hardware
+project's 12 tests, then 688 in the root project (1 ignored). So do
+`jop.setup.*`, `jop.generate.*` and `make check-build`.
+
+**Closed 2026-11-03.** The three layers are separate inside this
+repository. The setup is `setup/`, read only through `jop_setup.py` and
+tomlj. The hardware is `hardware/`, which compiles without JOP. JOP and its
+support for that hardware are `spinalhdl/`. Not done, on purpose:
+- Generic JOP and its support for the hardware still share one sbt project.
+- `BoardDesign` and the constraint generators wait for a device type that is
+  not JOP's.
+- The A-E115FB's board entry names its vendor IP and pin file by paths under
+  `fpga/`. That is data, which a separate repository would have to carry with
+  the board.
+- The lab-specific tests (`InstanceTest`'s descriptor table) stay in
+  `spinalhdl/src/test`. They would move with the setup if it gets a
+  repository of its own.
+
+Guard: `.github/scripts/check-setup-layer.sh` (setup facts stay in
+`setup/`), `.github/scripts/check-generated-deps.sh` section 3 (the flows
+rebuild from both projects), and the compiler: `hardware/` has no dependency
+on JOP.
 
 <a id="item-174"></a>
 

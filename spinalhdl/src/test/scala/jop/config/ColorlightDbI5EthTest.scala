@@ -3,6 +3,7 @@ package jop.config
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.lib.io.InOutWrapper
+import hw._
 import jop.generate.{ConstGenerator, LpfGenerator}
 import jop.system.{JopSpinalConfig, JopTop, JopTopVerilog}
 import jop.utils.JopFileLoader

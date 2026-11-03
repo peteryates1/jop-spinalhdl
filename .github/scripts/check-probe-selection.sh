@@ -77,7 +77,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2
 
-BOARD_SCALA=${BOARD_SCALA:-spinalhdl/src/main/scala/jop/config/Board.scala}
+BOARD_SCALA=${BOARD_SCALA:-hardware/src/main/scala/hw/Board.scala}
 # The probe registry is the setup's (status item 173): setup/probes.toml, or
 # $JOP_SETUP/probes.toml -- point JOP_SETUP at a copy to prove this red.
 REGISTRY="$(python3 fpga/scripts/jop_setup.py where 2>/dev/null || echo setup)/probes.toml"

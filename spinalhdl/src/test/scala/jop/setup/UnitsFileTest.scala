@@ -1,8 +1,8 @@
 package jop.setup
 
 import org.scalatest.funsuite.AnyFunSuite
-import jop.config.{SystemAssembly, UnitAccess}
-
+import jop.config.UnitAccess
+import hw.SystemAssembly
 /**
  * READING THE UNITS -- status item 173, step 2.
  *

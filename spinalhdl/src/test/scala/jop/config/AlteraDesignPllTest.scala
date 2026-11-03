@@ -2,6 +2,7 @@ package jop.config
 
 import org.scalatest.funsuite.AnyFunSuite
 import java.nio.file.{Files, Paths}
+import hw._
 import jop.generate.{DesignPlls, QuartusProject, TimingConstraints}
 
 /**
@@ -90,14 +91,15 @@ class AlteraDesignPllTest extends AnyFunSuite {
     assert(!Files.exists(Paths.get("fpga/cyc5000-sdram/cyc5000_pll.vhd")), "the hand-written PLL is back")
   }
 
-  test("no board declares a PLL: every design defines its own, and Board.scala needs no JOP") {
+  test("no board declares a PLL: every design defines its own") {
     // The last PllType, the CYC5000's, left with step 9 (status item 173). The
-    // PLL code was the only part of Board.scala that depended on JOP.
+    // PLL code was the only part of Board.scala that depended on JOP. That it
+    // needs none is the compiler's to hold since 2026-11-03: Board.scala is in
+    // the hardware project (hardware/), which does not depend on JOP, so this
+    // no longer reads the file for an import.
     assert(!classOf[Board].getDeclaredFields.map(_.getName).contains("pllType"))
     for (c <- Seq("jop.config.PllType", "jop.config.PllIpFile", "jop.system.pll.Cyc5000Pll"))
       assert(scala.util.Try(Class.forName(c)).isFailure, s"$c is back")
-    val boardScala = read("spinalhdl/src/main/scala/jop/config/Board.scala")
-    assert(!boardScala.contains("import jop.system"), "Board.scala imports JOP again")
   }
 
   test("a design that defines no PLL is refused, not handed its board's") {

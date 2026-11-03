@@ -2,6 +2,7 @@ package jop.system
 
 import jop.io.SyncOut
 import jop.config._
+import hw._
 
 import spinal.core._
 import spinal.core.sim._

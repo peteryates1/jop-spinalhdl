@@ -28,7 +28,7 @@ import jop.io.SdNative
 /** @param board  which board's PLL to instantiate -- see SdSpiExerciserTop.
   * @param clkMhz the system clock this design is built for. */
 case class SdNativeExerciserTop(
-  board: jop.config.Board = SdNativeExerciserDesign.assembly.fpgaBoard,
+  board: hw.Board = SdNativeExerciserDesign.assembly.fpgaBoard,
   clkMhz: Int = SdNativeExerciserDesign.clkMhz
 ) extends Component {
 
@@ -50,7 +50,7 @@ case class SdNativeExerciserTop(
   // PLL: 50 MHz -> 80 MHz system clock
   // PLL from the BOARD, not a hardcoded vendor primitive. MemoryType.BRAM
   // selects the no-DRAM branch: a system clock and a locked signal.
-  val pllResult = jop.system.pll.Pll.forDesign(board, jop.config.MemoryType.BRAM, io.clk_in, clkMhz)
+  val pllResult = jop.system.pll.Pll.forDesign(board, hw.MemoryType.BRAM, io.clk_in, clkMhz)
   val sysClk = pllResult.systemClk.get
   val pllLocked = pllResult.locked
 
@@ -849,6 +849,7 @@ object SdNativeExerciserDesign extends jop.config.BoardDesign {
   // FPGA family. Declared so the generators write and list it.
   override def plls = Seq(jop.system.pll.Pll.systemOnly(inputClock, clkMhz))
   import jop.config._
+  import hw._
   val assembly   = SystemAssembly.qmtechWithDb
   val entityName = "SdNativeExerciserTop"
   val designName = "sd-native-exerciser"

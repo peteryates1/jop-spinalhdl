@@ -4,6 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import java.nio.file.{Files, Paths}
 import scala.util.matching.Regex
+import hw._
 
 /**
  * A BOARD OFFERS ITS CLOCKS, A DESIGN PICKS ONE, AND EVERY PLL IS BUILT FOR
@@ -54,9 +55,9 @@ class BoardClockTest extends AnyFunSuite {
   /** Files that mention a PLL input without stating one a design is built with. */
   private val notSources = Map(
     "fpga/bringup/"                     -> "bring-up designs: standalone Verilog, built from no board data",
-    "spinalhdl/src/main/scala/jop/config/PllVendor.scala" ->
+    "hardware/src/main/scala/hw/PllVendor.scala" ->
       "the ALTPLL and clk_wiz builders write the input from a design's definition, checked below through it",
-    "spinalhdl/src/test/scala/jop/config/AlteraAltpllTest.scala" -> "the builder's test, asserting on what it writes",
+    "hardware/src/test/scala/hw/AlteraAltpllTest.scala" -> "the builder's test, asserting on what it writes",
     "spinalhdl/src/test/scala/jop/config/AlteraDesignPllTest.scala" -> "asserts on the generated PLLs' inputs",
     "spinalhdl/src/test/scala/jop/config/BoardClockTest.scala" -> "this test",
     "spinalhdl/src/test/scala/jop/config/XilinxClkWizTest.scala" -> "the clk_wiz builder's test, asserting on what it writes",

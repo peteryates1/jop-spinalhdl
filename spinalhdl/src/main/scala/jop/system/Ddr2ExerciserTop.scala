@@ -340,6 +340,7 @@ case class Ddr2ExerciserTop(
   */
 object Ddr2ExerciserDesign extends jop.config.BoardDesign {
   import jop.config._
+  import hw._
   val assembly   = SystemAssembly.ae115fb
   // The controller's PLL is built for the 25 MHz clock (ip-src/ddr2_64bit.v).
   override val clockName = Some("CLK25M")

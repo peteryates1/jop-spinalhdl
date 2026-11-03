@@ -1,4 +1,4 @@
-package jop.config
+package hw
 
 /**
  * Board — Physical PCB with Devices and Pin Mappings
@@ -88,8 +88,6 @@ case class Board(
   fpga: Option[FpgaDevice] = None,
   devices: Seq[BoardDevice] = Seq.empty,
   connectors: Map[String, Map[Int, String]] = Map.empty,
-  entityTag: String = "",       // Replaces memType-based entity name (e.g., "Cyc5000", "Max1000Sdram")
-  entitySuffix: String = "",    // Appended to memType-based entity name (e.g., "Wukong")
   ledActiveHigh: Boolean = false,
   /** Polarity of the board's reset switch, as wired. Active-low (a button
     * pulling to ground with a pull-up) is by far the common case, which is why
@@ -98,7 +96,6 @@ case class Board(
     * inverts accordingly, instead of everyone assuming active-low. */
   resetActiveLow: Boolean = true,
   ddr3HasCs: Boolean = false,
-  useStackCache: Boolean = false,
   /** Default I/O standard for this board's user I/O. */
   ioStandard: String = "LVCMOS33",
   /** Release the dedicated nCEO pin as regular I/O (Cyclone families).
@@ -295,7 +292,6 @@ object Board {
     // Its designs define their PLL from CLK12M and Cyclone V's ALTPLL builder
     // makes it (JopConfig.cyc5000Pll, status item 173), in place of the
     // hand-written cyc5000_pll.vhd.
-    entityTag = "Cyc5000",
     fpga = Some(FpgaDevice.`5CEBA2U15`),   // 5CEBA2U15C8, the default (slowest) grade
     clocks = Seq(BoardClock("CLK12M", 12 MHz, "PIN_F14")),
     devices = Seq(
@@ -364,7 +360,6 @@ object Board {
     name = "colorlight-i5",
     // The designs on it define their PLL from CLK25M, and the ECP5
     // family builds it (JopConfig.colorlightI5Pll; status item 173).
-    entitySuffix = "I5",
     fpga = Some(FpgaDevice.LFE5U25F),
     connectors = Map("SODIMM" -> ColorlightSodimm.SodimmI5),
     portPulls = Map("e_mdio" -> "PULLUP"),
@@ -450,8 +445,6 @@ object Board {
     fpga = Some(FpgaDevice.XC7A50T),
     // The designs on it define their PLL from CLK25M, and clk_wiz
     // builds it (JopConfig.xilinxSdrPll, status item 173).
-    entitySuffix = "I9Plus",
-    useStackCache = true,
     connectors = Map("SODIMM" -> ColorlightSodimm.SodimmI9Plus),
     portPulls = Map("e_mdio" -> "PULLUP"),
     clocks = Seq(BoardClock("CLK25M", 25 MHz, "K4")),
@@ -644,7 +637,6 @@ object Board {
     // not restated -- see `constraintFiles`.
     constraintFiles = Seq("fpga/a-e115fb-ddr2/ddr2_pins.qsf"),
     fpga = Some(FpgaDevice.EP4CE115F23.withGrade(7, 'I')),   // EP4CE115F23I7, docs/boards/ep4ce115-ddr2-board.md
-    entitySuffix = "Ae115fb",
     ledActiveHigh = false,
     // Clock and reset, both of which this board was MISSING until 2026-08-26:
     // PinResolver finds the clock among the board's clocks and the reset via a
@@ -700,9 +692,7 @@ object Board {
     // BRAM ones, and both halves of the dual -- and clk_wiz builds it (status
     // item 173). Until 2026-11-02 three hand-made IPs with incompatible ports
     // stood in for all of them.
-    entitySuffix = "Wukong",
     ledActiveHigh = true,
-    useStackCache = true,
     clocks = Seq(BoardClock("CLK50M", 50 MHz, "M21")),
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3")),  // DDR3 pins managed by MIG IP
@@ -1123,7 +1113,6 @@ object Board {
     fpga = Some(FpgaDevice.`10M08SAU169`),   // 10M08SAU169C8G, the default (slowest) grade
     // max1000Sdram defines its PLL and MAX 10 builds it (status
     // item 173). The board's file was a stub passing 12 MHz through.
-    entityTag = "Max1000Sdram",
     clocks = Seq(BoardClock("CLK12M", 12 MHz, "PIN_H6")),
     devices = Seq(
       // SDRAM: W9864G6JT-6, 8 MB, 16-bit. Absent entirely until now, so a
@@ -1165,7 +1154,6 @@ object Board {
     fpga = Some(FpgaDevice.EP4CE6E22),   // EP4CE6E22C8, the default (slowest) grade
     // ep4ce6Sdram defines its PLL and Cyclone IV E builds it
     // (status item 173). The board named a file that was never committed.
-    entityTag = "Ep4ce6Sdram",
     clocks = Seq(BoardClock("CLK50M", 50 MHz, "PIN_23")),
     devices = Seq(
       BoardDevice("W9864G6JT", role = Some("sdr")),

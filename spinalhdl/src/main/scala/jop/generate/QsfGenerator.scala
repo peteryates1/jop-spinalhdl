@@ -1,6 +1,7 @@
 package jop.generate
 
 import jop.config._
+import hw._
 
 /**
  * Quartus .qsf Pin Assignment Generator

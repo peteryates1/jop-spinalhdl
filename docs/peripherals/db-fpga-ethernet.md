@@ -204,7 +204,7 @@ found the extra RX_CLK edges (`Mac.scala`; read out by the `EthCapDiag` app).
 
 Key files, under `spinalhdl/src/main/scala/jop/`:
 - `config/JopConfig.scala` — the presets above
-- `config/Board.scala` — the DB_FPGA's J3 pins (`QmtechFpgaDbV4`, `QmtechFpgaDbV5`)
+- `hardware/src/main/scala/hw/Board.scala` — the DB_FPGA's J3 pins (`QmtechFpgaDbV4`, `QmtechFpgaDbV5`)
 - `io/DeviceTopWiring.scala` — the PHY clock domains, the 125 MHz PLL for GMII, the TX/RX adapters
 - `io/Eth.scala` — the device: `Mac` (TX/RX buffers around SpinalHDL's `MacEth`) plus `Mdio`
 - `generate/TimingConstraints.scala`, `generate/QsfGenerator.scala`, `generate/XdcGenerator.scala` — the constraints

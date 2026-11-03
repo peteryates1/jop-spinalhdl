@@ -69,7 +69,8 @@ VIVADO_BUILD= $(VIVADO_PRJ)/build
 # A STAMP, not the .v: the entity name is derived from the config, so naming
 # the file here would restate config in Make and be wrong for every SMP build.
 GEN_STAMP   = $(CFG_DIR)/rtl/.generated
-SCALA_SRC  := $(shell find $(PROJECT_ROOT)/spinalhdl/src/main/scala -name '*.scala')
+# SCALA_SRC: every sbt project's sources (fpga/scala.mk).
+include $(JOP_FPGA_DIR)scala.mk
 UCODE      := $(wildcard $(PROJECT_ROOT)/build/microcode/serial/mem_*.dat)
 
 # The microcode files the Scala compile actually needs. Deliberately NOT a

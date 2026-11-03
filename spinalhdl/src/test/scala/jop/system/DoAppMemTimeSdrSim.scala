@@ -9,6 +9,7 @@ import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import spinal.lib.memory.sdram.SdramLayout
 import jop.config._
+import hw._
 import jop.memory.{JopMemoryConfig, SdramDeviceInfo}
 import jop.utils.{JopFileLoader, JopSimDefaults}
 

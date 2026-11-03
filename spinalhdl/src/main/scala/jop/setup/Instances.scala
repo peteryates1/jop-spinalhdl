@@ -1,7 +1,7 @@
 package jop.setup
 
 import java.io.File
-import jop.config.SystemAssembly
+import hw.SystemAssembly
 
 /**
  * THIS LAB'S UNITS -- the setup layer (status items 173 and 174).

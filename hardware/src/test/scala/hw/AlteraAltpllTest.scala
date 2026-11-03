@@ -1,4 +1,4 @@
-package jop.config
+package hw
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._

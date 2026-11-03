@@ -1,7 +1,8 @@
 package jop.setup
 
-import jop.config.{NetIdentity, SystemAssembly, UnitAccess}
+import jop.config.{NetIdentity, UnitAccess}
 
+import hw.SystemAssembly
 /** A MAC address: six octets, written 02:4a:4f:50:12:34. */
 case class MacAddress(octets: Seq[Int]) {
   require(octets.size == 6 && octets.forall(o => o >= 0 && o <= 0xff), s"not a MAC address: $octets")

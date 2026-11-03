@@ -4,6 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import java.nio.file.{Files, Paths}
 import scala.util.Try
+import hw._
 
 /**
  * The clock-wizard builder: Artix-7 (status item 173, step 8).

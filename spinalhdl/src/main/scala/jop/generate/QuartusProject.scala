@@ -1,6 +1,7 @@
 package jop.generate
 
 import jop.config._
+import hw._
 
 /**
  * Emit a Tcl script that CREATES the Quartus project, rather than a .qsf.

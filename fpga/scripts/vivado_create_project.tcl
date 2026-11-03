@@ -13,7 +13,7 @@
 #   JOP_XDC        space-separated constraint files          (optional)
 #   JOP_IP         space-separated .xci files                (optional)
 #   JOP_PLL_TCL    space-separated clk_wiz definitions, the design's PLLs
-#                  (jop.config.XilinxClkWiz)                 (optional)
+#                  (hw.XilinxClkWiz)                 (optional)
 #   JOP_BIN_GLOB   glob for BRAM-init .bin sidecars          (optional)
 #   JOP_GEN_HINT   what to run if the RTL is missing         (optional)
 #   JOP_IP_GEN_TARGET  yes => generate_target all on each .xci (optional)

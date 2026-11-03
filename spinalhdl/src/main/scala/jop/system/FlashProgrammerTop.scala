@@ -289,6 +289,7 @@ object FlashProgrammerDesign extends jop.config.BoardDesign {
   // FPGA family. Declared so the generators write and list it.
   override def plls = Seq(jop.system.pll.Pll.systemOnly(inputClock, clkMhz))
   import jop.config._
+  import hw._
   val assembly   = SystemAssembly.qmtechWithDb
   val entityName = "FlashProgrammerTop"
   val designName = "flash-programmer"

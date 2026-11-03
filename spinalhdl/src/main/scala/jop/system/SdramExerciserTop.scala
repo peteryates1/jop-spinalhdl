@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.com.uart._
 import spinal.lib.io.InOutWrapper
 import spinal.lib.memory.sdram.sdr._
-import jop.config.{MemoryDevice, SystemAssembly}
+import hw.MemoryDevice
 import jop.memory.{BmbSdramCtrl32, JopMemoryConfig, SdramDeviceInfo}
 
 /**
@@ -28,10 +28,10 @@ import jop.memory.{BmbSdramCtrl32, JopMemoryConfig, SdramDeviceInfo}
   *               the memory clock's phase is its choice. Else the board's. */
 case class SdramExerciserTop(
   md: MemoryDevice,
-  board: jop.config.Board = SdramExerciserDesign.assembly.fpgaBoard,
+  board: hw.Board = SdramExerciserDesign.assembly.fpgaBoard,
   clkMhz: Int = SdramExerciserDesign.clkMhz,
   uartBaud: Int = SdramExerciserDesign.uartBaud,
-  pll: Option[jop.config.PllDefinition] = None
+  pll: Option[hw.PllDefinition] = None
 ) extends Component {
 
   val io = new Bundle {
@@ -48,7 +48,7 @@ case class SdramExerciserTop(
   // branch also yields the phase-shifted memory clock this design needs.
   val pllResult = pll match {
     case Some(d) => jop.system.pll.Pll.build(d, board, io.clk_in)
-    case None    => jop.system.pll.Pll.forDesign(board, jop.config.MemoryType.SDRAM_SDR, io.clk_in, clkMhz)
+    case None    => jop.system.pll.Pll.forDesign(board, hw.MemoryType.SDRAM_SDR, io.clk_in, clkMhz)
   }
   val sysClk = pllResult.systemClk.get
   val pllLocked = pllResult.locked
@@ -577,6 +577,7 @@ case class SdramExerciserTop(
   * board carries the SDRAM either way. */
 object SdramExerciserDesign extends jop.config.BoardDesign {
   import jop.config._
+  import hw._
   val assembly   = SystemAssembly.qmtechWithDb
   val entityName = "SdramExerciserTop"
   val designName = "sdram-exerciser"

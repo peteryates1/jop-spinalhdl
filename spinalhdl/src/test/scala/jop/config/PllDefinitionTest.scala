@@ -2,6 +2,7 @@ package jop.config
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
+import hw._
 
 /**
  * A DESIGN DEFINES ITS PLL; THE FPGA FAMILY BUILDS IT -- status item 173,

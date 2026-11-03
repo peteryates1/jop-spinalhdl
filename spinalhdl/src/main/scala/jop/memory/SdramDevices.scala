@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib.memory.sdram.SdramLayout
 import spinal.lib.memory.sdram.SdramGeneration._
 import spinal.lib.memory.sdram.sdr.SdramTimings
-import jop.config.MemoryDevice
+import hw.MemoryDevice
 
 /**
  * W9825G6JH6 - Winbond 256Mbit SDR SDRAM (32MB)

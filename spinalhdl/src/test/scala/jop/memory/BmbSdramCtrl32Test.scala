@@ -8,7 +8,7 @@ import spinal.lib.memory.sdram._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import org.scalatest.funsuite.AnyFunSuite
-import jop.config.MemoryDevice
+import hw.MemoryDevice
 import jop.utils.JopSimDefaults
 
 /**

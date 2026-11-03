@@ -1,6 +1,7 @@
 package jop.generate
 
 import jop.config._
+import hw._
 
 /** A clock the timing tools must know about: a port, and how fast it runs. */
 case class ClockConstraint(port: String, freqHz: BigDecimal, name: Option[String] = None) {

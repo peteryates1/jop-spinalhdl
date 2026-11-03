@@ -2,6 +2,15 @@
 #
 # DISCIPLINE: docs/testing-discipline.md — "verify against the artefact".
 # PROVED RED 2026-09-04 by dropping `$(REV).sdc: $(GEN_STAMP)` from fpga/quartus.mk — it named three boards.
+# EXTENDED 2026-11-03 (status item 173), section 3: every rule that elaborates
+# from Scala depends on every source sbt compiles. PROVED RED the same day on
+# the tree with the hardware layer moved to hardware/ and the flows not yet
+# changed: it named 27 rules in 15 boards -- every RTL stamp and every unit
+# descriptor -- each missing the six hardware sources. Also red on unit.mk
+# alone without the hardware layer (the descriptors only), on scala.mk
+# searching spinalhdl/ alone (the stamps only), and on a board Makefile that
+# stops with an error, at its first line or its last; green on an untracked
+# third project, which scala.mk finds.
 # If you change this guard, re-prove it: a guard that cannot fail is worse
 # than none, because it gets quoted as evidence.
 #
@@ -395,3 +404,95 @@ java/config.mk declares `jop: tools-fresh` for every app that includes it.
 EOF
   exit 1
 fi
+
+# ---------------------------------------------------------------------------
+# 3. ELABORATION DEPENDS ON EVERY SCALA SOURCE THE BUILD COMPILES -- status
+#    item 173: the hardware layer is an sbt project of its own since
+#    2026-11-03.
+#
+# A flow re-elaborates when a Scala source is newer than its stamp, and every
+# flow found its sources by searching spinalhdl/src/main/scala. The boards,
+# parts and PLL builders moved to hardware/src/main/scala, which that search
+# does not reach: a changed pin, clock or PLL builder would have rebuilt the
+# previous run's RTL and constraints, and succeeded -- the .sdc defect above,
+# for a different input. The unit descriptor (fpga/unit.mk) reads the
+# assemblies, which are hardware-layer data too.
+#
+# The expected set comes from the tree, not from a list here: every main
+# source of every sbt project (*/src/main/scala/), tracked or not, so a third
+# project cannot be missed the same way. A rule with any Scala source among
+# its prerequisites must have all of them -- except the unit descriptor's,
+# which by design takes only the config, setup and hardware sources, and must
+# have all of the hardware layer's.
+#
+# Each board's OWN rule database, read with a goal that builds nothing: a plain
+# `make -p -n` builds the default goal, and the sub-makes it runs add their
+# databases to the dump. A board whose Makefile make cannot read fails, and
+# one on a shared flow (quartus.mk, vivado.mk) or with a SCALA_SRC of its own
+# must show at least one such rule, so no board passes unread.
+# ---------------------------------------------------------------------------
+echo
+src_out=$(python3 - <<'PY'
+import os, re, subprocess
+root = os.getcwd()
+expected = set(subprocess.run(
+    ['git', 'ls-files', '--cached', '--others', '--exclude-standard', '--',
+     '*/src/main/scala/*.scala'], capture_output=True, text=True, check=True).stdout.split())
+hw = {p for p in expected if p.startswith('hardware/src/main/scala/')}
+if not hw:
+    print('FAIL no hardware-layer sources under hardware/src/main/scala: this check asserts nothing')
+rule = re.compile(r'^([^\s#][^:=]*?):(?:\s|$)(.*)$')
+flow = re.compile(r'^(include \.\./(quartus|vivado)\.mk|SCALA_SRC\s*:?=)', re.M)
+rules = 0
+for b in sorted(os.listdir('fpga')):
+    mk = os.path.join('fpga', b, 'Makefile')
+    if not os.path.isfile(mk):
+        continue
+    bdir = os.path.join(root, 'fpga', b)
+    run = subprocess.run(['make', '-C', bdir, '-p', '-n', '--eval', '.jop-no-goal: ;', '.jop-no-goal'],
+                         capture_output=True, text=True)
+    # make prints the database even when it stops on an error, holding what it
+    # read up to there -- so a board that fails to parse must fail here, not
+    # pass on half its rules.
+    if run.returncode != 0:
+        err = (run.stderr.strip().splitlines() or ['no message'])[-1]
+        print(f'FAIL fpga/{b}: make could not read its rules ({err})')
+    db = run.stdout
+    deps = {}
+    for line in db.splitlines():
+        m = rule.match(line)
+        if not m:
+            continue
+        # Sources only: the generated microcode tables are .scala too, and a
+        # phony target that depends on them alone runs every time anyway.
+        srcs = {p for p in (os.path.relpath(os.path.normpath(os.path.join(bdir, t)), root)
+                            for t in m.group(2).split() if t.endswith('.scala'))
+                if re.search(r'(^|/)src/main/scala/', p)}
+        if srcs:
+            deps.setdefault(m.group(1).strip(), set()).update(srcs)
+    if not deps and flow.search(open(mk).read()):
+        print(f'FAIL fpga/{b}: no rule depends on a Scala source -- its rules could not be read')
+    for tgt, srcs in sorted(deps.items()):
+        rules += 1
+        want = hw if tgt.endswith('desc') else expected
+        miss = sorted(want - srcs)
+        if miss:
+            print(f'FAIL fpga/{b}: {tgt} misses {len(miss)} of {len(want)} Scala sources, e.g. {miss[0]}')
+print(f'RULES {rules}')
+PY
+)
+src_rules=$(sed -n 's/^RULES //p' <<<"$src_out")
+if command grep -q '^FAIL' <<<"$src_out" || [ "${src_rules:-0}" -lt 10 ]; then
+  command grep '^FAIL' <<<"$src_out" | sed 's/^/  /'
+  [ "${src_rules:-0}" -lt 10 ] && echo "  FAIL only ${src_rules:-0} rules depend on Scala sources; the board databases were not read"
+  cat <<'EOF'
+
+A rule that elaborates from Scala does not depend on every source sbt
+compiles, so a change there will not rebuild its RTL and constraints: the
+flow will succeed on the previous run's output. Find the sources with
+fpga/scala.mk's SCALA_SRC, which searches every sbt project; the unit
+descriptor's search is fpga/unit.mk's UNIT_DESC_SRC.
+EOF
+  exit 1
+fi
+echo "  $src_rules rules elaborate from Scala, each from every source sbt compiles"

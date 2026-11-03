@@ -9,8 +9,9 @@
 # board could not change. Now the descriptor answers, with the same selection
 # hw_verify uses: the unit for the preset in CFG, or the one INSTANCE names,
 # and the console wired to the preset's UART. The answer is cached per config
-# in $(UNIT_DESC) and remade when the units or the configs change, so the
-# first lookup costs one sbt start and the rest cost a sed.
+# in $(UNIT_DESC) and remade when the units, the configs or the hardware layer
+# (hardware/: the boards and their assemblies) change, so the first lookup
+# costs one sbt start and the rest cost a sed.
 #
 # Only targets that reach hardware depend on $(UNIT_DESC); a build does not.
 # SYSTEM=<name> picks one system's console in a multi-system build (the Wukong
@@ -26,7 +27,8 @@ JOP_SETUP_DIR = $(or $(JOP_SETUP),$(PROJECT_ROOT)/setup)
 UNIT_DESC     = $(CFG_DIR)/unit$(if $(INSTANCE),.$(INSTANCE)).desc
 UNIT_DESC_SRC := $(wildcard $(JOP_SETUP_DIR)/units.toml) \
                  $(shell find $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config \
-                              $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/setup -name '*.scala') \
+                              $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/setup \
+                              $(PROJECT_ROOT)/hardware/src/main/scala -name '*.scala') \
                  $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/generate/HwVerifyDescriptor.scala
 
 # The design described: the preset in CFG or, for a board design built by its

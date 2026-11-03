@@ -4,6 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import java.io.File
 import scala.io.Source
+import hw._
 
 /**
  * A VIVADO FLOW MUST TIME FOR THE PART ITS BOARD DECLARES.

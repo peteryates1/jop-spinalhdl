@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.com.uart._
 import spinal.lib.io.InOutWrapper
 import spinal.lib.memory.sdram.sdr._
-import jop.config.{MemoryDevice, SystemAssembly}
+import hw.{MemoryDevice, SystemAssembly}
 import jop.memory.{BmbSdramCtrl32, JopMemoryConfig, SdramDeviceInfo}
 
 /**
@@ -35,7 +35,7 @@ case class SdramExerciserWukongTop(md: MemoryDevice) extends Component {
 
   // Its PLL (status item 173): 50 MHz -> 100 MHz system + the SDRAM's copy
   // 3 ns early (-108 deg), built by clk_wiz from the definition below.
-  val clkWiz = jop.system.pll.Pll.build(SdramExerciserWukongTop.pll, jop.config.Board.WukongXC7A100T, io.clk_in)
+  val clkWiz = jop.system.pll.Pll.build(SdramExerciserWukongTop.pll, hw.Board.WukongXC7A100T, io.clk_in)
   io.sdram_clk := clkWiz.sdramClk.get
 
   // Reset generator
@@ -573,7 +573,7 @@ object SdramExerciserWukongTopVerilog extends App {
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
   ).generate(InOutWrapper(SdramExerciserWukongTop(md)))
   // The clk_wiz definition the flow sources (JOP_PLL_TCL), beside the RTL.
-  jop.config.XilinxClkWiz.generate(SdramExerciserWukongTop.pll.spec(asm), SdramExerciserWukongTop.pll.module,
+  hw.XilinxClkWiz.generate(SdramExerciserWukongTop.pll.spec(asm), SdramExerciserWukongTop.pll.module,
     jop.generate.BuildLayout.default.ipDir("sdramExerciserWukong", Seq.empty))
 
   jop.generate.StandaloneBuild.summary("sdramExerciserWukong", "SdramExerciserWukongTop",

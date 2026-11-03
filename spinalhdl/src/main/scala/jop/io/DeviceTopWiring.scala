@@ -5,6 +5,7 @@ import spinal.lib._
 import spinal.lib.io.TriState
 import spinal.lib.com.eth._
 import jop.config._
+import hw._
 import jop.system.{JopCluster, ResetGenerator}
 import jop.system.pll.PllResult
 

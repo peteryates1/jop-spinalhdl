@@ -1,6 +1,7 @@
 package jop.config
 
 import org.scalatest.funsuite.AnyFunSuite
+import hw._
 import jop.generate.{ConstGenerator, LpfGenerator, TimingConstraints, QsfGenerator, QuartusProject, XdcGenerator}
 import jop.system.JopTopVerilog
 

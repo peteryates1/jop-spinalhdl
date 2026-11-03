@@ -60,7 +60,8 @@ generate: $(APP)
 	cd $(ROOT) && sbt "runMain jop.generate.LpfGeneratorMain $(CFG) --write build/$(CFG)/nextpnr/$(TOP).lpf"
 	cd $(ROOT) && sbt "runMain jop.generate.PllGenMain $(CFG) --module pll_jop_i5 --out build/$(CFG)/ip"
 
-SCALA_SRC := $(shell find $(ROOT)/spinalhdl/src/main/scala -name '*.scala')
+# SCALA_SRC: every sbt project's sources.
+include ../scala.mk
 UCODE     := $(wildcard $(ROOT)/build/microcode/serial/mem_*.dat)
 $(GENDIR)/$(TOP).v: $(SCALA_SRC) $(UCODE)
 	$(MAKE) generate

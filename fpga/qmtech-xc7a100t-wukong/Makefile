@@ -44,7 +44,7 @@ NP_TCL     := $(REPO_ROOT)/fpga/scripts/vivado_build_nonproject.tcl
 #
 # THE CLOCK IP IS EACH DESIGN'S (status item 173). Every design defines its
 # PLL, and generating its Verilog writes the clk_wiz definition into
-# build/<config>/ip/ (jop.config.XilinxClkWiz); each Vivado build below sources
+# build/<config>/ip/ (hw.XilinxClkWiz); each Vivado build below sources
 # it (JOP_PLL_TCL), so the IP is created in the run that uses it. Until
 # 2026-11-02 three hand-run scripts made three shared IPs here -- bram_clk,
 # ddr3_clk, sdr_clk -- plus one directory per SDR frequency, and

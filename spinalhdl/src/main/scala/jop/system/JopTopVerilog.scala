@@ -3,6 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.lib.io.InOutWrapper
 import jop.config._
+import hw._
 import jop.utils.JopFileLoader
 
 /**
@@ -344,7 +345,7 @@ object JopTopVerilog {
       // for another profile, and make ddr3-create-ip has not been re-run".
       val dir = "fpga/qmtech-xc7a100t-wukong"
       val emitted = jopConfig.migProfile
-        .map(p => f"  ${MigProfile.emit(dir, p)}%n").getOrElse("")
+        .map(p => f"  ${jop.generate.MigPrjGenerator.emit(dir, p)}%n").getOrElse("")
       val migIn = sys.plls.flatMap(_.outputs).find(_.role == PllRole.MigSys).map(_.mhz)
       emitted + f"  ${jop.config.MigClockCheck.check(dir, sys.clkFreq.toLong, migIn)}%n"
     } else ""

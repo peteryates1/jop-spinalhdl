@@ -1,4 +1,4 @@
-package jop.config
+package hw
 
 /** What a clock output is FOR. Named by role, not by the vendor's port name --
   * `c1` on Altera, `clkout0` on Lattice and `clk_100` on Xilinx are all the

@@ -2,6 +2,7 @@ package jop.system.pll
 
 import spinal.core._
 import jop.config._
+import hw._
 
 /**
  * Unified PLL result -- all clock outputs from the PLL subsystem.

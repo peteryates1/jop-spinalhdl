@@ -745,7 +745,7 @@ All files containing hardware-dependent constants:
 - `jop/types/JopConstants.scala` — METHOD_SIZE_BITS
 - `jop/config/JopCoreConfig.scala` — pcWidth, instrWidth, jpcWidth, blockBits, ramWidth
 - `jop/config/JopConfig.scala` — presets, clkFreq
-- `jop/config/Parts.scala` — SDRAM timing, FPGA families
+- `hardware/src/main/scala/hw/Parts.scala` — SDRAM timing, FPGA families
 - `jop/memory/JopMemoryConfig.scala` — addressWidth, mainMemSize, burstLen
 - `jop/memory/JopIoSpace.scala` — SYS_BASE, UART_BASE
 - `jop/memory/MethodCache.scala` — methodSizeBits

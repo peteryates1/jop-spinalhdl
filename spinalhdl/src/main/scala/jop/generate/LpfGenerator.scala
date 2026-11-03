@@ -1,6 +1,7 @@
 package jop.generate
 
 import jop.config._
+import hw._
 
 /**
  * Lattice .lpf constraint generator — the ECP5 / open-source flow.

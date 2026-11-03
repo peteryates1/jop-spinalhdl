@@ -92,8 +92,8 @@ grep ser_rxd build/<config>/quartus/*.qsf     # Altera
 grep ser_rxd build/<config>/vivado/*.xdc      # Xilinx
 ```
 
-If it is absent there, the board entry in `jop/config/Board.scala` is what needs
-changing.
+If it is absent there, the board entry in `hardware/src/main/scala/hw/Board.scala`
+is what needs changing.
 
 ### 4. I/O addresses disagree with the `.jop`
 

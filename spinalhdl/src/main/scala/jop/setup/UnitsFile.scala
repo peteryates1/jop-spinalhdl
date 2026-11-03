@@ -4,8 +4,8 @@ import java.io.File
 import java.nio.file.Files
 import scala.jdk.CollectionConverters._
 import org.tomlj.Toml
-import jop.config.{SystemAssembly, UnitAccess}
-
+import jop.config.UnitAccess
+import hw.SystemAssembly
 /** Where this lab's setup is (status item 173): $JOP_SETUP when set, which
   * must exist; otherwise `setup` under the working directory -- the
   * repository root, as for every build path (BuildLayout) -- which may be

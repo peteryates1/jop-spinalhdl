@@ -3,6 +3,7 @@ package jop.config
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import java.nio.file.{Files, Paths}
+import hw._
 import jop.generate.{DesignPlls, XdcGenerator}
 
 /**

@@ -1,6 +1,7 @@
 package jop.config
 
 import spinal.core._
+import hw._
 import jop.io.{DeviceContext, DeviceTypes, IoDeviceDescriptor}
 import jop.pipeline._
 import jop.memory._
@@ -47,6 +48,17 @@ sealed trait MemoryStyle {
 }
 
 object MemoryStyle {
+
+  /** The style JOP builds its memories in on a family. JOP's choice, not a
+    * fact about the family, so it is decided here and not in the hardware
+    * layer (status item 173), where `FpgaFamily.memoryStyle` stood until
+    * 2026-11-03 with the same answer: LPM on every Altera family -- MAX 10's
+    * inference cannot initialise a memory from $readmemb, and on Cyclone IV
+    * LPM matches the proven jopmin approach -- and Generic elsewhere. */
+  def of(family: FpgaFamily): MemoryStyle = family.manufacturer match {
+    case Manufacturer.Altera => AlteraLpm()
+    case _                   => Generic
+  }
 
   case object Generic extends MemoryStyle {
     def createRom(width: Int, addrWidth: Int, depth: Int,

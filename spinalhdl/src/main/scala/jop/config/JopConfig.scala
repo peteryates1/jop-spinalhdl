@@ -1,6 +1,7 @@
 package jop.config
 
 import spinal.core._
+import hw._
 import jop.memory.JopMemoryConfig
 import jop.pipeline.JumpTableInitData
 
@@ -344,10 +345,10 @@ object MifPathOverride {
   def apply(c: JopConfig, mifBasePath: String): JopConfig =
     c.copy(systems = c.systems.map { sys =>
       // Consult the FAMILY, not the core config. The style is normally left
-      // unset on JopCoreConfig and filled in from FpgaFamily.memoryStyle during
+      // unset on JopCoreConfig and filled in from MemoryStyle.of(family) during
       // resolution, so testing the raw config sees None and this override
       // silently did nothing.
-      val familyUsesLpm = c.fpgaFamily.memoryStyle.isInstanceOf[MemoryStyle.AlteraLpm]
+      val familyUsesLpm = MemoryStyle.of(c.fpgaFamily).isInstanceOf[MemoryStyle.AlteraLpm]
       def on(cc: JopCoreConfig) =
         if (familyUsesLpm || cc.resolvedMemoryStyle.isInstanceOf[MemoryStyle.AlteraLpm])
           cc.copy(memoryStyle = Some(MemoryStyle.AlteraLpm(mifBasePath)))
@@ -466,7 +467,7 @@ case class JopConfig(
     // predates the module/base-board split).
     val board = assembly.fpgaBoard
     (mt.contains(MemoryType.SDRAM_DDR3) && sys.cpuCnt == 1) ||
-    (mt.contains(MemoryType.SDRAM_SDR) && board.useStackCache)
+    (mt.contains(MemoryType.SDRAM_SDR) && JopBoardSettings.of(board).useStackCache)
   }
 
   /**
@@ -530,7 +531,7 @@ case class JopConfig(
         burstLen = 0)
       else cc.memConfig.copy(
         burstLen = burstLen,
-        stackRegionWordsPerCore = if (assembly.fpgaBoard.useStackCache) 8192 else 0)
+        stackRegionWordsPerCore = if (JopBoardSettings.of(assembly.fpgaBoard).useStackCache) 8192 else 0)
     cc.copy(memConfig = memConfig, useStackCache = effectiveUseStackCache(sys))
   }
 
@@ -541,7 +542,7 @@ case class JopConfig(
 
   lazy val resolvedSystems: Seq[JopSystem] = {
     val needsSync = true
-    val autoMemStyle = fpgaFamily.memoryStyle
+    val autoMemStyle = MemoryStyle.of(fpgaFamily)
     def resolveCore(cc: JopCoreConfig): JopCoreConfig = {
       val r1 = cc.useSyncRam match {
         case Some(_) => cc
@@ -658,7 +659,8 @@ case class JopConfig(
   def memoryTypes: Seq[MemoryType] =
     systems.flatMap(sys => resolveMemory(sys).map(_.memType)).distinct
 
-  /** Entity name derived from Board properties (entityTag, entitySuffix) and memory type */
+  /** Entity name derived from JOP's settings for the board (JopBoardSettings:
+    * entityTag, entitySuffix) and the memory type */
   // --- BoardDesign ---------------------------------------------------------
   // Every one of these was already computed at the point of use inside a
   // generator; naming them here is what lets a non-JOP design supply them too.
@@ -669,15 +671,15 @@ case class JopConfig(
     systems.exists(s => resolveMemory(s).exists(_.memType == MemoryType.SDRAM_SDR))
 
   def entityName: String = {
-    val board = assembly.fpgaBoard
+    val settings = JopBoardSettings.of(assembly.fpgaBoard)
     if (systems.length > 1) {
       // Multi-system: JopDual<suffix>Top
-      s"JopDual${board.entitySuffix}Top"
+      s"JopDual${settings.entitySuffix}Top"
     } else {
       val sys = systems.head
       val smp = if (sys.cpuCnt >= 2) "Smp" else ""
-      val platform = if (board.entityTag.nonEmpty) {
-        board.entityTag
+      val platform = if (settings.entityTag.nonEmpty) {
+        settings.entityTag
       } else {
         val memPart =
           if (memoryTypes.contains(MemoryType.SDRAM_DDR3)) "Ddr3"
@@ -685,7 +687,7 @@ case class JopConfig(
           else if (memoryTypes.contains(MemoryType.SDRAM_SDR)) "Sdram"
           else if (sys.bootMode == BootMode.Serial) "BramSerial"
           else "Bram"
-        memPart + board.entitySuffix
+        memPart + settings.entitySuffix
       }
       s"Jop${smp}${platform}Top"
     }
@@ -1585,7 +1587,8 @@ object JopConfig {
    * preset.
    *
    * Only `mainMemSize` differs. The spill geometry is the board's — SDR plus
-   * `board.useStackCache` still gives 8192 words per core — so the addresses
+   * the board's `useStackCache` (JopBoardSettings) still gives 8192 words per
+   * core — so the addresses
    * under test are computed by the same rule, just nearer the bottom of memory.
    *
    * SIZED FOR THE PROBE, NOT FOR THE ROUNDS — measured, and the second half of

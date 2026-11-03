@@ -129,7 +129,7 @@ jop/
 │   ├── ddr2/                  # DDR2 subsystem (ALTMEMPHY blackbox, CacheToDdr2Adapter)
 │   ├── io/                    # I/O slaves (Sys, Uart, Eth, Mdio, SdNative, SdSpi, VgaText, Ihlu, CmpSync)
 │   ├── debug/                 # Debug subsystem (protocol, controller, breakpoints, UART)
-│   ├── config/                # Configuration hierarchy (JopConfig, Board, Parts, BoardDesign)
+│   ├── config/                # JOP's configuration (JopConfig presets, JopBoardSettings, BoardDesign)
 │   ├── system/                # System integration (JopCore, JopTop, JopCluster, SMP)
 │   ├── types/                 # JOP types and constants
 │   └── utils/                 # File loaders, utilities
@@ -137,6 +137,11 @@ jop/
 │   ├── system/                # System-level simulations (BRAM, SDRAM, serial boot)
 │   ├── memory/                # Memory controller tests
 │   └── pipeline/              # Pipeline stage tests
+├── hardware/src/main/scala/hw/ # The hardware layer, its own sbt project: boards and
+│                              # assemblies, FPGA devices and families, PLL builders
+│                              # (Board, Parts, PllSpec, PllVendor, MigProfile).
+│                              # Depends on SpinalHDL only; JOP depends on it.
+├── setup/                     # This lab's units, probes, consoles and tool paths (TOML)
 ├── asm/
 │   └── src/                   # Microcode source (jvm.asm, echo.asm)
 │                              # output goes to build/microcode/<boot mode>/
@@ -144,6 +149,7 @@ jop/
 │   ├── scripts/               # download.py, monitor.py, make_flash_image.py, flash_program.py
 │   ├── ip/                    # Third-party IP (Altera SDRAM controller)
 │   ├── quartus.mk, vivado.mk, console.mk  # the flow, once per toolchain
+│   ├── unit.mk, scala.mk      # the unit a build runs on; the Scala sources it is built from
 │   ├── scripts/vivado_*.tcl   # project/non-project build, shared by all Vivado boards
 │   ├── alchitry-au/           # Alchitry Au V2 DDR3 (Vivado)
 │   ├── alchitry-au-ddr3-test/ # DDR3 exerciser — SAME board, second project
@@ -165,7 +171,7 @@ jop/
 │   └── apps/                  # Java application builds
 ├── build/<config>/             # EVERYTHING generated — see docs/build-structure.md
 ├── docs/                        # Architecture and reference docs
-└── build.sbt                  # Top-level SBT build
+└── build.sbt                  # Top-level SBT build: projects `root` and `hardware`
 ```
 
 ## Getting Started

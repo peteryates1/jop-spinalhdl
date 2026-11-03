@@ -2,6 +2,7 @@ package jop.system
 
 import spinal.core._
 import jop.config._
+import hw._
 
 /**
  * Generate Verilog for multiple EP4CGX150 SDR SDRAM configs to measure per-feature LUT cost.

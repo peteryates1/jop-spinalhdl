@@ -2,6 +2,7 @@ package jop.config
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
+import hw._
 
 class JopConfigTest extends AnyFunSuite {
 

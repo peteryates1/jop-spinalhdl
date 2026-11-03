@@ -1,5 +1,7 @@
 package jop.config
 
+import hw._
+
 /**
  * What a constraint generator needs to know about a design. Not a JOP design --
  * ANY design on these boards.

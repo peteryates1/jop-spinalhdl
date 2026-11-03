@@ -186,8 +186,10 @@ jobs:
           name: microcode
           path: build/microcode/
 
+      # Both projects: `compile` reaches the hardware layer's main sources
+      # through root's dependsOn, but not its tests (status item 173).
       - name: SBT compile (main + test)
-        run: sbt -J-Xmx4g compile Test/compile
+        run: sbt -J-Xmx4g compile Test/compile hardware/Test/compile
 
       - name: Generate Verilog
         run: sbt -J-Xmx4g "runMain jop.system.JopCoreVerilog"
@@ -429,9 +431,12 @@ jobs:
       # CI builds jopa.jar and the microcode but not the Java apps — those need
       # JDK 6 — so those three fail in CI while passing locally. Adding the
       # packages wholesale is exactly the mistake that broke this job once.
+      # The hardware layer's suites (package hw) are another sbt project's,
+      # which root's testOnly does not reach, so they run first under their
+      # own -- and its "No tests to run" fails the check below like root's.
       - name: Run simulation tests
         run: |
-          sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* jop.config.* jop.sim.* -- -u target/scalatest-reports" 2>&1 | tee suite.log
+          sbt -J-Xmx4g "hardware/testOnly hw.* -- -u target/scalatest-reports" "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* jop.config.* jop.sim.* -- -u target/scalatest-reports" 2>&1 | tee suite.log
           exit ${PIPESTATUS[0]}
 
       # THE FILTER MATCHING NOTHING EXITS 0 -- status item 111.

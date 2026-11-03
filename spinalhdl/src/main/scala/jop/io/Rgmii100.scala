@@ -98,7 +98,7 @@ object Rgmii100 {
  * its CRC.
  */
 case class Rgmii100(txCd: ClockDomain, rxCd: ClockDomain,
-                    vendor: jop.config.Manufacturer = jop.config.Manufacturer.Xilinx) extends Component {
+                    vendor: hw.Manufacturer = hw.Manufacturer.Xilinx) extends Component {
   val io = new Bundle {
     val phy   = slave(PhyIo(PhyParameter(txDataWidth = 4, rxDataWidth = 4)))
     val txc   = out Bool()
@@ -118,7 +118,7 @@ case class Rgmii100(txCd: ClockDomain, rxCd: ClockDomain,
   }
 
   vendor match {
-    case jop.config.Manufacturer.Lattice =>
+    case hw.Manufacturer.Lattice =>
       def cell(d0: Bool, d1: Bool): Bool = {
         val c = new LatticeOddrx1f
         c.io.SCLK := txCd.readClockWire

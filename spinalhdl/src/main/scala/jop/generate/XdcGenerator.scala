@@ -1,6 +1,7 @@
 package jop.generate
 
 import jop.config._
+import hw._
 
 /**
  * Vivado .xdc Constraint File Generator

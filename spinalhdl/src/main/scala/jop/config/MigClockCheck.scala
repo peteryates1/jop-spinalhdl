@@ -1,6 +1,7 @@
 package jop.config
 
 import java.nio.file.{Files, Paths}
+import hw._
 
 /**
  * Cross-checks the Wukong DDR3 clock chain against the preset at generation time.

@@ -33,7 +33,7 @@
 # clocks of the clk port, so that spelling puts them in the same group as the
 # clock they are being separated from, and the constraint does nothing. Name
 # both sides explicitly. Vivado names each clock <port>_<module>, the ports by
-# role (jop.config.XilinxClkWiz); -quiet tolerates clk_eth_sdr_clk, which only
+# role (hw.XilinxClkWiz); -quiet tolerates clk_eth_sdr_clk, which only
 # a GMII design's PLL makes (wukongSdrFull).
 set_clock_groups -asynchronous \
   -group [get_clocks -quiet sys_clk] \

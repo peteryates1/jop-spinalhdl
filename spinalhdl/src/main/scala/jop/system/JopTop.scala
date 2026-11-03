@@ -1,6 +1,7 @@
 package jop.system
 
 import jop.config._
+import hw._
 
 import spinal.core._
 import spinal.lib._

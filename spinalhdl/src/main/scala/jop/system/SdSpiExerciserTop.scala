@@ -35,7 +35,7 @@ import jop.system.pll.Pll
  *                hardware did not run at.
  */
 case class SdSpiExerciserTop(
-  board: jop.config.Board = SdSpiExerciserDesign.assembly.fpgaBoard,
+  board: hw.Board = SdSpiExerciserDesign.assembly.fpgaBoard,
   clkMhz: Int = SdSpiExerciserDesign.clkMhz
 ) extends Component {
 
@@ -55,7 +55,7 @@ case class SdSpiExerciserTop(
   // PLL by the board's FPGA family, not a hardcoded vendor primitive: a system
   // clock at clkMhz and a locked signal (Pll.forDesign; MemoryType.BRAM is the
   // no-DRAM branch where the board still declares the PLL).
-  val pllResult = Pll.forDesign(board, jop.config.MemoryType.BRAM, io.clk_in, clkMhz)
+  val pllResult = Pll.forDesign(board, hw.MemoryType.BRAM, io.clk_in, clkMhz)
   val sysClk = pllResult.systemClk.get
   val pllLocked = pllResult.locked
 
@@ -959,6 +959,7 @@ object SdSpiExerciserDesign extends jop.config.BoardDesign {
   // FPGA family. Declared so the generators write and list it.
   override def plls = Seq(jop.system.pll.Pll.systemOnly(inputClock, clkMhz))
   import jop.config._
+  import hw._
   val assembly   = SystemAssembly.qmtechWithDb
   val entityName = "SdSpiExerciserTop"
   val designName = "sd-spi-exerciser"

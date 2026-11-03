@@ -27,8 +27,8 @@
 | File | Description |
 |------|-------------|
 | `jop/config/JopConfig.scala` | Top-level config: presets, validation, entity naming |
-| `jop/config/Board.scala` | Board/FPGA/device metadata with pin mappings |
-| `jop/config/Parts.scala` | FPGA and memory device catalog |
+| `hardware/src/main/scala/hw/Board.scala` | Board/FPGA/device metadata with pin mappings (the hardware layer, its own sbt project) |
+| `hardware/src/main/scala/hw/Parts.scala` | FPGA and memory device catalog (the hardware layer) |
 | `jop/config/JopCoreConfig.scala` | Per-core bytecode implementation choices |
 | `jop/io/IoDeviceDescriptor.scala` | Device descriptor: name, addrBits, interruptCount, factory |
 | `jop/io/IoAddressAllocator.scala` | Per-core I/O address allocation (fixed + auto, largest-first) |

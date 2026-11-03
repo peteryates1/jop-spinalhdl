@@ -1,4 +1,4 @@
-package jop.config
+package hw
 
 /**
  * Colorlight module SODIMM pin -> FPGA ball, one table per module.

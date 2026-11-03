@@ -123,7 +123,8 @@ generate: $(APP)
 # lives in this directory) but leaves the old UART baud divider baked into the
 # .v, so the board comes up transmitting at 40e6/86/5 = 93023 baud while the
 # host listens at 115200 and sees plausible-looking garbage rather than silence.
-SCALA_SRC := $(shell find $(ROOT)/spinalhdl/src/main/scala -name '*.scala')
+# SCALA_SRC: every sbt project's sources.
+include ../scala.mk
 UCODE     := $(wildcard $(ROOT)/build/microcode/serial/mem_*.dat)
 
 $(GENDIR)/$(TOP).v: $(SCALA_SRC) $(UCODE)

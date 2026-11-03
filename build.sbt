@@ -1,14 +1,52 @@
+val scala213      = "2.13.18"
+val spinalVersion = "1.12.2"
+
+// Scala compiler options, the same for both projects.
+val commonScalacOptions = Seq(
+  "-deprecation",
+  "-feature",
+  "-unchecked",
+  "-Xlint",
+  "-language:reflectiveCalls"
+)
+
+// THE HARDWARE LAYER (status item 173): FPGA devices and families, boards and
+// their assemblies, and the PLL builder each family supplies -- for any
+// SpinalHDL design on this hardware, not only JOP. It depends on SpinalHDL
+// and nothing else, and JOP depends on it, so the compiler holds the
+// direction: a hardware source that names a JOP type does not compile. Until
+// 2026-11-03 these were six files of jop.config.
+//
+// Its tests run in sbt's own JVM, from the repository root.
+lazy val hardware = (project in file("hardware"))
+  .settings(
+    name := "hardware",
+    version := "0.1.0",
+    scalaVersion := scala213,
+    libraryDependencies ++= Seq(
+      "com.github.spinalhdl" %% "spinalhdl-core" % spinalVersion,
+      compilerPlugin("com.github.spinalhdl" %% "spinalhdl-idsl-plugin" % spinalVersion),
+      "org.scalatest" %% "scalatest" % "3.2.17" % Test
+    ),
+    scalacOptions ++= commonScalacOptions
+  )
+
+// Generic JOP and its support for that hardware: the presets, the designs, the
+// generators. The settings below, outside any project, are this one's.
+lazy val root = (project in file("."))
+  .dependsOn(hardware)
+
 name := "jop-spinalhdl"
 
 version := "0.1.0"
 
-scalaVersion := "2.13.18"
+scalaVersion := scala213
 
 // SpinalHDL dependencies
 libraryDependencies ++= Seq(
-  "com.github.spinalhdl" %% "spinalhdl-core" % "1.12.2",
-  "com.github.spinalhdl" %% "spinalhdl-lib" % "1.12.2",
-  compilerPlugin("com.github.spinalhdl" %% "spinalhdl-idsl-plugin" % "1.12.2")
+  "com.github.spinalhdl" %% "spinalhdl-core" % spinalVersion,
+  "com.github.spinalhdl" %% "spinalhdl-lib" % spinalVersion,
+  compilerPlugin("com.github.spinalhdl" %% "spinalhdl-idsl-plugin" % spinalVersion)
 )
 
 // The setup layer (status item 173): this lab's units are TOML in setup/,
@@ -24,13 +62,7 @@ libraryDependencies ++= Seq(
 )
 
 // Scala compiler options
-scalacOptions ++= Seq(
-  "-deprecation",
-  "-feature",
-  "-unchecked",
-  "-Xlint",
-  "-language:reflectiveCalls"
-)
+scalacOptions ++= commonScalacOptions
 
 // Fork JVM for run
 fork := true

@@ -3,6 +3,7 @@ package jop.system
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import jop.config._
+import hw._
 
 /**
  * The SD exerciser must elaborate on every FPGA family, from one source.

@@ -4,7 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
 import jop.TestVectorUtils
-import jop.config.Manufacturer
+import hw.Manufacturer
 import scala.collection.mutable.ArrayBuffer
 
 /**

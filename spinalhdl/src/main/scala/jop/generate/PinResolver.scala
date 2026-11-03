@@ -1,6 +1,7 @@
 package jop.generate
 
 import jop.config._
+import hw._
 
 /** Pin assignment: maps an FPGA pin to a Verilog port name */
 case class PinAssignment(fpgaPin: String, verilogPort: String)

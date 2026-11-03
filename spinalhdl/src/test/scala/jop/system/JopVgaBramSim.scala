@@ -3,6 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.core.sim._
 import jop.config._
+import hw._
 import jop.sim.SimDisplay
 import jop.utils.{JopFileLoader, JopSimDefaults}
 import java.io.PrintWriter
