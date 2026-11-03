@@ -4674,7 +4674,12 @@ Built with Vivado 2025.2, each definition reported both MIG clocks exact:
   `clk_wiz_0`, misses too (-0.329, TNS -3.755) at 12,938 LUTs (62 %): the
   Au's DDR3 preset stopped meeting 100 MHz with the design's growth since its
   last met build (9,211 LUTs on 2026-08-22, WNS +0.477), not with this step.
-  The Au is not attached here, so neither Au build ran on hardware.
+  On 2026-11-03, with the Au attached (`jop-au-1`), `Ddr3ExerciserTop`
+  rebuilt at step 9's commit (the same WNS and WHS, both MIG clocks exact)
+  ran 142,820 loops of its three DDR3 tests in 90 s, every one PASS (the
+  host dropped some 200 loops' worth of its 1 Mbaud console; nothing that
+  arrived was a FAIL). `auSerial` cannot count as a hardware pass until it
+  meets timing; the Au is parked on it, in its handshake.
 
 **Step 9 (2026-11-02): Cyclone V, and no board declares a PLL.** The
 CYC5000's hand-written `cyc5000_pll.vhd` called itself an altera_pll and was an
@@ -4694,8 +4699,13 @@ clock names. Dumped before and after, the 19 Altera presets' projects and SDCs
 differ in one line, the CYC5000's PLL file. Quartus 25.1 builds the identical
 PLL -- integer mode, VCO 1200.0048 MHz, M 200, N 2, C 15, both outputs
 80.00032 MHz, the SDRAM's at 288 deg (-2.5 ns) -- under the predicted names,
-and meets timing: Fmax 87.55 MHz, setup +0.956 ns, hold +0.289 (2026-09-14:
-85.42, +0.792, +0.377). The CYC5000 is not attached here, so it did not run.
+and meets timing: Fmax 87.55 MHz, setup +0.956 ns, hold +0.289 at the slow
+corner (2026-09-14: 85.42, +0.792, +0.377), hold +0.079 at the fast one. The
+Fitter's PLL report matches 2026-09-14's line for line but for the instance
+names. Rebuilt at this commit on 2026-11-03, with the same results,
+`jop-cyc5000-1` passed DoAll 68/68 and the GC soak (599,123 rounds in 300 s,
+the free-memory floor steady after the same 114,688-byte drop as on
+2026-09-14), and is parked in its handshake.
 
 **What is left:** the setup layer is done. Every fact the 2026-10-28 list
 put in the wrong layer -- the board designs' aliases, the serial registries,
