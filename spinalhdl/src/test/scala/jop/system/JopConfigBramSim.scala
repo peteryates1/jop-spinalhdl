@@ -99,11 +99,12 @@ object JopConfigBramSim {
     jopFilePath: String,
     maxCycles: Int = 2000000,
     logFilePath: String = "build/sim-logs/config_bram_simulation.log",
-    verdict: String => Either[String, String] = helloWorld
+    verdict: String => Either[String, String] = helloWorld,
+    memBytes: Int = 256 * 1024
   ): Unit = {
     val sys = jopConfig.system
     val coreConfig = sys.coreConfig.copy(
-      memConfig = JopMemoryConfig(mainMemSize = 256 * 1024),
+      memConfig = JopMemoryConfig(mainMemSize = memBytes),
       supersetJumpTable = sys.baseJumpTable,
       // `jopConfig.system` is the RESOLVED system, and resolution picks the
       // FPGA's memory style: AlteraLpm on every EP4CGX150 preset,
@@ -116,7 +117,7 @@ object JopConfigBramSim {
 
     val romData = JopFileLoader.loadMicrocodeRom(sys.romPath)
     val ramData = JopFileLoader.loadStackRam(sys.ramPath)
-    val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 256 * 1024 / 4)
+    val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, memBytes / 4)
 
     println(s"=== ${sys.name} (${sys.bootMode}) ===")
     println(s"  ROM: ${sys.romPath} (${romData.length} entries)")
@@ -288,7 +289,11 @@ object JopConfigJvmTestsSim {
       jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll"),
       maxCycles = 60000000,
       logFilePath = s"build/sim-logs/jvmtests_${presetName}_simulation.log",
-      verdict = JopConfigBramSim.doAll
+      verdict = JopConfigBramSim.doAll,
+      // DoAll is 75,005 words, past runSim's 256 KB default, which truncated
+      // it in silence until the loader learned to refuse (item 176). 512 KB
+      // is what the JVM-suite sims CI runs give it.
+      memBytes = 512 * 1024
     )
   }
 }

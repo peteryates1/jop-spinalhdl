@@ -224,6 +224,13 @@ object JopFileLoader {
    */
   def jopFileToMemoryInit(filepath: String, memSize: Int = 65536): Seq[BigInt] = {
     val data = loadJopFile(filepath)
-    data.words.take(memSize).padTo(memSize, BigInt(0))
+    // REFUSE, never truncate. This took the first memSize words and dropped
+    // the rest, so a sim given too little memory ran a program without its
+    // tail: DoAll (75,005 words) in 256 KB printed `ni` -- a method pointer
+    // past the end of memory -- for 60M cycles, and nothing said why (status
+    // item 176). ImageFitTest.
+    require(data.words.length <= memSize,
+      s"$filepath is ${data.words.length} words and does not fit a $memSize-word memory")
+    data.words.padTo(memSize, BigInt(0))
   }
 }
