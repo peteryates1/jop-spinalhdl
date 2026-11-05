@@ -5,6 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import jop.utils.{JopFileLoader, JopSimDefaults, TestHistory}
+import jop.sim.SimVerdict
 import java.io.PrintWriter
 
 /**
@@ -16,7 +17,7 @@ object JopDcuCacheSim extends App {
 
   // Optional MSHR count, e.g. `Test/runMain jop.system.JopDcuCacheSim 4`.
   // Running the whole JVM suite through a non-blocking cache is the broadest
-  // correctness check there is for the MSHR file: 66 tests' worth of real
+  // correctness check there is for the MSHR file: the whole suite's worth of real
   // access patterns, with hits served under outstanding misses and refills
   // completing out of order. Default 1 keeps the CI job on the blocking path.
   val mshrCount = args.headOption.map(_.toInt).getOrElse(1)
@@ -53,6 +54,8 @@ object JopDcuCacheSim extends App {
     .doSim(seed = simSeed) { dut =>
       val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
+      val text = new StringBuilder  // the UART's lines, as the verdict reads them
+      var announced: Option[Int] = None  // DoAll's own test count, once printed
 
       def logLine(msg: String): Unit = {
         log.println(msg)
@@ -79,8 +82,13 @@ object JopDcuCacheSim extends App {
           val char = dut.io.uartTxData.toInt
           val ch = if (char >= 32 && char < 127) char.toChar else '.'
           uartOutput.append(ch)
-          print(ch)
-          if (char == 0x0A || char == 0x0D) print('\n')
+          text.append(if (char == 0x0A) '\n' else if (char >= 32 && char < 127) char.toChar else ' ')
+          if (announced.isEmpty) announced = SimVerdict.announced(text.toString)
+          // The UART's lines as lines. This printed a newline as '.' and then
+          // a newline, so every log line ended "ok." -- and CI's log check,
+          // which counts DoAll's `<name> ok` lines, found none here; only the
+          // "All 59 tests passed" summary this printed let it pass (item 177).
+          if (char == 0x0A) print('\n') else if (char >= 32 && char < 127) print(char.toChar)
           logLine(f"[$cycle%8d] UART: '$ch' (0x$char%02x)")
 
           // Count " ok" occurrences
@@ -98,24 +106,22 @@ object JopDcuCacheSim extends App {
           println(f"\n[$cycle%8d] PC=$pc%04x JPC=$jpc%04x memState=$memState tests=$testCount")
         }
 
-        // Success: all 59 tests pass
-        if (testCount >= 59) {
-          println(s"\n*** All $testCount tests passed! ***")
-          done = true
-        }
+        // Done when every test DoAll announced has printed ok. This was
+        // `testCount >= 59`, written in when DoAll ran 59 tests: DoAll grew to
+        // 68 and this kept stopping at 59, so CI's all-compute-units job never
+        // ran the last nine -- MathTest and BigMathTest among them (item 177).
+        if (announced.exists(testCount >= _)) done = true
       }
 
       log.close()
 
       println(s"\n\n=== Simulation Complete (${cycle} cycles) ===")
       println(s"UART Output: '${uartOutput.toString}'")
-      println(s"Tests passed: $testCount/59")
-
-      if (testCount >= 59) {
-        println("PASS: All 59 tests pass through cache path")
-      } else {
-        println(s"FAIL: Only $testCount/59 tests passed (possible hang)")
-        System.exit(1)
+      SimVerdict.doAll(text.toString) match {
+        case Right(what) => println(s"PASS: $what through the cache path")
+        case Left(why) =>
+          println(s"FAIL: $why (possible hang)")
+          System.exit(1)
       }
     }
 }

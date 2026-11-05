@@ -1,13 +1,12 @@
 package jop.sim
 
 import org.scalatest.funsuite.AnyFunSuite
-import jop.system.JopConfigBramSim
 
 /**
- * The verdicts `JopConfigBramSim.runSim` exits on (item 176). Its sims printed
- * what they saw and exited 0, so none of them could fail; a verdict that
- * cannot fail is the same defect one level down, so each pass here has a
- * failure beside it.
+ * The verdicts in `SimVerdict`, which sims exit on (items 176, 177). Those
+ * sims printed what they saw and exited 0, so none of them could fail; a
+ * verdict that cannot fail is the same defect one level down, so each pass
+ * here has a failure beside it.
  *
  * DoAll's rule is `fpga/scripts/hw_verify.py`'s, and so are the cases: a sim
  * and a board must pass the same output. hw_verify's judge once reported
@@ -16,7 +15,7 @@ import jop.system.JopConfigBramSim
  */
 class SimVerdictTest extends AnyFunSuite {
 
-  private val doAll = JopConfigBramSim.doAll _
+  private val doAll = SimVerdict.doAll _
 
   test("DoAll passes on every announced test ok, and only then") {
     val good = "DoAll: 3 tests\nBasic ok\nArray ok\nDeepRecursion ok\nJVM exit!\n"
@@ -42,7 +41,7 @@ class SimVerdictTest extends AnyFunSuite {
   }
 
   test("HelloWorld passes on Hello World and nothing else") {
-    assert(JopConfigBramSim.helloWorld("M0\nHello World!\n").isRight)
-    assert(JopConfigBramSim.helloWorld("Small boot\nGC init...\n").isLeft)
+    assert(SimVerdict.helloWorld("M0\nHello World!\n").isRight)
+    assert(SimVerdict.helloWorld("Small boot\nGC init...\n").isLeft)
   }
 }

@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import jop.config._
 import jop.utils.{JopFileLoader, JopSimDefaults}
+import jop.sim.SimVerdict
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
 
@@ -69,28 +70,6 @@ object JopConfigBramSim {
       }
   }
 
-  /** HelloWorld's verdict: Left is a failure, Right a pass. */
-  def helloWorld(out: String): Either[String, String] =
-    if (out.contains("Hello World")) Right("Hello World")
-    else Left("no 'Hello World' on the UART")
-
-  /** DoAll's verdict, by the rule `fpga/scripts/hw_verify.py` (`judge`,
-    * `judge_count`) applies on a board, so a sim and a board pass the same
-    * output: DoAll announces `DoAll: N tests` and has no summary line, so it
-    * needs N `ok` lines, no `fail`/`failed`/`failure` as a word (a test NAMED
-    * for an exception is not one), and no uncaught exception. */
-  def doAll(out: String): Either[String, String] = {
-    val oks = """(?m)\bok\s*$""".r.findAllIn(out).size
-    val fails = """(?i)(?<![A-Za-z])fail(?:ed|ure|s)?(?![A-Za-z])""".r.findAllIn(out).size
-    val crashed = "Uncaught exception".r.findAllIn(out).size
-    """DoAll: (\d+) tests""".r.findFirstMatchIn(out).map(_.group(1).toInt) match {
-      case None => Left("DoAll never announced its test count")
-      case Some(n) if oks < n || fails > 0 || crashed > 0 =>
-        Left(s"$oks ok of $n tests, $fails fail, $crashed uncaught")
-      case Some(n) => Right(s"$oks ok of $n tests")
-    }
-  }
-
   /** Runs `jopFilePath` on a preset's core config, and exits 1 unless
     * `verdict` passes the UART output. These sims printed what they saw and
     * exited 0, so none of them could fail (item 176). */
@@ -99,7 +78,7 @@ object JopConfigBramSim {
     jopFilePath: String,
     maxCycles: Int = 2000000,
     logFilePath: String = "build/sim-logs/config_bram_simulation.log",
-    verdict: String => Either[String, String] = helloWorld,
+    verdict: String => Either[String, String] = SimVerdict.helloWorld,
     memBytes: Int = 256 * 1024
   ): Unit = {
     val sys = jopConfig.system
@@ -268,7 +247,7 @@ object JopConfigJvmTestsSim {
       jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll"),
       maxCycles = 60000000,
       logFilePath = s"build/sim-logs/jvmtests_${presetName}_simulation.log",
-      verdict = JopConfigBramSim.doAll,
+      verdict = SimVerdict.doAll,
       // DoAll is 75,005 words, past runSim's 256 KB default, which truncated
       // it in silence until the loader learned to refuse (item 176). 512 KB
       // is what the JVM-suite sims CI runs give it.
