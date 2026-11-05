@@ -56,6 +56,7 @@ object JopDcuCacheSim extends App {
       var uartOutput = new StringBuilder
       val text = new StringBuilder  // the UART's lines, as the verdict reads them
       var announced: Option[Int] = None  // DoAll's own test count, once printed
+      val lineBuffer = new StringBuilder  // the UART line being received
 
       def logLine(msg: String): Unit = {
         log.println(msg)
@@ -84,11 +85,17 @@ object JopDcuCacheSim extends App {
           uartOutput.append(ch)
           text.append(if (char == 0x0A) '\n' else if (char >= 32 && char < 127) char.toChar else ' ')
           if (announced.isEmpty) announced = SimVerdict.announced(text.toString)
-          // The UART's lines as lines. This printed a newline as '.' and then
-          // a newline, so every log line ended "ok." -- and CI's log check,
-          // which counts DoAll's `<name> ok` lines, found none here; only the
-          // "All 59 tests passed" summary this printed let it pass (item 177).
-          if (char == 0x0A) print('\n') else if (char >= 32 && char < 127) print(char.toChar)
+          // The UART's lines, each printed WHOLE when it ends, as the other
+          // JVM-suite sims do. Two ways of printing it lost CI's count of
+          // DoAll's `<name> ok` lines (item 177): a newline went out as '.',
+          // so every line ended "ok."; and char by char, the progress report
+          // below landed between a test's name and its " ok" -- DoAll prints
+          // the name, runs the test, then prints the result -- and split
+          // seven of 68 tests over two lines.
+          if (char == 0x0A) {
+            println(lineBuffer.toString)
+            lineBuffer.clear()
+          } else if (char >= 32 && char < 127) lineBuffer.append(char.toChar)
           logLine(f"[$cycle%8d] UART: '$ch' (0x$char%02x)")
 
           // Count " ok" occurrences
@@ -114,6 +121,7 @@ object JopDcuCacheSim extends App {
       }
 
       log.close()
+      if (lineBuffer.nonEmpty) println(lineBuffer.toString)
 
       println(s"\n\n=== Simulation Complete (${cycle} cycles) ===")
       println(s"UART Output: '${uartOutput.toString}'")
