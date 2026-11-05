@@ -97,16 +97,15 @@ nothing depends on ranks below a measurement that could mislead someone.
 56. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
 57. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
 58. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
-59. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
-60. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
-61. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
-62. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
-63. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
-64. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
-65. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
-66. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-67. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
-68. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
+59. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
+60. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
+61. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
+62. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
+63. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
+64. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
+65. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
+66. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
+67. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
 
 ## 2. All items — summary
 
@@ -174,7 +173,6 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
 - **[55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall
 - **[56](#item-56)** — WBNI: derive the hardware config from the application. JOPizer static profile done; the measurement framework is the bulk
-- **[62](#item-62)** — `JopFloatCuBramSim` reads a microcode variant that does not exist, so it has never run
 - **[63](#item-63)** — One Wukong SDR startup crash in six runs, not reproduced — recorded so a second sighting is not treated as the first
 - **[64](#item-64)** — `GcStressTest`'s free memory declines ~0.40 B/round on all seven boards measured; since 2026-09-11 the suspect is the metric, not a leak
 - **[67](#item-67)** — `ep4cgx150DbFull` runs with `useStackCache = false`; the original had it true. Item 14 has closed, so turning it on is now a measurement to make
@@ -252,6 +250,7 @@ Marked closed in the heading or here, sorted by ID.
 - **[59](#item-59)** — ~~the Colorlight i5 SDRAM build does not meet timing~~ — WITHDRAWN, it passes. I read the wrong line
 - ~~**[60](#item-60)**~~ — Everything generated belongs under `build/<config>/` — DONE 2026-09-04: boards finished 2026-08-31, but the legacy path stayed the DEFAULT in both trees for four more days; both branches now deleted and guarded
 - ~~**[61](#item-61)**~~ — FIXED 2026-08-24 — no app in `apps/Small` built from clean; the runtime is now bulk-compiled and the app named
+- **[62](#item-62)** — ~~`JopFloatCuBramSim` reads a microcode variant that does not exist, so it has never run~~ — CLOSED 2026-11-05: retired; the float CU runs DoAll on the standard microcode, `JopConfigJvmTestsSim ep4cgx150HwFloat` 68/68
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
 - **[65](#item-65)** — ~~Both SD exercisers fail on hardware~~ — CLOSED 2026-11-01: SdNative wrote inside NWR, SdSpi moved MOSI with SCLK, the SPI exerciser sent no idle byte before a command and gave up early; both pass on a cold card
 - **[68](#item-68)** — ~~EP4CGX150 Ethernet: link comes up at 1 Gbps but NO packets move~~ — **FIXED** 2026-10-12: two causes. `BmbMemoryController` re-latched every I/O read after its strobe, so the MAC's pop-on-read RX register reached the CPU one word late (every board; Wukong A/B). And on the EP4CGX150 the generated SDC named `e_rxc` in a clock group but never created it: the receive domain went untimed and its placement failed hold by -1.763 ns. ping, UDP, TCP, DHCP and DNS on both GMII boards
@@ -308,6 +307,7 @@ Marked closed in the heading or here, sorted by ID.
 - **[174](#item-174)** — ~~every JOP image has the same MAC and IP, so two boards cannot share the LAN~~ — CLOSED 2026-10-31: board instances give each unit on the LAN its own MAC and hostname, and NetTest takes a DHCP lease; `InstanceTest`
 - **[175](#item-175)** — ~~the i5's Fmax moved with unrelated logic: yosys gives ABC9 no block-RAM clock-to-out~~ — CLOSED 2026-11-02: both i5 board flows read a DP16KD model with one; `colorlightDbI5Sdram` 41.61 -> 48.98 MHz; `check-ecp5-bram-timing.sh`
 - **[176](#item-176)** — ~~`JopTopBramSim` hangs in `GC.init` under a green CI walk-through, and no `JopConfigBramSim` variant can build~~ — CLOSED 2026-11-05: `builtCoreConfig` built every BRAM system as SDR, so the Wukong BRAM read 8192 of its words; one `builtMemType` answers now, the README sims and their runner need a `PASS:` line, and `runSim` infers its memories; and the image loader refuses a program its memory cannot hold, where it truncated DoAll in silence; `BramBuildTest`, `run-readme-walkthrough.sh`, `SimVerdictTest`, `ImageFitTest`
+- **[177](#item-177)** — ~~CI's all-compute-units job stopped at a count of 59 written into it, so DoAll's last nine tests never ran with the compute units on~~ — CLOSED 2026-11-05: the sim runs to DoAll's own count, and CI judges every JVM-suite log by it; `check-doall-log.sh`, `SimVerdictTest`
 
 ### Records
 
@@ -3295,7 +3295,7 @@ using one was running an image that could not be reproduced from source.
 
 <a id="item-62"></a>
 
-### Item 62 — `JopFloatCuBramSim` reads a microcode variant that has never existed
+### Item 62 — ~~`JopFloatCuBramSim` reads a microcode variant that has never existed~~ — CLOSED 2026-11-05: the sim is retired; the float CU runs on the standard microcode
 
 **Raised 2026-08-24** while moving the microcode tree. The simulation loads:
 
@@ -3316,6 +3316,13 @@ coverage, and a simulation no variant supplies gets none either.
 Decide whether the float CU wants its own microcode variant or whether the
 simulation should use the standard one, then either add the target or repoint
 it.
+
+**Closed 2026-11-05 by retirement** ([item 176](#item-176)). The float CU
+wants no microcode variant of its own: CI's `JopDcuCacheSim` has always run
+every compute unit on the standard simulation microcode, and
+`JopConfigJvmTestsSim ep4cgx150HwFloat` -- the float CU's own preset -- passes
+DoAll on it, 68 of 68. So `JopFloatCuBramSim` went (`240a950`), with the two
+other sims that loaded DoAll into 256 KB.
 
 
 <a id="item-63"></a>
@@ -5051,10 +5058,15 @@ walk-through builds fits what CI's sims give it: the largest after DoAll is
 now does. With it, in the walk-through's clone at `49e960f`: `DoAll: 68 tests`,
 `PASS: 68 ok of 68 tests`.
 
-**Left as found.** Nothing in CI runs the `JopConfig*` sims. Three more sims
-load DoAll into 256 KB -- `JopFloatCuBramSim`, `JopHwMathBramSim` and
-`JopMinMaxComparison` -- and so ran it truncated; nothing runs them either.
-They now stop at the load with the reason, and each needs 512 KB and a run.
+**Left as found:** nothing in CI runs the `JopConfig*` sims.
+
+**Retired the same day, at the user's call.** Three more sims loaded DoAll
+into 256 KB -- `JopFloatCuBramSim`, `JopHwMathBramSim` and
+`JopMinMaxComparison` -- so they ran it truncated, with no verdict and nothing
+running them. They went in `240a950`, after `JopConfigJvmTestsSim` passed DoAll
+68 of 68 on `ep4cgx150HwMath` and on `ep4cgx150HwFloat`, the presets that
+configure what they did; that also closed [item 62](#item-62). Checking
+whether CI covered them instead found [item 177](#item-177).
 The five variants built three cores, not five, and the two twins are retired.
 `JopConfig.simulation` already has `idiv` and `irem` in hardware, so
 `JopConfigHwMathHelloWorldSim` built what `JopConfigHelloWorldSim` does -- the
@@ -5071,6 +5083,52 @@ simulation step needs a `PASS:` line),
 fail what `hw_verify.py` fails) and
 `spinalhdl/src/test/scala/jop/sim/ImageFitTest.scala` (an image that does not
 fit its memory is refused, not truncated).
+
+<a id="item-177"></a>
+
+### Item 177 — ~~CI's all-compute-units job stopped at a count of 59 written into it, so DoAll's last nine tests never ran with the compute units on~~ — CLOSED 2026-11-05: the sim runs to DoAll's own count, and CI judges every JVM-suite log by it
+
+**Found 2026-11-05**, settling [item 176](#item-176)'s leftovers: whether CI's
+`JopDcuCacheSim` covers what `JopHwMathBramSim` and `JopFloatCuBramSim`
+configured. It stopped as soon as it had counted 59 `ok` lines --
+`testCount >= 59`, written in when DoAll ran 59 tests -- and printed PASS.
+DoAll runs 68, so tests 60-68 (CachePersistence, StringConcat,
+CollectionTest, WrapperTest, IoTest, MathTest, ExtCollMinimal, BigMathTest,
+TextFormatTest) never ran with every compute unit on. Measured at `457c426`:
+`DoAll: 68 tests`, then `*** All 59 tests passed! ***`, `PASS: All 59 tests
+pass through cache path` and exit 0; `CachePersistence` never appears.
+
+CI's `Check DoAll result` step could not see it. It failed on a `failed!` line
+or on no results at all, and passed anything else -- and for this job it found
+no per-test `ok` line at all: the sim printed each newline as `.`, so its log
+read `Basic ok.`, and only its own "All 59 tests passed" summary let it
+through. The other two JVM-suite sims have no verdict of their own, so a suite
+that stopped part-way would have passed there too.
+
+**The fix**, in `f17512a` and `dbe9a62`:
+
+- `.github/scripts/check-doall-log.sh` is CI's verdict for all three jobs, by
+  `hw_verify.py`'s rule in DoAll's own markers: `DoAll: N tests`, N DISTINCT
+  `ok` lines (a sim may print the suite twice, live and again at the end), no
+  `failed!`, no uncaught exception. Red on the `457c426` `JopDcuCacheSim` log
+  (1 of 68), on the baseline's log cut after test 59 (59 of 68), and on it cut
+  at test 34 and printed twice (34 of 68 -- a raw count said 68). Green on the
+  baseline's and the microcode-fallback sim's whole logs: 68 of 68.
+- `JopDcuCacheSim` runs to DoAll's announced count, prints each UART line whole,
+  and judges with `SimVerdict.doAll`. Whole took a second try: the first fixed
+  run said `PASS: 68 ok of 68 tests` by its own verdict while the CI check
+  counted 61 in its log. It printed char by char, and its progress report
+  every 500K cycles landed between a test's name and its ` ok` -- DoAll prints
+  the name, runs the test, then the result -- splitting seven tests over two
+  lines. Pushed as it was, CI would have gone red. At `dbe9a62`: `PASS: 68 ok
+  of 68 tests through the cache path` in 6,788,083 cycles, and the CI check on
+  the same log 68 of 68 -- tests 60-68 run, and pass, with every compute unit
+  on.
+
+Guard: `.github/scripts/check-doall-log.sh` (a JVM-suite log passes only on
+every test DoAll announced) and
+`spinalhdl/src/test/scala/jop/sim/SimVerdictTest.scala` (the rule the sims
+apply to their own output).
 
 <a id="item-69"></a>
 
