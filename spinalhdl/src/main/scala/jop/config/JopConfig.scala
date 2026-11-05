@@ -502,10 +502,10 @@ case class JopConfig(
   def builtCoreConfig(sys: JopSystem, cc: JopCoreConfig,
                       bramMemSize: Option[Int] = None): JopCoreConfig = {
     val md = resolveMemory(sys)
-    val mt = md.map(_.memType)
-    val isDdr = mt.contains(MemoryType.SDRAM_DDR3) || mt.contains(MemoryType.SDRAM_DDR2)
-    val isSdr = mt.contains(MemoryType.SDRAM_SDR)
-    val isBram = mt.contains(MemoryType.BRAM)
+    val mt = builtMemType(sys)
+    val isDdr = mt == MemoryType.SDRAM_DDR3 || mt == MemoryType.SDRAM_DDR2
+    val isSdr = mt == MemoryType.SDRAM_SDR
+    val isBram = mt == MemoryType.BRAM
     val burstLen = if (sys.cpuCnt > 1 && isSdr) 4 else 0
     val memConfig =
       if (isDdr) cc.memConfig.copy(
@@ -649,6 +649,22 @@ case class JopConfig(
       .orElse(assembly.findDeviceByRole(sys.memory))
     bd.flatMap(d => MemoryDevice.byName(d.part))
   }
+
+  /**
+   * A system's memory type as BUILT. A system with no memory device is on-chip
+   * BRAM -- validation admits a missing device only as `memory = "bram"`.
+   *
+   * `JopTop`, `JopTopVerilog` and `builtCoreConfig` each wrote this rule out,
+   * and `builtCoreConfig` wrote it wrong: it asked whether the resolved
+   * device's type was BRAM, and no device's is, so every BRAM system was built
+   * by the SDR branch (item 176). That kept the preset's size whatever BRAM
+   * `JopTop` instantiated, and on the Wukong, whose SDR builds have a stack
+   * cache, reserved a spill region: `IO_MEM_SIZE` read 8192 of a 64 KB BRAM's
+   * 16,384 words, and `JopTopBramSim`'s 12,523-word image never got past
+   * `GC.init`. BramBuildTest holds every BRAM preset to this answer.
+   */
+  def builtMemType(sys: JopSystem): MemoryType =
+    resolveMemory(sys).map(_.memType).getOrElse(MemoryType.BRAM)
 
   /** Resolve the board device entry for a system's memory */
   def resolveBoardDevice(sys: JopSystem): Option[BoardDevice] =

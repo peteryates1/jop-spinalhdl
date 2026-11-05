@@ -285,7 +285,7 @@ object JopTopVerilog {
     buildArgs: Seq[String] = Seq.empty
   ): Unit = {
     val sys = jopConfig.resolvedSystems.head
-    val isBram = !jopConfig.resolveMemory(sys).isDefined
+    val isBram = jopConfig.builtMemType(sys) == MemoryType.BRAM
     val bramSize = sys.coreConfig.memConfig.mainMemSize.toInt
 
     val romData = JopFileLoader.loadMicrocodeRom(sys.romPath)

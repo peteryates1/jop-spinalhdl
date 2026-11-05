@@ -54,7 +54,7 @@ case class JopTop(
   // Single-system fields (null/false when isMultiSystem)
   private val sys: JopSystem = if (!isMultiSystem) config.system else null
   private val memDevice = if (!isMultiSystem) config.resolveMemory(sys) else None
-  private val memType = if (!isMultiSystem) memDevice.map(_.memType).getOrElse(MemoryType.BRAM) else null
+  private val memType = if (!isMultiSystem) config.builtMemType(sys) else null
   private val isSdr = !isMultiSystem && memType == MemoryType.SDRAM_SDR
   private val isDdr3 = !isMultiSystem && memType == MemoryType.SDRAM_DDR3
   private val isDdr2 = !isMultiSystem && memType == MemoryType.SDRAM_DDR2

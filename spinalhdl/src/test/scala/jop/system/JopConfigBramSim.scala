@@ -24,7 +24,8 @@ object JopConfigBramSim {
     val sys = jopConfig.system
     val coreConfig = sys.coreConfig.copy(
       memConfig = JopMemoryConfig(mainMemSize = 256 * 1024),
-      supersetJumpTable = sys.baseJumpTable
+      supersetJumpTable = sys.baseJumpTable,
+      memoryStyle = Some(MemoryStyle.Generic)  // see runSim
     )
     val romData = JopFileLoader.loadMicrocodeRom(sys.romPath)
     val ramData = JopFileLoader.loadStackRam(sys.ramPath)
@@ -68,16 +69,45 @@ object JopConfigBramSim {
       }
   }
 
+  /** HelloWorld's verdict: Left is a failure, Right a pass. */
+  def helloWorld(out: String): Either[String, String] =
+    if (out.contains("Hello World")) Right("Hello World")
+    else Left("no 'Hello World' on the UART")
+
+  /** DoAll's verdict. It announces `DoAll: N tests` and has no summary line,
+    * so it passes on N `ok` lines and no `failed!`. */
+  def doAll(out: String): Either[String, String] = {
+    val lines = out.linesIterator.map(_.trim).toSeq
+    val oks = lines.count(_.endsWith(" ok"))
+    val failed = lines.count(_.endsWith(" failed!"))
+    """DoAll: (\d+) tests""".r.findFirstMatchIn(out).map(_.group(1).toInt) match {
+      case None                              => Left("DoAll never announced its test count")
+      case Some(n) if failed > 0 || oks != n => Left(s"$oks of $n tests ok, $failed failed")
+      case Some(n)                           => Right(s"$n of $n tests ok")
+    }
+  }
+
+  /** Runs `jopFilePath` on a preset's core config, and exits 1 unless
+    * `verdict` passes the UART output. These sims printed what they saw and
+    * exited 0, so none of them could fail (item 176). */
   def runSim(
     jopConfig: JopConfig,
     jopFilePath: String,
     maxCycles: Int = 2000000,
-    logFilePath: String = "build/sim-logs/config_bram_simulation.log"
+    logFilePath: String = "build/sim-logs/config_bram_simulation.log",
+    verdict: String => Either[String, String] = helloWorld
   ): Unit = {
     val sys = jopConfig.system
     val coreConfig = sys.coreConfig.copy(
       memConfig = JopMemoryConfig(mainMemSize = 256 * 1024),
-      supersetJumpTable = sys.baseJumpTable
+      supersetJumpTable = sys.baseJumpTable,
+      // `jopConfig.system` is the RESOLVED system, and resolution picks the
+      // FPGA's memory style: AlteraLpm on every EP4CGX150 preset,
+      // `JopConfig.simulation` among them -- lpm_rom/lpm_ram_dp blackboxes only
+      // Quartus supplies. Verilator stopped on 'rom', and no sim here had built
+      // since 69b7aa7 (item 176). The vendor style is a synthesis choice; a
+      // simulation infers its memories.
+      memoryStyle = Some(MemoryStyle.Generic)
     )
 
     val romData = JopFileLoader.loadMicrocodeRom(sys.romPath)
@@ -145,6 +175,14 @@ object JopConfigBramSim {
         println(s"\n=== Simulation Complete ($maxCycles cycles) ===")
         println(s"Full output:\n${uartOutput.toString}")
         println(s"Log: $logFilePath")
+
+        verdict(uartOutput.toString) match {
+          case Left(why) =>
+            println(s"FAIL: $why")
+            System.exit(1)
+          case Right(what) =>
+            println(s"PASS: $what")
+        }
       }
   }
 }
@@ -241,7 +279,8 @@ object JopConfigJvmTestsSim {
       jopConfig = simConfig,
       jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll"),
       maxCycles = 60000000,
-      logFilePath = s"build/sim-logs/jvmtests_${presetName}_simulation.log"
+      logFilePath = s"build/sim-logs/jvmtests_${presetName}_simulation.log",
+      verdict = JopConfigBramSim.doAll
     )
   }
 }

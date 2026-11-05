@@ -154,6 +154,14 @@ object JopCoreBramSim extends App {
       println(s"UART Output: '${uartOutput.toString}'")
       println(s"Log written to: $logFilePath")
 
+      // A verdict: this recorded PASS whatever the UART said, and the README
+      // walk-through judges it by its exit status and its PASS line (item 176).
+      if (!uartOutput.toString.contains("Hello World")) {
+        run.finish("FAIL", s"$maxCycles cycles, UART: '${uartOutput.toString}'")
+        println("FAIL: no 'Hello World' on the UART")
+        System.exit(1)
+      }
       run.finish("PASS", s"$maxCycles cycles")
+      println(s"PASS: Hello World in $maxCycles cycles")
     }
 }

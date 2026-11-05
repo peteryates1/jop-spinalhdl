@@ -129,9 +129,16 @@ object JopTopBramSim extends App {
       println(s"UART Output: '${uartOutput.toString}'")
       println(s"Log: $logFilePath")
 
-      run.finish(
-        if (uartOutput.toString.contains("Hello World")) "PASS" else "CHECK",
-        s"$maxCycles cycles, UART: '${uartOutput.toString}'"
-      )
+      // A VERDICT, NOT A REPORT. The README walk-through runs this on every push
+      // and judges it by its exit status and its PASS line. It recorded CHECK
+      // and exited 0 here for six weeks while the design never got past GC.init
+      // (item 176), under a green CI job.
+      if (!uartOutput.toString.contains("Hello World")) {
+        run.finish("FAIL", s"$maxCycles cycles, UART: '${uartOutput.toString}'")
+        println("FAIL: no 'Hello World' on the UART")
+        System.exit(1)
+      }
+      run.finish("PASS", s"$maxCycles cycles, UART: '${uartOutput.toString}'")
+      println(s"PASS: Hello World in $maxCycles cycles")
     }
 }

@@ -2,7 +2,10 @@
 # DISCIPLINE: docs/testing-discipline.md — "assert on content, never an exit status".
 # PROVED RED 2026-09-09 by pointing step 4 at a sim object that does not exist;
 # the runner printed `!!! step 4 FAILED` and exited 1 rather than running on.
-# NOTE this is a runner, not a check: it fails when a README command fails.
+# A command fails when it exits non-zero, and a SIMULATION also fails without a
+# `PASS:` line. That half PROVED RED 2026-11-05 on item 176's unfixed tree, fed
+# step 4b alone through README=: the old JopTopBramSim exited 0 at `GC init...`
+# and the runner said `!!! step 4 FAILED, no PASS line`.
 #
 # Run the README's own Getting Started commands. THE README IS THE TEST.
 #
@@ -51,6 +54,7 @@ block=$(awk '
 
 # Split into steps on the "# N." markers, keeping only those in range.
 step=0; script=""; ran=0; failed=0
+simlog=$(mktemp); trap 'rm -f "$simlog"' EXIT   # one simulation's output at a time
 while IFS= read -r line; do
   if [[ "$line" =~ ^#[[:space:]]*([0-9]+)[a-z]?\. ]]; then
     step="${BASH_REMATCH[1]}"
@@ -64,7 +68,19 @@ while IFS= read -r line; do
     # step 3 and printed step 4 before reporting failure, which is exactly the
     # confusing log a CI job must not produce.
     script+="echo '>>> [step $step] $line'"$'\n'
-    script+="if ! { $line ; }; then echo \"!!! step $step FAILED: $line\"; exit 1; fi"$'\n'
+    if [[ "$line" == *"runMain jop.system."* ]]; then
+      # A SIMULATION IS JUDGED BY ITS VERDICT, not only its exit status. The
+      # sims are Apps, and three of the six exited 0 whatever the UART said,
+      # so this job was green while step 4b never got past GC.init (item 176).
+      # Each now prints `PASS: ...`, or `FAIL: ...` and exits 1; one that exits
+      # 0 with no PASS line fails here, which is what a sim with no verdict at
+      # all does. The pipe runs the line in a subshell, so a `cd` in it would
+      # not last into the next step; no simulation line has one.
+      script+="if ! { $line ; } 2>&1 | tee '$simlog'; then echo \"!!! step $step FAILED: $line\"; exit 1; fi"$'\n'
+      script+="if ! grep -q 'PASS: ' '$simlog'; then echo \"!!! step $step FAILED, no PASS line: $line\"; exit 1; fi"$'\n'
+    else
+      script+="if ! { $line ; }; then echo \"!!! step $step FAILED: $line\"; exit 1; fi"$'\n'
+    fi
     ran=$((ran + 1))
   fi
 done <<< "$block"
