@@ -74,16 +74,20 @@ object JopConfigBramSim {
     if (out.contains("Hello World")) Right("Hello World")
     else Left("no 'Hello World' on the UART")
 
-  /** DoAll's verdict. It announces `DoAll: N tests` and has no summary line,
-    * so it passes on N `ok` lines and no `failed!`. */
+  /** DoAll's verdict, by the rule `fpga/scripts/hw_verify.py` (`judge`,
+    * `judge_count`) applies on a board, so a sim and a board pass the same
+    * output: DoAll announces `DoAll: N tests` and has no summary line, so it
+    * needs N `ok` lines, no `fail`/`failed`/`failure` as a word (a test NAMED
+    * for an exception is not one), and no uncaught exception. */
   def doAll(out: String): Either[String, String] = {
-    val lines = out.linesIterator.map(_.trim).toSeq
-    val oks = lines.count(_.endsWith(" ok"))
-    val failed = lines.count(_.endsWith(" failed!"))
+    val oks = """(?m)\bok\s*$""".r.findAllIn(out).size
+    val fails = """(?i)(?<![A-Za-z])fail(?:ed|ure|s)?(?![A-Za-z])""".r.findAllIn(out).size
+    val crashed = "Uncaught exception".r.findAllIn(out).size
     """DoAll: (\d+) tests""".r.findFirstMatchIn(out).map(_.group(1).toInt) match {
-      case None                              => Left("DoAll never announced its test count")
-      case Some(n) if failed > 0 || oks != n => Left(s"$oks of $n tests ok, $failed failed")
-      case Some(n)                           => Right(s"$n of $n tests ok")
+      case None => Left("DoAll never announced its test count")
+      case Some(n) if oks < n || fails > 0 || crashed > 0 =>
+        Left(s"$oks ok of $n tests, $fails fail, $crashed uncaught")
+      case Some(n) => Right(s"$oks ok of $n tests")
     }
   }
 
