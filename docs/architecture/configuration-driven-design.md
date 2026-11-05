@@ -2188,7 +2188,7 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 4. `sbt "Test / runMain jop.system.JopCoreBramSim"` — basic BRAM sim passes
 5. `sbt "Test / runMain jop.system.JopJvmTestsBramSim"` — 59/60 JVM tests pass (software config)
 6. `sbt "Test / runMain jop.system.JopFpuBramSim"` — 59/60 pass (hwFloat config)
-7. `sbt "Test / runMain jop.system.JopHwMathBramSim"` — 59/60 pass (hwMath config)
+7. `sbt "Test / runMain jop.system.JopHwMathBramSim"` — 59/60 pass (hwMath config). Retired 2026-11-05 (item 176); `JopConfigJvmTestsSim ep4cgx150HwMath` runs DoAll on that config now
 8. `sbt "runMain jop.system.JopSdramTopVerilog"` — Verilog generates
 9. FPGA build + HelloWorld.jop download — works on hardware
 10. `jop build qmtech-serial` — CLI full build produces identical artifacts to manual make
@@ -2406,7 +2406,7 @@ T15 FloatTest FAIL         → test failed
 M0: 59/60 Ok               → summary line
 ```
 
-`FpgaTestRunner` parses this same format. The simulation harnesses (`JopMinMaxSim`, `JopJvmTestsBramSim`) already implement this parsing — the FPGA test runner shares the parsing logic.
+`FpgaTestRunner` parses this same format. The simulation harnesses (`JopMinMaxSim`, `JopJvmTestsBramSim`) already implement this parsing (`JopMinMaxSim` was retired 2026-11-05, item 176: DoAll no longer prints this format) — the FPGA test runner shares the parsing logic.
 
 ```java
 public class FpgaTestRunner {

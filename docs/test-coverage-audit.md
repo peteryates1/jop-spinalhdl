@@ -145,7 +145,7 @@ in Java (`JVM.java`). The jump table in the assembler maps each JVM bytecode to 
 
 Note: With float bytecodes set to `Implementation.Hardware`, fadd/fsub/fmul/fdiv/i2f/f2i/fcmpl/fcmpg are dispatched via jump table to microcode handlers that use FloatComputeUnit (pipeline-integrated FPU).
 Other float operations (frem) remain in Java software; fneg uses microcode XOR sign bit.
-Both paths verified: `JopJvmTestsBramSim` (Software) and `JopFloatCuBramSim` (Hardware) — 60/60 pass.
+Both paths verified: `JopJvmTestsBramSim` (Software) and `JopFloatCuBramSim` (Hardware) — 60/60 pass. (`JopFloatCuBramSim` was retired 2026-11-05: it read a microcode variant that never existed, item 62, and loaded DoAll into too little memory, item 176. The hardware path is `JopConfigJvmTestsSim ep4cgx150HwFloat` now, 68/68, and CI's `JopDcuCacheSim`.)
 
 ### 1.8 Double Arithmetic
 

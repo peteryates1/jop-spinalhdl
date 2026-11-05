@@ -97,7 +97,7 @@ Optional per-core IEEE 754 single-precision FPU via **FloatComputeUnit** (pipeli
 
 ### Verification
 
-- **JopFloatCuBramSim**: Full system integration test with FloatComputeUnit. Runs 60/60 JVM tests including FloatTest, FloatField, FloatArray, DoubleArithmetic.
+- **JopFloatCuBramSim**: Full system integration test with FloatComputeUnit. Runs 60/60 JVM tests including FloatTest, FloatField, FloatArray, DoubleArithmetic. Retired 2026-11-05 (items 62, 176); `JopConfigJvmTestsSim ep4cgx150HwFloat` runs DoAll on the float CU now, 68/68.
 
 ## Object Cache
 
