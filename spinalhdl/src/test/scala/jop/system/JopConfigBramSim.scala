@@ -267,7 +267,11 @@ object JopConfigHwFloatHelloWorldSim extends App {
 object JopConfigJvmTestsSim {
   def main(args: Array[String]): Unit = {
     val presetName = args.headOption.getOrElse("simulation")
-    val preset = JopTopVerilog.resolvePreset(presetName, args)
+    // JopTopVerilog resolves the FPGA presets, and `simulation` is not one: the
+    // default named it, and died "Unknown preset: 'simulation'" before
+    // simulating anything, from db447d8 until item 176 ran it.
+    val preset = args.headOption.map(JopTopVerilog.resolvePreset(_, args))
+      .getOrElse(JopConfig.simulation)
 
     // Override to simulation boot mode (loads ROM/RAM from asm/generated/)
     val simConfig = preset.copy(systems = Seq(preset.system.copy(
