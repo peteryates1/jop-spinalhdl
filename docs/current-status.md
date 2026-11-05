@@ -5055,13 +5055,14 @@ now does. With it, in the walk-through's clone at `49e960f`: `DoAll: 68 tests`,
 load DoAll into 256 KB -- `JopFloatCuBramSim`, `JopHwMathBramSim` and
 `JopMinMaxComparison` -- and so ran it truncated; nothing runs them either.
 They now stop at the load with the reason, and each needs 512 KB and a run.
-And the five variants build three cores, not five. `JopConfig.simulation`
-already has `idiv` and `irem` in hardware, so `JopConfigHwMathHelloWorldSim` builds what
-`JopConfigHelloWorldSim` does -- the two printed the same `imul`/`idiv`/`irem`
-and `needs*Compute` lines, and the latter's comment still says "no compute
-units". And resolution sets `useSyncRam` on any preset that leaves it unset,
-as `simulation` does, so `JopConfigCacheOnlyHelloWorldSim`, "async reads",
-builds what `JopConfigSyncCacheHelloWorldSim` does.
+The five variants built three cores, not five, and the two twins are retired.
+`JopConfig.simulation` already has `idiv` and `irem` in hardware, so
+`JopConfigHwMathHelloWorldSim` built what `JopConfigHelloWorldSim` does -- the
+two printed the same `imul`/`idiv`/`irem` and `needs*Compute` lines, and the
+latter's comment said "no compute units" (corrected). And resolution sets
+`useSyncRam` on any preset that leaves it unset, as `simulation` does, so
+`JopConfigCacheOnlyHelloWorldSim`, "async reads", built what
+`JopConfigSyncCacheHelloWorldSim` does.
 
 Guard: `spinalhdl/src/test/scala/jop/config/BramBuildTest.scala` (every BRAM
 preset is built as BRAM), `.github/scripts/run-readme-walkthrough.sh` (a

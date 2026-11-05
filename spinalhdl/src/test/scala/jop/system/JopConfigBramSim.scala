@@ -192,7 +192,10 @@ object JopConfigBramSim {
   }
 }
 
-/** HelloWorld with default simulation config (software imul, no compute units) */
+/** HelloWorld on `JopConfig.simulation` as it stands: idiv and irem in hardware
+  * (the IntegerComputeUnit), imul in microcode. JopConfigHwMathHelloWorldSim
+  * asked for idiv/irem in hardware on top of this, got this same core, and was
+  * retired (item 176). */
 object JopConfigHelloWorldSim extends App {
   JopConfigBramSim.runSim(
     jopConfig = JopConfig.simulation,
@@ -200,20 +203,10 @@ object JopConfigHelloWorldSim extends App {
   )
 }
 
-/** HelloWorld with hardware integer math (IntegerComputeUnit: idiv/irem) */
-object JopConfigHwMathHelloWorldSim extends App {
-  val base = JopConfig.simulation
-  val hwMath = base.copy(systems = Seq(base.system.copy(
-    name = "hwmath-sim",
-    coreConfig = base.system.coreConfig.copy(
-      bytecodes = Map("idiv" -> "hw", "irem" -> "hw")))))
-  JopConfigBramSim.runSim(
-    jopConfig = hwMath,
-    jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
-  )
-}
-
-/** HelloWorld with useSyncRam + useStackCache (matches DDR3 FPGA config) */
+/** HelloWorld with the stack cache (useSyncRam + useStackCache, as the DDR3
+  * FPGA config builds it). JopConfigCacheOnlyHelloWorldSim asked for the cache
+  * with async reads, but resolution sets useSyncRam on every preset that leaves
+  * it unset, so it built this same core; retired (item 176). */
 object JopConfigSyncCacheHelloWorldSim extends App {
   val base = JopConfig.simulation
   val syncCache = base.copy(systems = Seq(base.system.copy(
@@ -223,20 +216,6 @@ object JopConfigSyncCacheHelloWorldSim extends App {
       spillBaseAddrOverride = Some(0)))))
   JopConfigBramSim.runSim(
     jopConfig = syncCache,
-    jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
-  )
-}
-
-/** HelloWorld with useStackCache only (async reads, verify cache works) */
-object JopConfigCacheOnlyHelloWorldSim extends App {
-  val base = JopConfig.simulation
-  val cacheOnly = base.copy(systems = Seq(base.system.copy(
-    name = "cache-sim",
-    coreConfig = base.system.coreConfig.copy(
-      useStackCache = true,
-      spillBaseAddrOverride = Some(0)))))
-  JopConfigBramSim.runSim(
-    jopConfig = cacheOnly,
     jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   )
 }
