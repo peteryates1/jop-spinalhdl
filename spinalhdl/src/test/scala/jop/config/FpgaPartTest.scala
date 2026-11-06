@@ -27,6 +27,7 @@ class FpgaPartTest extends AnyFunSuite {
     "alchitry-au"               -> Board.AlchitryAuV2,
     "alchitry-au-ddr3-test"     -> Board.AlchitryAuV2,
     "colorlight-db-i9plus"      -> Board.ColorlightI9Plus,
+    "cluster-carrier-mesh"      -> Board.ColorlightI9Plus,
     "qmtech-xc7a100t-dbfpga-v5" -> Board.QmtechXC7A100T,
     "qmtech-xc7a100t-wukong"    -> Board.WukongXC7A100T)
 

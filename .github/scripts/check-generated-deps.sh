@@ -119,7 +119,7 @@ echo "  all Quartus flows regenerate their constraints"
 # the Quartus flow must be added here, which is the moment to ask whether it
 # generates its constraints.
 # ---------------------------------------------------------------------------
-declared_unguarded="alchitry-au alchitry-au-ddr3-test colorlight-db-i5 colorlight-db-i9plus colorlight-i5 qmtech-xc7a100t-dbfpga-v5 qmtech-xc7a100t-wukong"
+declared_unguarded="alchitry-au alchitry-au-ddr3-test cluster-carrier-mesh colorlight-db-i5 colorlight-db-i9plus colorlight-i5 qmtech-xc7a100t-dbfpga-v5 qmtech-xc7a100t-wukong"
 
 all_boards=$(ls fpga/*/Makefile 2>/dev/null | sed 's|fpga/||;s|/Makefile||' | sort)
 unguarded=$(comm -23 <(printf '%s\n' "$all_boards") <(printf '%s\n' "$boards" | sort))
@@ -150,11 +150,16 @@ uart_loopback.xdc|stand-alone bring-up exerciser, not a JOP build
 uart_txgen.xdc|stand-alone bring-up exerciser, not a JOP build
 wukong_sdram.xdc|stand-alone bring-up exerciser (SdramExerciserWukongTop) -- j10_led debug bank and a clk_in port no JopTop has
 wukong_sdr_cdc.xdc|asynchronous clock groups for the SDR core<->sys_clk crossings. Hand-written because no JopConfig knows which crossings carry a BufferCC, and because declaring them async MASKS any future crossing added without one -- scoping that decision to one flow is the point. Item 159 tracks generating it
+mesh_prbs.xdc|the cluster-carrier mesh PRBS test's own clock groups (MeshPrbsTop): its crossings are FlowCCByToggle and BufferCC, which no pin plan knows about
 "
   # GAP: should be generated. Each line is remaining work for item 149.
   gap="
 wukong_dual.xdc|XdcGeneratorMain calls JopConfig.system, which requires a single-system config (JopConfig.scala:352). A dual-cluster preset needs the generator to iterate .systems and merge. Generator feature, no hardware risk to develop
 alchitry_au_v2.xdc|tracked has NO create_clock at all while the generated file adds one on the top-level \`clk\` port (the clk_wiz IP constrains \`clk_in\`, its own boundary). Converting may therefore expose a pre-existing timing hole -- it needs a build and a timing check, not a swap. The 4 usb_rx/usb_tx lines in the tracked file are already dead: the RTL has zero such ports. Item 153
+carrier_U1.xdc|the JOP cluster carrier's pin plan v2 for socket U1, as its designer delivered it (generated from mesh_pads.csv) and as the pre-spin build check must read it. Blocked on the carrier existing as a hw.Board -- four i9+ sockets and the mesh nets -- which can then generate it
+carrier_U2.xdc|the JOP cluster carrier's pin plan v2 for socket U2, as its designer delivered it (generated from mesh_pads.csv) and as the pre-spin build check must read it. Blocked on the carrier existing as a hw.Board -- four i9+ sockets and the mesh nets -- which can then generate it
+carrier_U3.xdc|the JOP cluster carrier's pin plan v2 for socket U3, as its designer delivered it (generated from mesh_pads.csv) and as the pre-spin build check must read it. Blocked on the carrier existing as a hw.Board -- four i9+ sockets and the mesh nets -- which can then generate it
+carrier_U4.xdc|the JOP cluster carrier's pin plan v2 for socket U4, as its designer delivered it (generated from mesh_pads.csv) and as the pre-spin build check must read it. Blocked on the carrier existing as a hw.Board -- four i9+ sockets and the mesh nets -- which can then generate it
 "
 
   declared="$by_design$gap"

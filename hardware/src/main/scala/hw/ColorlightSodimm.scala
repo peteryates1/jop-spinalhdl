@@ -21,7 +21,15 @@ package hw
  *     mismatches over 82 pins).
  */
 object ColorlightSodimm {
-  /** I9Plus */
+  /** I9Plus
+    *
+    * Pin 53 is ball T4 TOO -- the wuxx table lists T4 at 51 and 53, and the
+    * module wires both pins to it (confirmed 2026-11-06). It is left out so
+    * that no ball has two pins here; a base board must treat 51 and 53 as one
+    * net, never two (fpga/cluster-carrier-mesh/README.md). Pins 43, 45, 47 and
+    * 157-200 are not here either, though wuxx lists balls for them; the
+    * cluster carrier's plan uses some, and its README records their check
+    * against the wuxx table and Vivado's package data. */
   val SodimmI9Plus: Map[Int, String] = Map(
     41 -> "R2", 42 -> "P5", 44 -> "T6", 46 -> "U7", 48 -> "U6", 49 -> "T3", 50 -> "U5", 51 -> "T4",
     52 -> "V5", 54 -> "U1", 57 -> "U2", 58 -> "H3", 59 -> "U3", 60 -> "J1", 61 -> "V2", 62 -> "K1",
