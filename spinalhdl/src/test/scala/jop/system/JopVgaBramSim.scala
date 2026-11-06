@@ -97,8 +97,10 @@ object JopVgaBramSim extends App {
         }
       }
 
-      // UART bit decoder: 2 Mbaud at 100 MHz = 50 cycles/bit
-      val cyclesPerBit = 50
+      // UART bit decoder, its bit time from the config rather than a constant:
+      // wukongBramFull's console runs at wukongFull's 1 Mbaud, and a decoder
+      // fixed at 2 Mbaud (50 cycles/bit) read it as garbage for 120M cycles.
+      val cyclesPerBit = (config.system.clkFreq.toLong / config.system.coreConfigs.head.uartBaudRate).toInt
 
       fork {
         while (true) {
