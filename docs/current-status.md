@@ -307,7 +307,7 @@ Marked closed in the heading or here, sorted by ID.
 - **[174](#item-174)** — ~~every JOP image has the same MAC and IP, so two boards cannot share the LAN~~ — CLOSED 2026-10-31: board instances give each unit on the LAN its own MAC and hostname, and NetTest takes a DHCP lease; `InstanceTest`
 - **[175](#item-175)** — ~~the i5's Fmax moved with unrelated logic: yosys gives ABC9 no block-RAM clock-to-out~~ — CLOSED 2026-11-02: both i5 board flows read a DP16KD model with one; `colorlightDbI5Sdram` 41.61 -> 48.98 MHz; `check-ecp5-bram-timing.sh`
 - **[176](#item-176)** — ~~`JopTopBramSim` hangs in `GC.init` under a green CI walk-through, and no `JopConfigBramSim` variant can build~~ — CLOSED 2026-11-05: `builtCoreConfig` built every BRAM system as SDR, so the Wukong BRAM read 8192 of its words; one `builtMemType` answers now, the README sims and their runner need a `PASS:` line, and `runSim` infers its memories; and the image loader refuses a program its memory cannot hold, where it truncated DoAll in silence; `BramBuildTest`, `run-readme-walkthrough.sh`, `SimVerdictTest`, `ImageFitTest`
-- **[177](#item-177)** — ~~CI's all-compute-units job stopped at a count of 59 written into it, so DoAll's last nine tests never ran with the compute units on~~ — CLOSED 2026-11-05: the sim runs to DoAll's own count, and CI judges every JVM-suite log by it; `check-doall-log.sh`, `SimVerdictTest`
+- **[177](#item-177)** — ~~CI's all-compute-units job stopped at a count of 59 written into it, so DoAll's last nine tests never ran with the compute units on~~ — CLOSED 2026-11-05: the sim runs to DoAll's own count, and CI judges every JVM-suite log by it; every DoAll sim judges by its own count (`check-doall-verdict.sh`); `check-doall-log.sh`, `SimVerdictTest`, `check-doall-verdict.sh`
 
 ### Records
 
@@ -5125,10 +5125,38 @@ that stopped part-way would have passed there too.
   the same log 68 of 68 -- tests 60-68 run, and pass, with every compute unit
   on.
 
+**2026-11-06: every DoAll sim.** Nine more ran DoAll on a rule of their own --
+seven printed the suite and exited 0, `JopJvmTestsSmpBramSim` passed on any
+`ok` with no `failed!`, and `JopGenJvmTestsBramSim` counted ` ok` anywhere --
+and all judge by `SimVerdict.doAll` now (`c842bd3`), held there by
+`check-doall-verdict.sh` in `make check-build`: a test source that loads DoAll
+must call it outside a comment. Red at `f261717` on exactly those nine files,
+and on a probe that names the verdict only in a comment. Run on fresh
+artifacts, `JopJvmTestsBramSim`, `-LmulSwSim`, `-McFallbackSim`, `-McFcmpSim`,
+`-SmpBramSim` (two cores), `JopGenJvmTestsBramSim` (generational GC, to `JVM
+exit!`) and `JopTopJvmTestsBramSim` pass 68 of 68.
+
+Two had faults behind the missing verdict, as the `JopConfig*` sims did:
+
+- `JopJvmTestsStackCacheBramSim` runs `jvm.DeepAll`, not DoAll, unless told
+  otherwise -- and DeepAll announced no count, so DoAll's verdict would have
+  failed it. DeepAll prints `DeepAll: 4 tests` now (`b51fff3`), `SimVerdict`
+  reads any `<Name>: N tests` line as `hw_verify.py`'s ANNOUNCE_RE does, and
+  the sim judges DoAll and DeepAll runs: DeepAll 4 of 4, and DoAll, over the
+  80M cycles its usage line gives it, 68 of 68.
+- `JopTopDcuBramSim` printed garbage for 120M cycles -- "`~ff``f~ff" -- and
+  failed. Its bit-level UART decoder was fixed at 2 Mbaud, and `wukongBramFull`
+  inherits `wukongFull`'s console at 1 Mbaud. The four sims that decode
+  `ser_txd` take the bit time from the config now (`5031667`); for the other
+  three it is still 50 cycles a bit, and `JopTopBramSim` still passes.
+  With it, `JopTopDcuBramSim` passes 68 of 68: DoAll on every compute unit
+  through `JopTop`.
+
 Guard: `.github/scripts/check-doall-log.sh` (a JVM-suite log passes only on
-every test DoAll announced) and
+every test DoAll announced),
 `spinalhdl/src/test/scala/jop/sim/SimVerdictTest.scala` (the rule the sims
-apply to their own output).
+apply to their own output) and `.github/scripts/check-doall-verdict.sh` (every
+sim that runs DoAll applies it).
 
 <a id="item-69"></a>
 
