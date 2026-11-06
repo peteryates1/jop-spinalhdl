@@ -94,7 +94,14 @@ object JopJvmTestsMcFallbackSim extends App {
       val maxCycles = 60000000
       val reportInterval = 100000
 
-      for (cycle <- 0 until maxCycles) {
+      // Ends at DoAll's "JVM exit!", not at maxCycles: the suite is over by
+      // then, and running out the rest -- 22M cycles here after DoAll's 38M on
+      // the baseline, 40M after 20M on the fallbacks -- made these CI's two
+      // longest jobs, ~17.5 minutes of simulation each. maxCycles still bounds
+      // a hang.
+      var cycle = 0
+      var done = false
+      while (cycle < maxCycles && !done) {
         dut.clockDomain.waitSampling()
 
         if (dut.io.uartTxValid.toBoolean) {
@@ -104,6 +111,7 @@ object JopJvmTestsMcFallbackSim extends App {
             println(line)
             logLine(f"[$cycle%7d] $line")
             lineBuffer.clear()
+            if (line.contains("JVM exit!")) done = true
           } else if (char >= 32 && char < 127) {
             lineBuffer.append(char.toChar)
           }
@@ -113,11 +121,12 @@ object JopJvmTestsMcFallbackSim extends App {
         if (cycle > 0 && cycle % reportInterval == 0) {
           println(f"  [$cycle%7d cycles]")
         }
+        cycle += 1
       }
 
       if (lineBuffer.nonEmpty) {
         println(lineBuffer.toString)
-        logLine(f"[$maxCycles%7d] ${lineBuffer.toString}")
+        logLine(f"[$cycle%7d] ${lineBuffer.toString}")
       }
 
       logLine("")
@@ -125,7 +134,7 @@ object JopJvmTestsMcFallbackSim extends App {
       logLine(s"UART Output:\n${uartOutput.toString}")
       log.close()
 
-      println(s"\n=== Simulation Complete ($maxCycles cycles) ===")
+      println(s"\n=== Simulation Complete ($cycle cycles) ===")
       println(s"Full output:\n${uartOutput.toString}")
       println(s"Log: $logFilePath")
 
