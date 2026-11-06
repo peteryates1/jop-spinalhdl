@@ -34,6 +34,11 @@ public class DeepAll {
 				new DeepThrow(),
 		};
 
+		// The count, as DoAll prints it, so a harness can tell "every test passed"
+		// from "some never printed": hw_verify.py and SimVerdict both read it.
+		// This printed none, so its sims could judge it by nothing (item 177).
+		System.out.println("DeepAll: " + tc.length + " tests");
+
 		for (int i = 0; i < tc.length; ++i) {
 			System.out.print(tc[i].toString());
 			if (tc[i].test()) {

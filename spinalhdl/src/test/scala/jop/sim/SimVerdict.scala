@@ -13,7 +13,8 @@ object SimVerdict {
     if (out.contains("Hello World")) Right("Hello World")
     else Left("no 'Hello World' on the UART")
 
-  /** DoAll's verdict, by the rule `fpga/scripts/hw_verify.py` (`judge`,
+  /** DoAll's verdict -- and DeepAll's, which announces itself the same way --
+    * by the rule `fpga/scripts/hw_verify.py` (`judge`,
     * `judge_count`) applies on a board, so a sim and a board pass the same
     * output: DoAll announces `DoAll: N tests` and has no summary line, so it
     * needs N `ok` lines, no `fail`/`failed`/`failure` as a word (a test NAMED
@@ -25,14 +26,16 @@ object SimVerdict {
     val fails = """(?i)(?<![A-Za-z])fail(?:ed|ure|s)?(?![A-Za-z])""".r.findAllIn(out).size
     val crashed = "Uncaught exception".r.findAllIn(out).size
     announced(out) match {
-      case None => Left("DoAll never announced its test count")
+      case None => Left("the suite never announced its test count")
       case Some(n) if oks < n || fails > 0 || crashed > 0 =>
         Left(s"$oks ok of $n tests, $fails fail, $crashed uncaught")
       case Some(n) => Right(s"$oks ok of $n tests")
     }
   }
 
-  /** The test count DoAll announces before it starts, once it has. */
+  /** The test count a suite announces before it starts, once it has: a line
+    * `<Name>: N tests`, hw_verify.py's ANNOUNCE_RE exactly, so DoAll and
+    * DeepAll both count. */
   def announced(out: String): Option[Int] =
-    """DoAll: (\d+) tests""".r.findFirstMatchIn(out).map(_.group(1).toInt)
+    """(?m)^\s*\w+: (\d+) tests\s*$""".r.findFirstMatchIn(out).map(_.group(1).toInt)
 }

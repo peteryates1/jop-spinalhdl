@@ -37,7 +37,13 @@ class SimVerdictTest extends AnyFunSuite {
   test("DoAll fails on an uncaught exception, and with no count announced") {
     val crash = "DoAll: 2 tests\nBasic ok\nArray ok\nUncaught exception\n"
     assert(doAll(crash).isLeft, doAll(crash))
-    assert(doAll("Basic ok\nArray ok\n") == Left("DoAll never announced its test count"))
+    assert(doAll("Basic ok\nArray ok\n") == Left("the suite never announced its test count"))
+  }
+
+  test("DeepAll is judged the same way, by its own announcement") {
+    val deep = "DeepAll: 2 tests\nDeepRecursion ok\nDeepGc ok\nDeepAll done\n"
+    assert(doAll(deep) == Right("2 ok of 2 tests"))
+    assert(doAll("DeepAll: 2 tests\nDeepRecursion ok\nDeepAll done\n").isLeft)
   }
 
   test("HelloWorld passes on Hello World and nothing else") {

@@ -198,9 +198,10 @@ object JopJvmTestsStackCacheBramSim extends App {
   // wukongDdr3's Const differs from it ONLY in the stack constants (diffed
   // 2026-10-02), so its images run here unchanged:
   //   Test/runMain jop.system.JopJvmTestsStackCacheBramSim JvmTests ThreadAll 30000000 wukongDdr3
+  val app = if (args.length > 1) args(1) else "DeepAll"
   val jopFilePath = jop.utils.SimApp.jop(
     if (args.length > 0) args(0) else "JvmTests",
-    if (args.length > 1) args(1) else "DeepAll",
+    app,
     if (args.length > 3) args(3) else jop.utils.SimApp.defaultPreset)
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
@@ -1004,14 +1005,18 @@ object JopJvmTestsStackCacheBramSim extends App {
       println(s"Full output:\n${uartOutput.toString}")
       println(s"Log: $logFilePath")
 
-      // DoAll's verdict, by its own count (items 176, 177). This printed the
-      // suite and exited 0 whatever it said.
-      SimVerdict.doAll(uartOutput.toString) match {
+      // A verdict where the program has one (items 176, 177). DoAll and
+      // DeepAll announce their test count and print `<name> ok` per test, and
+      // SimVerdict.doAll judges both by it; this printed them and exited 0
+      // whatever they said. JbeBench and ThreadAll, which this also runs,
+      // print results for a person to read, and get no verdict here.
+      if (Set("DoAll", "DeepAll").contains(app)) SimVerdict.doAll(uartOutput.toString) match {
         case Right(what) => println(s"PASS: $what")
         case Left(why) =>
           println(s"FAIL: $why")
           System.exit(1)
       }
+      else println(s"(no verdict: $app announces no test count)")
     }
 }
 
