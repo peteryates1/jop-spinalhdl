@@ -6,6 +6,7 @@ import spinal.lib._
 import spinal.lib.bus.bmb._
 import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.memory.JopMemoryConfig
+import jop.sim.SimVerdict
 import java.io.PrintWriter
 import jop.config.MicrocodePaths
 
@@ -136,17 +137,16 @@ object JopJvmTestsSmpBramSim extends App {
       println(s"Tests passed: $testsPassed, Tests failed: $testsFailed")
       println(s"Log: $logFilePath")
 
-      if (testsFailed > 0) {
-        run.finish("FAIL", s"$testsFailed tests failed on $cpuCnt-core SMP")
-        println(s"FAIL: $testsFailed tests failed!")
-        System.exit(1)
+      // DoAll's verdict, by its own count (item 177). This passed on any `ok`
+      // with no `failed!`, so a suite that stopped part-way passed.
+      SimVerdict.doAll(uartOutput.toString) match {
+        case Right(what) =>
+          run.finish("PASS", s"$what on $cpuCnt-core SMP in $cycle cycles")
+          println(s"PASS: $what on $cpuCnt-core SMP")
+        case Left(why) =>
+          run.finish("FAIL", s"$why on $cpuCnt-core SMP in $cycle cycles")
+          println(s"FAIL: $why")
+          System.exit(1)
       }
-      if (testsPassed == 0) {
-        run.finish("FAIL", s"No tests completed on $cpuCnt-core SMP in $cycle cycles")
-        println("FAIL: No tests completed!")
-        System.exit(1)
-      }
-      run.finish("PASS", s"$testsPassed tests passed on $cpuCnt-core SMP in $cycle cycles")
-      println(s"PASS: $testsPassed tests passed on $cpuCnt-core SMP!")
     }
 }

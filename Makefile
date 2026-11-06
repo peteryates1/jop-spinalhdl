@@ -125,6 +125,7 @@ check-build:
 	@.github/scripts/check-ecp5-bram-timing.sh
 	@.github/scripts/check-board-default-goal.sh
 	@.github/scripts/check-sim-xstate.sh
+	@.github/scripts/check-doall-verdict.sh
 	@.github/scripts/check-guard-discipline.sh
 	@.github/scripts/check-console-baud.sh
 	@.github/scripts/check-generator-fallbacks.sh

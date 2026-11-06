@@ -6,6 +6,7 @@ import spinal.lib._
 import spinal.lib.bus.bmb._
 import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.memory.JopMemoryConfig
+import jop.sim.SimVerdict
 import jop.config.JopCoreConfig
 import java.io.PrintWriter
 import jop.config.MicrocodePaths
@@ -95,5 +96,14 @@ object JopJvmTestsMcFcmpSim extends App {
       println(s"\n=== Simulation Complete ($maxCycles cycles) ===")
       println(s"Full output:\n${uartOutput.toString}")
       println(s"Log: $logFilePath")
+
+      // DoAll's verdict, by its own count (items 176, 177). This printed the
+      // suite and exited 0 whatever it said.
+      SimVerdict.doAll(uartOutput.toString) match {
+        case Right(what) => println(s"PASS: $what")
+        case Left(why) =>
+          println(s"FAIL: $why")
+          System.exit(1)
+      }
     }
 }

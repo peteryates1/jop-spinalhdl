@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import jop.config._
 import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
+import jop.sim.SimVerdict
 import java.io.PrintWriter
 
 /**
@@ -124,5 +125,14 @@ object JopTopJvmTestsBramSim extends App {
 
       println(s"\n=== Simulation Complete ($maxCycles cycles) ===")
       println(s"Log: $logFilePath")
+
+      // DoAll's verdict, by its own count (items 176, 177). This printed the
+      // suite and exited 0 whatever it said.
+      SimVerdict.doAll(uartOutput.toString) match {
+        case Right(what) => println(s"PASS: $what")
+        case Left(why) =>
+          println(s"FAIL: $why")
+          System.exit(1)
+      }
     }
 }
