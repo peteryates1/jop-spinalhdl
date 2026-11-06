@@ -6,13 +6,20 @@
 #   (59 of 68), and cut at test 34 then printed twice as the sim does (34 of
 #   68) -- a raw count passed that one with 68. Green on the baseline's and
 #   the microcode-fallback sim's whole logs at the same commit: 68 of 68.
+# RE-PROVED 2026-11-06 when it learned DeepAll (any `<Name>: N tests`, `ok` as
+#   a word): red on the cut and doubled logs as before, on a DeepAll log
+#   without its DeepGc line (3 of 4), and on the 457c426 JopDcuCacheSim log,
+#   now as "never announced" -- that sim printed newlines as '.', so its
+#   announcement ended "tests.". Green on every whole DoAll log here (68 of
+#   68) and on the stack-cache sim's DeepAll (4 of 4) and DoAll (68 of 68).
 # ---------------------------------------------------------------------------
-# DoAll's verdict, read out of a JVM-suite simulation's log. Usage:
+# The verdict of a DoAll-style suite (DoAll, DeepAll), read out of a JVM-suite
+# simulation's log. Usage:
 #
 #   check-doall-log.sh sim.log [name]
 #
-# CI's three JVM-suite jobs are App sims: two exit 0 whatever DoAll printed,
-# so this is their verdict. It is a script rather than a workflow step so that
+# CI's JVM-suite jobs run App sims, and the run step keeps tee's exit status,
+# not the sim's, so this is their verdict in CI. It is a script rather than a workflow step so that
 # it can be run, and proved, against a real log on a workstation.
 #
 # THE RULE IS hw_verify.py's (judge, judge_count), so a sim and a board pass
@@ -34,11 +41,17 @@ log=${1:?usage: check-doall-log.sh sim.log [name]}
 name=${2:-DoAll}
 [ -f "$log" ] || { echo "::error::$name: no log at $log"; exit 2; }
 
-announced=$(grep -oE 'DoAll: [0-9]+ tests' "$log" | head -1 | grep -oE '[0-9]+' || true)
+# The suite's own announcement: a `<Name>: N tests` line -- `DoAll: 68 tests`,
+# `DeepAll: 4 tests` -- as hw_verify.py's ANNOUNCE_RE and SimVerdict read it.
+announced=$(grep -E '(^|\] )[A-Za-z]+: [0-9]+ tests[[:space:]]*$' "$log" | head -1 \
+  | grep -oE '[0-9]+ tests' | grep -oE '[0-9]+' || true)
 # DISTINCT lines. A sim may print the suite twice -- live, and again as its
 # whole UART output at the end (JopJvmTestsBramSim does) -- so a run that
 # stopped half-way shows N raw `ok` lines. DoAll's test names are distinct.
-oks=$(grep -E '[A-Za-z0-9_)] ok[[:space:]]*$' "$log" | sort -u | wc -l)
+# `ok` as a WORD ending the line, hw_verify.py's `\bok\s*$`. This was a letter,
+# digit or `)` before " ok", which DoAll's names satisfy and DeepAll's results
+# do not: `DeepGc g5s154+ ... g100s1009+ ok`, `DeepThrow [...] ok`.
+oks=$(grep -E '(^|[^A-Za-z0-9_])ok[[:space:]]*$' "$log" | sort -u | wc -l)
 fails=$(grep -c 'failed!' "$log" || true)
 crashed=$(grep -c 'Uncaught exception' "$log" || true)
 echo "announced=${announced:-none} ok=$oks failed=$fails uncaught=$crashed"
@@ -51,7 +64,7 @@ echo "announced=${announced:-none} ok=$oks failed=$fails uncaught=$crashed"
 grep -oE 'with seed -?[0-9]+' "$log" | head -1 || true
 
 if [ -z "$announced" ]; then
-  echo "::error::$name: DoAll never announced its test count -- the suite did not start"
+  echo "::error::$name: the suite never announced its test count -- it did not start"
   tail -40 "$log"
   exit 1
 fi
@@ -65,4 +78,4 @@ if [ "$oks" -lt "$announced" ]; then
   tail -40 "$log"
   exit 1
 fi
-echo "DoAll: $oks ok of $announced tests"
+echo "$name: $oks ok of $announced tests"

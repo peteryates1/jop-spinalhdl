@@ -393,7 +393,12 @@ object JopJvmTestsStackCacheBramSim extends App {
         }
       }
 
-      for (cycle <- 0 until maxCycles) {
+      // Ends at the program's "JVM exit!", not at maxCycles: DeepAll is done
+      // at about 4.2M of the default 30M cycles, and CI runs it. maxCycles
+      // still bounds a hang.
+      var cycle = 0
+      var done = false
+      while (cycle < maxCycles && !done) {
         dut.clockDomain.waitSampling()
 
         // (mismatch detection removed — debug signals not present in committed StackStage)
@@ -405,6 +410,7 @@ object JopJvmTestsStackCacheBramSim extends App {
             println(line)
             logLine(f"[$cycle%7d] $line")
             lineBuffer.clear()
+            if (line.contains("JVM exit!")) done = true
           } else if (char >= 32 && char < 127) {
             lineBuffer.append(char.toChar)
           }
@@ -973,6 +979,7 @@ object JopJvmTestsStackCacheBramSim extends App {
 
         // Track previous PC for instruction disassembly (ir = rom[prevPc])
         prevPc = dut.io.pc.toInt
+        cycle += 1
       }
 
       // Summary
@@ -993,7 +1000,7 @@ object JopJvmTestsStackCacheBramSim extends App {
 
       if (lineBuffer.nonEmpty) {
         println(lineBuffer.toString)
-        logLine(f"[$maxCycles%7d] ${lineBuffer.toString}")
+        logLine(f"[$cycle%7d] ${lineBuffer.toString}")
       }
 
       logLine("")
@@ -1001,7 +1008,7 @@ object JopJvmTestsStackCacheBramSim extends App {
       logLine(s"UART Output:\n${uartOutput.toString}")
       log.close()
 
-      println(s"\n=== Simulation Complete ($maxCycles cycles) ===")
+      println(s"\n=== Simulation Complete ($cycle cycles) ===")
       println(s"Full output:\n${uartOutput.toString}")
       println(s"Log: $logFilePath")
 

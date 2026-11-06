@@ -601,11 +601,21 @@ jobs:
         include:
           - name: baseline (all defaults, Java handlers)
             sim: JopJvmTestsBramSim
+            app: DoAll
           - name: microcode fallbacks
             sim: JopJvmTestsMcFallbackSim
+            app: DoAll
             # Seed pin REMOVED 2026-08-18 — see the note on the Run step.
           - name: all compute units
             sim: JopDcuCacheSim
+            app: DoAll
+          # jvm.DeepAll: the deep-stack tests DoAll leaves out, because on a core
+          # with no stack cache they hang (item 133). They ran only by hand until
+          # 2026-11-06; the stack-cache sim runs DeepAll by default and stops at
+          # its "JVM exit!", about 4.2M cycles.
+          - name: deep stack (DeepAll, stack cache)
+            sim: JopJvmTestsStackCacheBramSim
+            app: DeepAll
     steps:
       - uses: actions/checkout@v4
 
@@ -658,7 +668,7 @@ jobs:
       # gitignored, so building the tools first fails with 'cannot find symbol'.
       # `make -C java tools` declares that dependency; calling the sub-make
       # bypasses it. Locally it is masked because Const.java already exists.
-      - name: Build JOP tools and DoAll.jop
+      - name: Build JOP tools and ${{ matrix.app }}.jop
         # TARGET_JDK_HOME as step env, not a make argument: seven Makefiles set
         # it with ?=, so one environment variable overrides all of them. Passing
         # it to a single sub-make only moves the failure to the next one that
@@ -669,8 +679,8 @@ jobs:
         run: |
           make -C java tools
           make -C java runtime
-          make -C java/apps/JvmTests
-          ls -l build/ep4cgx150Serial/java/apps/JvmTests/DoAll.jop
+          make -C java/apps/JvmTests APP_NAME=${{ matrix.app }}
+          ls -l build/ep4cgx150Serial/java/apps/JvmTests/${{ matrix.app }}.jop
 
       # Hash the sim's inputs on EVERY run, passing or failing. Chasing the
       # item 30 intermittent failure, the only evidence that the failing run's
@@ -687,7 +697,7 @@ jobs:
           # (CI 5.020 from noble apt, the workstation 5.032 from Debian).
           verilator --version
           sha256sum \
-            build/ep4cgx150Serial/java/apps/JvmTests/DoAll.jop \
+            build/ep4cgx150Serial/java/apps/JvmTests/${{ matrix.app }}.jop \
             build/microcode/simulation/mem_rom.dat \
             build/microcode/simulation/mem_ram.dat \
             build/microcode/simulation/JumpTableData.scala \
@@ -730,7 +740,7 @@ jobs:
           sbt -J-Xmx4g --no-colors "Test/runMain jop.system.${{ matrix.sim }}" 2>&1 \
             | sed -r 's/\x1B\[[0-9;]*[mK]//g' | tee sim.log
 
-      - name: Check DoAll result
+      - name: Check ${{ matrix.app }} result
         # These sims are App objects: two exit 0 whatever the suite reports, so
         # the verdict is read out of the log. The script holds it to DoAll's own
         # count -- this step used to pass any run with an `ok` and no `failed!`,
@@ -759,7 +769,7 @@ jobs:
           # small enough to be worth uploading.
           find simWorkspace \( -name '*.fst' -o -name '*.vcd' \) -size -100M \
             -exec cp {} "$out"/ \; 2>/dev/null || true
-          cp build/ep4cgx150Serial/java/apps/JvmTests/DoAll.jop "$out"/ 2>/dev/null || true
+          cp build/ep4cgx150Serial/java/apps/JvmTests/${{ matrix.app }}.jop "$out"/ 2>/dev/null || true
           cp build/microcode/simulation/mem_rom.dat build/microcode/simulation/mem_ram.dat "$out"/ 2>/dev/null || true
           cp build/ep4cgx150Serial/java/gen/com/jopdesign/sys/Const.java "$out"/ 2>/dev/null || true
           ls -lR "$out"
