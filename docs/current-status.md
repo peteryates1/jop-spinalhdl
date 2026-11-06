@@ -5152,6 +5152,13 @@ Two had faults behind the missing verdict, as the `JopConfig*` sims did:
   With it, `JopTopDcuBramSim` passes 68 of 68: DoAll on every compute unit
   through `JopTop`.
 
+**And they stop when DoAll does** (`8f97066`). CI's baseline and
+microcode-fallback sims ran all 60M cycles whatever DoAll had done, and were
+its two longest jobs -- 17m25s and 17m51s of simulation in run 42209638795,
+against 2m20s for `JopDcuCacheSim`, which stops at DoAll's count. Both end on
+`JVM exit!` now: the baseline at 37,894,199 cycles and the fallbacks at
+20,093,653, each `PASS: 68 ok of 68 tests` and 68 of 68 under CI's log check.
+
 Guard: `.github/scripts/check-doall-log.sh` (a JVM-suite log passes only on
 every test DoAll announced),
 `spinalhdl/src/test/scala/jop/sim/SimVerdictTest.scala` (the rule the sims
