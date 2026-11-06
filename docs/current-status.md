@@ -5159,6 +5159,14 @@ against 2m20s for `JopDcuCacheSim`, which stops at DoAll's count. Both end on
 `JVM exit!` now: the baseline at 37,894,199 cycles and the fallbacks at
 20,093,653, each `PASS: 68 ok of 68 tests` and 68 of 68 under CI's log check.
 
+**And DeepAll runs in CI** (`8d40fb8`): a fourth `jvm-suite-sims` entry, the
+stack-cache sim on `jvm.DeepAll` -- the deep-stack tests DoAll leaves out,
+which hang on a core without a stack cache and had run only by hand. The sim
+stops at `JVM exit!` too, and `check-doall-log.sh` reads any suite's
+`<Name>: N tests` and counts `ok` as a word, since DeepAll's results end
+`+ ok` and `] ok`. Run as the job runs it, in a fresh clone: 4,208,476 cycles,
+`PASS: 4 ok of 4 tests`, the CI check 4 of 4, 119 s.
+
 Guard: `.github/scripts/check-doall-log.sh` (a JVM-suite log passes only on
 every test DoAll announced),
 `spinalhdl/src/test/scala/jop/sim/SimVerdictTest.scala` (the rule the sims
