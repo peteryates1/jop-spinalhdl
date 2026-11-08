@@ -63,7 +63,7 @@ generate: $(APP)
 # SCALA_SRC: every sbt project's sources.
 include ../scala.mk
 UCODE     := $(wildcard $(ROOT)/build/microcode/serial/mem_*.dat)
-$(GENDIR)/$(TOP).v: $(SCALA_SRC) $(UCODE)
+$(GENDIR)/$(TOP).v: $(SCALA_SRC) $(UCODE) $(UCODE_SCALA)
 	$(MAKE) generate
 
 # --- 2. Synthesis: in $(GENDIR), where the $readmemb files are, with the block

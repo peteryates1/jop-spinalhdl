@@ -47,7 +47,7 @@ all: build
 # The RTL, the XDC beside it, the clk_wiz definition and the summary, in one
 # generator run: the plan is an input like the Scala.
 generate: $(GEN_STAMP)
-$(GEN_STAMP): $(SCALA_SRC) $(PLAN)
+$(GEN_STAMP): $(SCALA_SRC) $(UCODE_SCALA) $(PLAN)
 	cd $(REPO_ROOT) && sbt "runMain jop.system.MeshPrbsBuild"
 	touch $@
 

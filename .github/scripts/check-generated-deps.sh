@@ -425,6 +425,14 @@ fi
 # which by design takes only the config, setup and hardware sources, and must
 # have all of the hardware layer's.
 #
+# AND it must depend on the three microcode tables sbt compiles as sources
+# (build.sbt's build/microcode/* roots), with a rule in the database that makes
+# them. Without that the flow builds only where an earlier build left them: a
+# cold clone stops at "object JumpTableData is not a member of package jop".
+# fpga/vivado.mk fixed that for three boards on 2026-08-29; the cluster
+# carrier's flow, written outside vivado.mk, had it again until 2026-11-08,
+# found by a cold clone. PROVED RED 2026-11-08 on that flow.
+#
 # Each board's OWN rule database, read with a goal that builds nothing: a plain
 # `make -p -n` builds the default goal, and the sub-makes it runs add their
 # databases to the dump. A board whose Makefile make cannot read fails, and
@@ -442,6 +450,9 @@ hw = {p for p in expected if p.startswith('hardware/src/main/scala/')}
 if not hw:
     print('FAIL no hardware-layer sources under hardware/src/main/scala: this check asserts nothing')
 rule = re.compile(r'^([^\s#][^:=]*?):(?:\s|$)(.*)$')
+ucode = {'build/microcode/simulation/JumpTableData.scala',
+         'build/microcode/serial/SerialJumpTableData.scala',
+         'build/microcode/flash/FlashJumpTableData.scala'}
 flow = re.compile(r'^(include \.\./(quartus|vivado)\.mk|SCALA_SRC\s*:?=)', re.M)
 rules = 0
 for b in sorted(os.listdir('fpga')):
@@ -458,18 +469,20 @@ for b in sorted(os.listdir('fpga')):
         err = (run.stderr.strip().splitlines() or ['no message'])[-1]
         print(f'FAIL fpga/{b}: make could not read its rules ({err})')
     db = run.stdout
-    deps = {}
+    deps, gens, targets = {}, {}, set()
     for line in db.splitlines():
         m = rule.match(line)
         if not m:
             continue
+        rel = lambda t: os.path.relpath(os.path.normpath(os.path.join(bdir, t)), root)
+        targets.update(rel(t) for t in m.group(1).split())
+        scala = {rel(t) for t in m.group(2).split() if t.endswith('.scala')}
         # Sources only: the generated microcode tables are .scala too, and a
         # phony target that depends on them alone runs every time anyway.
-        srcs = {p for p in (os.path.relpath(os.path.normpath(os.path.join(bdir, t)), root)
-                            for t in m.group(2).split() if t.endswith('.scala'))
-                if re.search(r'(^|/)src/main/scala/', p)}
+        srcs = {p for p in scala if re.search(r'(^|/)src/main/scala/', p)}
         if srcs:
             deps.setdefault(m.group(1).strip(), set()).update(srcs)
+            gens.setdefault(m.group(1).strip(), set()).update(scala & ucode)
     if not deps and flow.search(open(mk).read()):
         print(f'FAIL fpga/{b}: no rule depends on a Scala source -- its rules could not be read')
     for tgt, srcs in sorted(deps.items()):
@@ -478,6 +491,12 @@ for b in sorted(os.listdir('fpga')):
         miss = sorted(want - srcs)
         if miss:
             print(f'FAIL fpga/{b}: {tgt} misses {len(miss)} of {len(want)} Scala sources, e.g. {miss[0]}')
+        if not tgt.endswith('desc'):  # the hardware layer compiles without microcode
+            if ucode - gens[tgt]:
+                print(f'FAIL fpga/{b}: {tgt} does not depend on the microcode tables sbt compiles, '
+                      f'e.g. {sorted(ucode - gens[tgt])[0]}: it cannot build from a cold clone')
+            elif ucode - targets:
+                print(f'FAIL fpga/{b}: no rule makes {sorted(ucode - targets)[0]}')
 print(f'RULES {rules}')
 PY
 )
@@ -492,7 +511,11 @@ compiles, so a change there will not rebuild its RTL and constraints: the
 flow will succeed on the previous run's output. Find the sources with
 fpga/scala.mk's SCALA_SRC, which searches every sbt project; the unit
 descriptor's search is fpga/unit.mk's UNIT_DESC_SRC.
+
+Or it does not depend on the microcode tables, so it builds only after
+something else has run asm: give it fpga/vivado.mk's UCODE_SCALA and the
+grouped rule that makes them.
 EOF
   exit 1
 fi
-echo "  $src_rules rules elaborate from Scala, each from every source sbt compiles"
+echo "  $src_rules rules elaborate from Scala, each from every source sbt compiles, the microcode tables included"

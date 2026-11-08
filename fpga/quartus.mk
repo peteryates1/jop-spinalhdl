@@ -60,24 +60,8 @@ GEN_STAMP    = $(CFG_DIR)/rtl/.generated
 include $(JOP_FPGA_DIR)scala.mk
 UCODE       := $(wildcard $(PROJECT_ROOT)/build/microcode/serial/mem_*.dat)
 
-# The microcode files the Scala compile actually needs. Deliberately NOT a
-# $(wildcard): a wildcard prerequisite expands to EMPTY when the files are
-# absent, so `$(GEN_STAMP): ... $(UCODE)` said "depend on microcode only once
-# microcode already exists" -- backwards for a cold build. It made
-# cold-buildability depend on whether each board's own `all` happened to list
-# `microcode`, and on 2026-08-29 three boards that did not failed with
-#
-#   object JumpTableData is not a member of package jop
-#
-# These three files are exactly what build.sbt's source roots require. Grouped
-# target (`&:`, GNU make 4.3+) so ONE `asm all` satisfies all three, rather than
-# the recipe running once per missing file.
-UCODE_SCALA := $(PROJECT_ROOT)/build/microcode/simulation/JumpTableData.scala \
-               $(PROJECT_ROOT)/build/microcode/serial/SerialJumpTableData.scala \
-               $(PROJECT_ROOT)/build/microcode/flash/FlashJumpTableData.scala
-
-$(UCODE_SCALA) &:
-	cd $(PROJECT_ROOT)/asm && $(MAKE) all
+# UCODE_SCALA, the microcode tables sbt compiles, and the rule that makes them:
+# fpga/scala.mk.
 
 # THE EMBEDDED PROGRAM. A `BootMode.Simulation` design boots from a preloaded
 # image, so the .jop is baked into the bitstream. Nothing in any board flow built
