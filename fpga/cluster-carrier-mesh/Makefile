@@ -16,7 +16,7 @@
 #
 # THE CONSTRAINTS ARE GENERATED, with the RTL (jop.system.MeshPrbsBuild), from
 # the carrier designer's plan -- plan/mesh_pads.csv, the source of truth, and
-# plan/pads.csv -- into the build tree. The four per-socket XDCs the designer
+# plan/pads.csv -- and the PCB's straps, plan/straps.csv, into the build tree. The four per-socket XDCs the designer
 # delivered with it stay in plan/xdc/ as delivered; no build reads them.
 #
 # THE PART IS -1, as for the i9+ base board (fpga/colorlight-db-i9plus): the
@@ -35,7 +35,10 @@ VIVADO_BIN     ?= $(call host_tool,vivado,$(VIVADO_VERSION),VIVADO_BIN)/bin/viva
 PART    := xc7a50tfgg484-1
 TOP     := MeshPrbsTop
 NP_TCL  := $(REPO_ROOT)/fpga/scripts/vivado_build_nonproject.tcl
-PLAN    := plan/mesh_pads.csv plan/pads.csv
+# Every plan table, not just the ones the generator reads today (mesh_pads,
+# pads and straps): a table added later cannot then be left out, and a
+# needless regeneration costs seconds where a stale XDC costs a wrong build.
+PLAN    := $(wildcard plan/*.csv)
 
 CFG_DIR   := $(REPO_ROOT)/build/meshPrbs
 GEN_STAMP := $(CFG_DIR)/rtl/.generated

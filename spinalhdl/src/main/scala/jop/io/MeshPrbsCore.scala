@@ -52,18 +52,19 @@ case class MeshPortReport() extends Bundle {
 /**
  * The carrier's socket straps, read once at start-up (status item 178).
  *
- * SODIMM 113 is grounded on every carrier socket, and 115 (LSB) and 117 (MSB)
- * are grounded for a 0 and left open for a 1, so with the FPGA's pull-ups
- * sockets U1-U4 read as nodes 0-3. A module anywhere else reads 113 high:
- * `onCarrier` stays low and the design drives nothing.
+ * Every carrier socket grounds its presence strap, and the two node straps
+ * are grounded for a 0 and left open for a 1, each through 1 kohm, so with the
+ * FPGA's pull-ups sockets U1-U4 read as nodes 0-3 (plan/straps.csv: SODIMM
+ * 120, 122 LSB, 124 MSB). A module anywhere else reads the presence strap
+ * high: `onCarrier` stays low and the design drives nothing.
  *
  * The straps count as read once all three have held one value for
  * `settleCycles` (the pull-ups are weak); they are never read again.
  */
 case class MeshStraps(settleCycles: Int) extends Component {
   val io = new Bundle {
-    val carrierN  = in Bool()        // SODIMM 113
-    val node      = in Bits(2 bits)  // SODIMM 117 (bit 1) and 115 (bit 0)
+    val carrierN  = in Bool()        // the presence strap: 0 on the carrier
+    val node      = in Bits(2 bits)  // the node straps, MSB and LSB
     val valid     = out Bool()
     val onCarrier = out Bool()
     val nodeId    = out UInt(2 bits)

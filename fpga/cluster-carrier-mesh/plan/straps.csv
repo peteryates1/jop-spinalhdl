@@ -1,0 +1,13 @@
+socket,pin,signal,tie
+U1,120,strap_carrier_n,GND
+U1,122,strap_node[0],GND
+U1,124,strap_node[1],GND
+U2,120,strap_carrier_n,GND
+U2,122,strap_node[0],open
+U2,124,strap_node[1],GND
+U3,120,strap_carrier_n,GND
+U3,122,strap_node[0],GND
+U3,124,strap_node[1],open
+U4,120,strap_carrier_n,GND
+U4,122,strap_node[0],open
+U4,124,strap_node[1],open

@@ -55,7 +55,24 @@ class MeshPlanTest extends AnyFunSuite {
   test("the bundles share no pin, and the carrier's own pins are in none of them") {
     val pins = plan.bundles.flatMap(_.lines.map(_.pin))
     assert(pins.size == 60 && pins.distinct.size == 60)
-    for ((name, pin) <- MeshPlan.carrierPins) assert(!pins.contains(pin), s"$name on SODIMM $pin")
+    for ((name, pin) <- plan.carrierPins) assert(!pins.contains(pin), s"$name on SODIMM $pin")
+  }
+
+  // plan/straps.csv is the PCB netlist's strap wiring; the design's strap pins
+  // come from it, so this is where a PCB that mis-straps a socket fails.
+  test("each socket's straps, as the PCB wires them, read as its node through the FPGA's pull-ups") {
+    val straps = MeshPlan.loadStraps()
+    for (n <- 0 to 3) {
+      def level(signal: String) = {
+        val s = straps.filter(s => s.node == n && s.signal == signal)
+        assert(s.size == 1, s"U${n + 1} $signal: ${s.size} straps")
+        if (s.head.tie == "open") 1 else 0
+      }
+      assert(level("strap_carrier_n") == 0, s"U${n + 1} does not ground the presence strap")
+      assert(2 * level("strap_node[1]") + level("strap_node[0]") == n, s"U${n + 1} reads as another node")
+    }
+    assert(plan.carrierPins.filter(_._1.startsWith("strap")) ==
+      Seq("strap_carrier_n" -> 120, "strap_node[0]" -> 122, "strap_node[1]" -> 124))
   }
 
   test("every mesh net joins a TX line to the same line of its peer's RX bundle, on the same port") {

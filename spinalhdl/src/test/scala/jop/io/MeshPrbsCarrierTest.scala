@@ -11,7 +11,8 @@ import jop.TestVectorUtils
  *
  * Four MeshPrbsCore, each on its own clock -- the modules have their own
  * oscillators, so the periods here differ by up to 6 % -- each with its
- * socket's straps, and every net of plan/mesh_nets.csv between them. A pad
+ * socket's straps as the PCB wires them (plan/straps.csv: a grounded strap
+ * reads 0, an open one 1), and every net of plan/mesh_nets.csv between them. A pad
  * sees whichever end drives its net, or 0 (the pull-down) when neither does. A
  * net driven from BOTH ends is a fault, and so is any pad driven before the
  * straps have been read: a monitor checks both on every cycle.
@@ -122,13 +123,20 @@ class MeshPrbsCarrierTest extends AnyFunSuite {
     plan.bundles.indices.map(i => bits.testBit(i))
   }
 
+  /** Each socket's strap levels as the PCB wires them: (presence strap high,
+    * node straps), a grounded strap reading 0 and an open one 1. */
+  val pcbStraps: Seq[(Boolean, Int)] = (0 until 4).map { n =>
+    def high(signal: String) = plan.straps.exists(s => s.node == n && s.signal == signal && s.tie == "open")
+    (high("strap_carrier_n"), (if (high("strap_node[1]")) 2 else 0) + (if (high("strap_node[0]")) 1 else 0))
+  }
+
   /** Runs the four nodes for `windows` link windows, with each socket's
-    * 113 strap and node straps, then `check`. Throughout, no net may be driven
-    * from both ends and no node may drive before its straps are read. */
-  def run(onCarrier: Seq[Boolean], node: Seq[Int], windows: Int = 24)(check: Carrier => Unit): Unit =
+    * presence strap and node straps, then `check`. Throughout, no net may be
+    * driven from both ends and no node may drive before its straps are read. */
+  def run(straps: Seq[(Boolean, Int)], windows: Int = 24)(check: Carrier => Unit): Unit =
     compiled.doSim { dut =>
-      dut.io.carrierN #= (0 until 4).map(n => if (onCarrier(n)) 0 else 1 << n).sum
-      for (n <- 0 until 4) dut.io.node(n) #= node(n)
+      dut.io.carrierN #= (0 until 4).map(n => if (straps(n)._1) 1 << n else 0).sum
+      for (n <- 0 until 4) dut.io.node(n) #= straps(n)._2
       for (n <- 0 until 4) {
         dut.cds(n).forkStimulus(periods(n))
         dut.cds(n).assertReset()
@@ -156,7 +164,7 @@ class MeshPrbsCarrierTest extends AnyFunSuite {
     }
 
   test("one design in all four sockets brings up all twelve links, with no error and no net driven twice") {
-    run(onCarrier = Seq.fill(4)(true), node = Seq(0, 1, 2, 3)) { dut =>
+    run(pcbStraps) { dut =>
       for (n <- 0 until 4) {
         val v = dut.io.nodes(n)
         assert(v.valid.toBoolean && v.onCarrier.toBoolean && v.nodeId.toInt == n, s"node $n straps")
@@ -173,8 +181,8 @@ class MeshPrbsCarrierTest extends AnyFunSuite {
   }
 
   test("a module that is not on the carrier drives nothing, and only the links from it stay down") {
-    // node 2's 113 open, as on any other board, and its node straps floating high
-    run(onCarrier = Seq(true, true, false, true), node = Seq(0, 1, 3, 3)) { dut =>
+    // node 2's presence strap open, as on any other board, and its node straps floating high
+    run(pcbStraps.updated(2, (true, 3))) { dut =>
       assert(!dut.io.nodes(2).onCarrier.toBoolean && dut.io.nodes(2).valid.toBoolean)
       assert(!drive(dut, 2).contains(true), "node 2 drives off the carrier")
       for (n <- Seq(0, 1, 3); k <- 1 to 3) {

@@ -37,9 +37,9 @@ class XilinxObuft extends BlackBox {
  * The pins are the plan's ten bundles (jop.io.MeshPlan), named by their clock
  * pin -- mesh58_clk, mesh58_d0 .. mesh58_d3, mesh58_fr -- not by port: which
  * port a bundle is, and which way it runs, depends on the socket. The design
- * reads the socket straps (SODIMM 113, 115, 117) and then drives that socket's
- * TX bundles only. Until then, and for good on any board that does not ground
- * 113, every mesh pin is an input.
+ * reads the socket straps (plan/straps.csv) and then drives that socket's TX
+ * bundles only. Until then, and for good on any board that does not ground the
+ * presence strap, every mesh pin is an input.
  *
  * Each pad gets the buffer its bundle needs: an IOBUF where some sockets drive
  * the bundle and others receive on it, an OBUFT where every socket that uses
@@ -231,8 +231,8 @@ object MeshPrbsTop {
     sb ++= "create_clock -name clk25 -period 40.000 [get_ports clk25]\n"
     pin("led_n", "A18", "", "LED D2")
 
-    sb ++= "\n## The carrier: the UART to the RP2040, and the socket straps (grounded = 0)\n"
-    for ((port, sodimm) <- MeshPlan.carrierPins) {
+    sb ++= "\n## The carrier: the UART to the RP2350B, and the socket straps (grounded = 0)\n"
+    for ((port, sodimm) <- plan.carrierPins) {
       val (ball, bank) = balls(sodimm)
       pin(port, ball, if (port.startsWith("strap")) " PULLTYPE PULLUP" else "", s"SODIMM $sodimm, bank $bank")
     }

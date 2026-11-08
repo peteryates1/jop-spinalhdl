@@ -8,9 +8,9 @@ import jop.TestVectorUtils
 /**
  * The carrier's socket straps, read once at start-up.
  *
- * Every socket grounds SODIMM 113, and 115 (LSB) and 117 (MSB) encode its node
- * number: grounded reads 0, open reads 1 through the FPGA's pull-up. A module
- * on any other board reads 113 high, and the cluster design then drives
+ * Every socket grounds its presence strap, and the two node straps encode its
+ * node number: grounded reads 0, open reads 1 through the FPGA's pull-up. A
+ * module on any other board reads the presence strap high, and the design drives
  * nothing. Nothing is driven until the straps have been stable for
  * `settleCycles` either, since the pull-ups need time.
  */
@@ -44,7 +44,7 @@ class MeshStrapsTest extends AnyFunSuite {
     }
   }
 
-  test("off the carrier (113 open) the straps are read, and say drive nothing") {
+  test("off the carrier (the presence strap open) the straps are read, and say drive nothing") {
     run(carrierN = true, node = 3) { dut =>
       dut.clockDomain.waitSampling(settle + 20)
       val (valid, onCarrier, _) = read(dut)

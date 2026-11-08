@@ -45,10 +45,12 @@ derives the bundles from the CSV, and `MeshPlanTest` holds them to this table:
 A dash is a bundle the socket leaves unconnected. Every bundle that is ever
 an RX has its clock on the P side of a clock-capable pair.
 
-**The socket straps** tell the design where it is. They are in the PCB netlist
-of 2026-11-08; the FPGA pulls all three up, so an open strap reads 1:
+**The socket straps** tell the design where it is. `plan/straps.csv` is the
+PCB netlist's strap wiring (the third netlist of 2026-11-08), and the design
+takes its strap pins from it. Each grounded strap goes through 1 kohm
+(R91-R98); the FPGA pulls all three up, so an open strap reads 1:
 
-| Socket | 113 | 115 (LSB) | 117 (MSB) | Reads as |
+| Socket | 120 (presence) | 122 (LSB) | 124 (MSB) | Reads as |
 |---|---|---|---|---|
 | U1 | GND | GND | GND | node 0 |
 | U2 | GND | open | GND | node 1 |
@@ -56,9 +58,9 @@ of 2026-11-08; the FPGA pulls all three up, so an open strap reads 1:
 | U4 | GND | open | open | node 3 |
 | another board | open | – | – | drives nothing |
 
-113 reading 0 is what "on the carrier" means: the design drives nothing until
-the straps have held one value for 1 ms, and never on a board where 113 reads
-1. A board that grounds 113 for some other reason would pass that check.
+120 reading 0 is what "on the carrier" means: the design drives nothing until
+the straps have held one value for 1 ms, and never on a board where 120 reads
+1. A board that grounds 120 for some other reason would pass that check.
 
 ## The design
 
@@ -97,32 +99,34 @@ the straps have held one value for 1 ms, and never on a board where 113 reads
   which the PRBS checker alone cannot see in a zero-delay simulation, and the
   held-at-0 test on a checker without the "saw a 1" rule.
 - `MeshPlanTest`: the bundle table above, one TX and one RX bundle per port
-  in every socket, P-side clock pins, no pin in two bundles, and every net of
-  `mesh_nets.csv` joining a TX line to the same line of its peer's RX bundle.
+  in every socket, P-side clock pins, no pin in two bundles, every net of
+  `mesh_nets.csv` joining a TX line to the same line of its peer's RX bundle,
+  and each socket's straps, as `straps.csv` wires them, reading as its node.
 - `MeshStrapsTest`: each socket's straps read as its node, and only after they
-  have settled; 113 open means drive nothing; a strap that changes restarts
-  the wait, and once read they are never read again.
+  have settled; an open presence strap means drive nothing; a strap that
+  changes restarts the wait, and once read they are never read again.
 - `MeshPrbsCarrierTest`: the one design in all four sockets, on four clocks up
-  to 6 % apart, wired as `mesh_nets.csv` wires them. All twelve links lock with
-  no errors, no net is ever driven from both ends, and nothing is driven
-  before the straps are read. A module whose 113 is open drives nothing, and
-  only the links from it stay down. Proved red with the node straps read
-  bit-swapped, with TX enabled without the straps, and with each port
-  reporting its own looped-back TX bundle. The first test passed that last
-  one; the second caught it.
+  to 6 % apart, with the straps `straps.csv` gives each socket, wired as
+  `mesh_nets.csv` wires them. All twelve links lock with no errors, no net is
+  ever driven from both ends, and nothing is driven before the straps are
+  read. A module whose presence strap is open drives nothing, and only the
+  links from it stay down. Proved red with the node straps read bit-swapped,
+  with TX enabled without the straps, with each port reporting its own
+  looped-back TX bundle (the first test passed that one; the second caught
+  it), and with two sockets' LSB straps swapped in `straps.csv`.
 
 ## Results, 2026-11-08 (Vivado 2025.2, xc7a50tfgg484-1)
 
-One build, one bitstream for all four sockets:
+One build, one bitstream for all four sockets, with the straps on 120/122/124:
 
 | Setup WNS | Hold WHS | DRC | TX lines from ODDR | RX D/FR in ILOGIC | RX clocks IBUF->BUFG | Outputs that turn off | Pulls |
 |---|---|---|---|---|---|---|---|
-| +5.349 ns | +0.033 ns | 0 checks found | 48/48 | 40/40 | 8/8 | 48/48 | 63/63 |
+| +5.349 ns | +0.052 ns | 0 checks found | 48/48 | 40/40 | 8/8 | 48/48 | 63/63 |
 
 It uses 906 LUTs of 32,600, 2,767 registers and 10 of the 32 BUFGs. The worst
 setup path is an RX input (`mesh143_d3` into its I/O-tile flip-flop) against
-the ±1.5 ns input-delay template. The worst hold path is flop-to-flop inside
-one RX clock (mesh192's checker into its clock crossing), not a pin. Each
+the ±1.5 ns input-delay template. The worst hold path is flop-to-flop in the
+link clock (a clock crossing's output into the report), not a pin. Each
 mesh output's buffer is switched by its own register driving T, never a
 constant. The only ports check_timing finds unconstrained are the ones the XDC
 means to leave: the straps and `uart_rx` (false paths), and the outputs, which
@@ -169,19 +173,24 @@ was replaced by this one.
    - Both ends of every net agree on lane and direction, and each socket's XDC
      matches `mesh_pads.csv`.
 
-   Three pins are legal at LVCMOS33 but worth knowing:
-   - R14 (pin 125, `mesh131_d1`) and W7 (pin 115, the node strap's LSB) are
-     VREF-capable. That matters only if banks 14 or 34 ever take a VREF
-     standard.
-   - AA19 (pin 141, `mesh143_d3`) doubles as RDWR_B, which only SelectMAP
-     configuration uses; the modules boot from SPI.
+   Four pins are legal at LVCMOS33 but worth knowing:
+   - R14 (pin 125, `mesh131_d1`) is VREF-capable. That matters only if bank
+     14 ever takes a VREF standard.
+   - AA19 (pin 141, `mesh143_d3`) doubles as RDWR_B, and two straps double as
+     configuration pins too: R16 (pin 120) as BPI address A04, and V17 (pin
+     124) as SelectMAP's CSI_B. Only parallel configuration uses them; the
+     modules boot from SPI, after which they are ordinary I/O.
 
-**The PCB netlist** (EasyEDA, 2026-11-08) matches plan v2 on all 72 mesh
-nets: each is driver pin, one 33 ohm resistor, receiver pin, nothing else, and
-the resistor designators match `mesh_resistor_placement.csv`. Its straps are
-as tabled above. The U4 -> U1 clock stays on pin 192 with a jog around the
-JTAG pogo holes, which adds 0.64 mm (about 4 ps) to it; the only other pin
-that could take it is 198, the UART RX.
+**The PCB netlist** (EasyEDA, the third of 2026-11-08) matches plan v2 on all
+72 mesh nets: each is driver pin, one 33 ohm resistor, receiver pin, nothing
+else, and the resistor designators match `mesh_resistor_placement.csv`. Its
+straps are as tabled above. The U4 -> U1 clock stays on pin 192 with a jog
+around the JTAG pogo holes, which adds 0.64 mm (about 4 ps) to it; the only
+other pin that could take it is 198, the UART RX. Each module's UART and JTAG
+go to a Waveshare Core2350B (RP2350B), powered from USB VBUS or `1_5V`
+through two Schottky diodes, which also reads whether each 5 V rail is up:
+`1_5V` and `2_5V` each drive a 2N7002 gate through 100k/1M, and its drain
+pulls `SENSE_1_5V` or `SENSE_2_5V` low.
 
 ## Findings for the plan's XDC
 
@@ -215,17 +224,25 @@ These come from handoff section 8, with what this check adds:
   measure it; LVCMOS33 is legal in all five, which are HR banks.
 - **The speed grade.** This was built at -1, the slower grade.
 - **The UART direction** on pins 197/198. Both are ordinary I/O, so either
-  direction builds; the RP2040's wiring decides.
+  direction builds; the RP2350B's wiring decides.
 - **Pins 41 and 43**, the carrier's ETH1 LED nets, are FPGA balls R2 and P6
   on the i9+, not PHY outputs. The jack's LEDs light only if the FPGA drives
   them.
-- **The strap ties** go straight to ground. A bitstream that drove 113, 115
-  or 117 high would short an output; a resistor of about 1 kohm in each tie
-  would prevent that and still read 0 against the FPGA's weak pull-up (a few
-  hundred microamps at most, so a few tenths of a volt, under LVCMOS33's
-  0.8 V input-low limit).
+- **The RP2350B's supply** comes from VBUS or `1_5V`, not `2_5V`. With only
+  U3 and U4 powered and no USB, it is off, and U3 and U4 lose their UART,
+  their JTAG and any watchdog. A third diode, from `2_5V`, would keep it up
+  whenever any module is.
+- **A module whose rail is off must not see its JTAG or UART RX driven
+  high.** The FPGA's input clamp diodes would feed its unpowered banks from
+  the RP2350B. The sense lines let firmware hold those pins as inputs (or low)
+  while a rail is down; a series resistor in each, 100-330 ohm, would limit
+  the current if it ever does not.
+- **The sense lines have no pull-up**: firmware must enable the RP2350B's
+  own, and then a rail that is up reads 0. They tell present from absent,
+  not in spec from out of it: the 2N7002 turns on somewhere between 1 and
+  2.5 V at its gate, a rail of roughly 1.1-2.8 V.
 - **What each module's flash holds at first power-up.** A module runs its
-  flash image until the RP2040 loads it over JTAG. The Atari 800 base board's
+  flash image until the RP2350B loads it over JTAG. The Atari 800 base board's
   JOP image drives SODIMM 50-66 as LEDs, and on the carrier 58-66 are mesh
   lines: a module carrying it would fight its peer's driver through the 33 ohm
   resistor. Erase the flash, or write this bitstream to it, first.

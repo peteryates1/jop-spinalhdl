@@ -28,6 +28,10 @@ case class MeshBundle(lines: Seq[MeshLine], uses: Map[Int, MeshUse]) {
 /** One mesh net, driver to receiver, by node (0-3 = sockets U1-U4) and SODIMM pin. */
 case class MeshNet(name: String, src: Int, srcPin: Int, dst: Int, dstPin: Int)
 
+/** One socket strap as the PCB wires it: its SODIMM pin, the design signal
+  * it is, and its tie -- "GND" (through a resistor) or "open". */
+case class MeshStrap(node: Int, pin: Int, signal: String, tie: String)
+
 /**
  * The JOP cluster carrier's mesh pin plan, as ONE design for every socket
  * reads it (status item 178).
@@ -40,18 +44,27 @@ case class MeshNet(name: String, src: Int, srcPin: Int, dst: Int, dstPin: Int)
  * changes nothing but which bundles it drives: one bitstream can serve all
  * four, choosing at run time from the socket straps.
  *
+ * The straps are `straps.csv`, the PCB netlist's strap wiring: which SODIMM
+ * pin is which strap, and which sockets ground it. One bitstream needs each
+ * strap on the same pin in every socket.
+ *
  * `load` fails, rather than returning a plan the design cannot use, if a pin
- * changes role between sockets, a pin is in two bundles, or a socket lacks a
- * TX or RX bundle on a port. MeshPlanTest holds the result to a hand-written
- * table.
+ * changes role between sockets, a pin is in two bundles, a socket lacks a TX
+ * or RX bundle on a port, or a strap moves between sockets. MeshPlanTest holds
+ * the bundles to a hand-written table and the straps to each socket's node.
  */
-case class MeshPlan(bundles: Seq[MeshBundle]) {
+case class MeshPlan(bundles: Seq[MeshBundle], straps: Seq[MeshStrap]) {
   private val byPin: Map[Int, (MeshBundle, String)] =
     bundles.flatMap(b => b.lines.map(l => l.pin -> (b, l.role))).toMap
 
   /** The bundle a SODIMM pin is in, and its role there. */
   def lineAt(pin: Int): (MeshBundle, String) =
     byPin.getOrElse(pin, sys.error(s"SODIMM $pin is not a mesh pin"))
+
+  /** Carrier signals outside the mesh, by SODIMM pin: the UART, then the
+    * straps in signal order. */
+  def carrierPins: Seq[(String, Int)] =
+    MeshPlan.uartPins ++ straps.map(s => s.signal -> s.pin).distinct.sortBy(_._1)
 
   /** The bundle node `node` drives (tx) or receives on, for mesh port `port`. */
   def bundle(node: Int, port: Int, tx: Boolean): MeshBundle =
@@ -64,14 +77,12 @@ object MeshPlan {
   /** A bundle's lines, in the order the design and the XDC list them. */
   val roles = Seq("CLK", "D0", "D1", "D2", "D3", "FR")
 
-  /** Carrier signals on every socket, outside the mesh, by SODIMM pin: the
-    * UART to the RP2040 (handoff section 1) and the socket straps (the PCB
-    * netlist of 2026-11-08). 113 is grounded on every socket -- "on the
-    * carrier" -- and 115 (LSB) and 117 (MSB) are grounded for a 0 and open for
-    * a 1, so U1-U4 read as nodes 0-3. */
-  val carrierPins: Seq[(String, Int)] = Seq(
-    "uart_tx" -> 197, "uart_rx" -> 198,
-    "strap_carrier_n" -> 113, "strap_node[0]" -> 115, "strap_node[1]" -> 117)
+  /** The UART to the carrier's RP2350B, on every socket (handoff section 1). */
+  val uartPins: Seq[(String, Int)] = Seq("uart_tx" -> 197, "uart_rx" -> 198)
+
+  /** The design's strap signals: grounded on every carrier socket ("on the
+    * carrier"), and the node number's LSB and MSB, each grounded for a 0. */
+  val strapSignals = Seq("strap_carrier_n", "strap_node[0]", "strap_node[1]")
 
   /** Rows of a CSV file as header -> value maps. Fields may be quoted (the
     * plan's notes hold commas); no field holds a quote. */
@@ -136,11 +147,25 @@ object MeshPlan {
 
     val pins = bundles.flatMap(_.lines.map(_.pin))
     require(pins.distinct.size == pins.size, "a pin is in two bundles")
-    val plan = MeshPlan(bundles)
+
+    val straps = loadStraps(dir)
+    for (n <- 0 to 3; sig <- strapSignals)
+      require(straps.count(s => s.node == n && s.signal == sig) == 1, s"U${n + 1}: strap $sig")
+    for (sig <- strapSignals)
+      require(straps.filter(_.signal == sig).map(_.pin).distinct.size == 1, s"strap $sig moves between sockets")
+    require(straps.size == 12, s"${straps.size} straps, not 12")
+    require(!straps.exists(s => pins.contains(s.pin)), "a strap is on a mesh pin")
+    val plan = MeshPlan(bundles, straps)
     for (n <- 0 to 3; k <- 1 to 3; tx <- Seq(true, false))
       require(bundles.count(_.uses.get(n).contains(MeshUse(k, tx))) == 1, s"node $n port $k tx=$tx")
     plan
   }
+
+  def loadStraps(dir: String = dir): Seq[MeshStrap] =
+    readCsv(s"$dir/straps.csv").map { r =>
+      require(Seq("GND", "open").contains(r("tie")), s"strap tie ${r("tie")}")
+      MeshStrap(node(r("socket")), r("pin").toInt, r("signal"), r("tie"))
+    }
 
   def loadNets(dir: String = dir): Seq[MeshNet] =
     readCsv(s"$dir/mesh_nets.csv").map { r =>
