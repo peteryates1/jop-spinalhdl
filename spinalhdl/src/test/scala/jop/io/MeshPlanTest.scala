@@ -75,6 +75,34 @@ class MeshPlanTest extends AnyFunSuite {
       Seq("strap_carrier_n" -> 120, "strap_node[0]" -> 122, "strap_node[1]" -> 124))
   }
 
+  // plan/uart.csv is the PCB netlist's UART wiring: on each socket the RP2350B
+  // drives one pin, through its series resistor, and the FPGA the other.
+  test("each socket's UART, as the PCB wires it: the FPGA receives on the pin the RP2350B drives") {
+    val rows = MeshPlan.readCsv(s"${MeshPlan.dir}/uart.csv")
+    assert(rows.size == 8)
+    val pins = plan.carrierPins.toMap
+    for (r <- rows) {
+      val signal = if (r("driver") == "RP2350B") "uart_rx" else "uart_tx"
+      assert(pins(signal) == r("pin").toInt, s"${r("socket")} ${r("net")} is driven by the ${r("driver")}")
+    }
+    assert(plan.carrierPins.filter(_._1.startsWith("uart")) == Seq("uart_tx" -> 198, "uart_rx" -> 197))
+  }
+
+  test("a socket whose UART runs the other way is refused: one bitstream serves all four") {
+    import java.nio.file.{Files, Paths}
+    val tmp = Files.createTempDirectory("MeshPlanTest")
+    for (f <- Seq("pads.csv", "mesh_pads.csv", "straps.csv"))
+      Files.copy(Paths.get(MeshPlan.dir, f), tmp.resolve(f))
+    val swapped = Files.readAllLines(Paths.get(MeshPlan.dir, "uart.csv")).toArray.map {
+      case "U1,197,U1_TX,RP2350B" => "U1,197,U1_TX,FPGA"
+      case "U1,198,U1_RX,FPGA"    => "U1,198,U1_RX,RP2350B"
+      case line                   => line
+    }
+    Files.write(tmp.resolve("uart.csv"), swapped.mkString("", "\n", "\n").getBytes)
+    val e = intercept[IllegalArgumentException](MeshPlan.load(tmp.toString))
+    assert(e.getMessage.contains("UART"), e.getMessage)
+  }
+
   test("every mesh net joins a TX line to the same line of its peer's RX bundle, on the same port") {
     val nets = MeshPlan.loadNets()
     assert(nets.size == 72)

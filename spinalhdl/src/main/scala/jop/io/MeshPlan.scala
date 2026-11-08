@@ -32,6 +32,11 @@ case class MeshNet(name: String, src: Int, srcPin: Int, dst: Int, dstPin: Int)
   * it is, and its tie -- "GND" (through a resistor) or "open". */
 case class MeshStrap(node: Int, pin: Int, signal: String, tie: String)
 
+/** One socket UART pin as the PCB wires it: its SODIMM pin, its net, and
+  * which side drives it -- the "RP2350B" (through a series resistor) or the
+  * "FPGA". */
+case class MeshUartPin(node: Int, pin: Int, net: String, driver: String)
+
 /**
  * The JOP cluster carrier's mesh pin plan, as ONE design for every socket
  * reads it (status item 178).
@@ -48,12 +53,17 @@ case class MeshStrap(node: Int, pin: Int, signal: String, tie: String)
  * pin is which strap, and which sockets ground it. One bitstream needs each
  * strap on the same pin in every socket.
  *
+ * The UART is `uart.csv`, the netlist's UART wiring: which side drives each
+ * of a socket's two UART pins. The design receives on the pin the RP2350B
+ * drives and sends on the other, so those too must match on every socket.
+ *
  * `load` fails, rather than returning a plan the design cannot use, if a pin
  * changes role between sockets, a pin is in two bundles, a socket lacks a TX
- * or RX bundle on a port, or a strap moves between sockets. MeshPlanTest holds
- * the bundles to a hand-written table and the straps to each socket's node.
+ * or RX bundle on a port, or a strap or UART pin moves between sockets.
+ * MeshPlanTest holds the bundles to a hand-written table, the straps to each
+ * socket's node and the UART to the side that drives it.
  */
-case class MeshPlan(bundles: Seq[MeshBundle], straps: Seq[MeshStrap]) {
+case class MeshPlan(bundles: Seq[MeshBundle], straps: Seq[MeshStrap], uart: Seq[MeshUartPin]) {
   private val byPin: Map[Int, (MeshBundle, String)] =
     bundles.flatMap(b => b.lines.map(l => l.pin -> (b, l.role))).toMap
 
@@ -61,10 +71,13 @@ case class MeshPlan(bundles: Seq[MeshBundle], straps: Seq[MeshStrap]) {
   def lineAt(pin: Int): (MeshBundle, String) =
     byPin.getOrElse(pin, sys.error(s"SODIMM $pin is not a mesh pin"))
 
-  /** Carrier signals outside the mesh, by SODIMM pin: the UART, then the
-    * straps in signal order. */
-  def carrierPins: Seq[(String, Int)] =
-    MeshPlan.uartPins ++ straps.map(s => s.signal -> s.pin).distinct.sortBy(_._1)
+  /** Carrier signals outside the mesh, by SODIMM pin: the UART -- the design
+    * receives on the pin the RP2350B drives -- then the straps in signal order. */
+  def carrierPins: Seq[(String, Int)] = {
+    def drivenBy(driver: String) = uart.find(_.driver == driver).get.pin
+    Seq("uart_tx" -> drivenBy("FPGA"), "uart_rx" -> drivenBy("RP2350B")) ++
+      straps.map(s => s.signal -> s.pin).distinct.sortBy(_._1)
+  }
 
   /** The bundle node `node` drives (tx) or receives on, for mesh port `port`. */
   def bundle(node: Int, port: Int, tx: Boolean): MeshBundle =
@@ -76,9 +89,6 @@ object MeshPlan {
 
   /** A bundle's lines, in the order the design and the XDC list them. */
   val roles = Seq("CLK", "D0", "D1", "D2", "D3", "FR")
-
-  /** The UART to the carrier's RP2350B, on every socket (handoff section 1). */
-  val uartPins: Seq[(String, Int)] = Seq("uart_tx" -> 197, "uart_rx" -> 198)
 
   /** The design's strap signals: grounded on every carrier socket ("on the
     * carrier"), and the node number's LSB and MSB, each grounded for a 0. */
@@ -155,7 +165,14 @@ object MeshPlan {
       require(straps.filter(_.signal == sig).map(_.pin).distinct.size == 1, s"strap $sig moves between sockets")
     require(straps.size == 12, s"${straps.size} straps, not 12")
     require(!straps.exists(s => pins.contains(s.pin)), "a strap is on a mesh pin")
-    val plan = MeshPlan(bundles, straps)
+
+    val uart = loadUart(dir)
+    for (n <- 0 to 3; d <- Seq("RP2350B", "FPGA"))
+      require(uart.count(u => u.node == n && u.driver == d) == 1, s"U${n + 1}: not one UART pin driven by the $d")
+    for (d <- Seq("RP2350B", "FPGA"))
+      require(uart.filter(_.driver == d).map(_.pin).distinct.size == 1, s"the UART pin the $d drives moves between sockets")
+    require(!uart.exists(u => pins.contains(u.pin) || straps.exists(_.pin == u.pin)), "a UART pin is on a mesh or strap pin")
+    val plan = MeshPlan(bundles, straps, uart)
     for (n <- 0 to 3; k <- 1 to 3; tx <- Seq(true, false))
       require(bundles.count(_.uses.get(n).contains(MeshUse(k, tx))) == 1, s"node $n port $k tx=$tx")
     plan
@@ -165,6 +182,12 @@ object MeshPlan {
     readCsv(s"$dir/straps.csv").map { r =>
       require(Seq("GND", "open").contains(r("tie")), s"strap tie ${r("tie")}")
       MeshStrap(node(r("socket")), r("pin").toInt, r("signal"), r("tie"))
+    }
+
+  def loadUart(dir: String = dir): Seq[MeshUartPin] =
+    readCsv(s"$dir/uart.csv").map { r =>
+      require(Seq("RP2350B", "FPGA").contains(r("driver")), s"UART driver ${r("driver")}")
+      MeshUartPin(node(r("socket")), r("pin").toInt, r("net"), r("driver"))
     }
 
   def loadNets(dir: String = dir): Seq[MeshNet] =
