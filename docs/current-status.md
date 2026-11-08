@@ -41,7 +41,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 
 1. **[#165](#item-165)** — A halted core keeps executing until its next `wait`, so it can dirty its stack AFTER the stop-the-world flush: measured in simulation, the collector's `halted && flushed` acknowledgement reads true for 2-6 cycles and is then withdrawn while a second flush runs. Whether the collector can act inside that window is unassessed
 2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
-3. **[#178](#item-178)** — The JOP cluster carrier (four i9+ on one board, linked by a mesh) is not made yet: one bitstream serves all four sockets, reading the straps the PCB added, and builds clean in Vivado; the PCB netlist matches pin plan v2. XDC fixes go back to its designer, and bank VCCO, the speed grade, the UART direction, the ETH1 LED pins, the RP2350B's supply and what the modules' flash holds stay open. Ranked here because the plan has to settle before the board is made
+3. **[#178](#item-178)** — The JOP cluster carrier (four i9+ on one board, linked by a mesh) is not made yet: one bitstream serves all four sockets, taking its straps and its UART pins from the PCB's tables, and builds clean in Vivado; the PCB netlist matches pin plan v2. XDC fixes go back to its designer, and bank VCCO, the speed grade, the ETH1 LED pins, the JTAG series resistors (on TDO, not TDI), the new reset line and what the modules' flash holds stay open. Ranked here because the plan has to settle before the board is made
 4. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 5. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
 6. **[#138](#item-138)** — The class-struct layout is restated in four languages and header word 1 has no name: `JVMHelp.java:313,322` read it as `rdMem(p+1)`, and nothing ties `CLS_HEAD` to what JOPizer emits. Nothing is broken today; a header reorder would leave a board with no output at all
@@ -5206,8 +5206,11 @@ every socket, 122 (LSB) and 124 (MSB) the node number, each tie through
 1 kohm; `plan/straps.csv` records them and the design takes its pins from
 it -- and `jop.system.MeshPrbsTop` reads them at start-up and then drives
 only that socket's TX bundles: nothing before they are read, nothing on a
-board that does not ground 120. Its XDC is generated with the RTL from `mesh_pads.csv`.
-It builds to one bitstream: setup +5.349 ns, hold +0.052 ns, no DRC check at
+board that does not ground 120. Its UART pins come the same way, from
+`plan/uart.csv`: the RP2350B drives SODIMM 197 on every socket, so the design
+receives on 197 and sends on 198 (swapped 2026-11-08 from the fixed pins it
+had; the table must give every socket the same two). Its XDC is generated with the RTL from `mesh_pads.csv`.
+It builds to one bitstream: setup +5.349 ns, hold +0.029 ns, no DRC check at
 all, 48/48 TX lines from ODDRs, 40/40 RX captures in ILOGIC, 8/8 RX clocks
 IBUF -> BUFG, every output's buffer switched by a register, every pull in
 place. The per-socket builds of 2026-11-06 against the designer's own XDCs
@@ -5219,13 +5222,13 @@ pins) and Vivado's package data (banks, functions, and all 12 RX clocks on
 the P side of a clock-capable pair). Ball T4 is on pins 51 and 53 both,
 confirmed.
 
-**The PCB netlist (the third of 2026-11-08)** matches plan v2 on all 72 mesh
+**The PCB netlist (the fourth of 2026-11-08)** matches plan v2 on all 72 mesh
 nets, with the placement file's resistor designators, and its straps decode
 as above. The U4 -> U1 clock stays on pin 192 with a 0.64 mm jog around the
-JTAG pogo holes; the only other pin that could take it was 198, the UART RX.
-The modules' UART and JTAG go to a Waveshare Core2350B (RP2350B), powered
-from USB or `1_5V` through two Schottky diodes, which senses whether each
-module rail is up (a 2N7002 per rail pulling `SENSE_1_5V`/`SENSE_2_5V` low).
+JTAG pogo holes; the only other pin that could take it was 198, now the UART
+TX. The modules' UART, JTAG and a reset line (pin 194) go to a Waveshare
+Core2350B (RP2350B), powered from USB, `1_5V` or `2_5V` through three
+Schottky diodes, which reads each module rail on its ADC (100k/100k, 100 nF).
 
 **Findings for the plan's XDC**, to go back to its designer:
 
@@ -5241,15 +5244,16 @@ module rail is up (a 2N7002 per rail pulling `SENSE_1_5V`/`SENSE_2_5V` low).
 
 - bank VCCO;
 - the speed grade;
-- the UART direction on pins 197/198;
 - the ETH1 LED nets on pins 41/43, which are FPGA balls R2/P6, not PHY
   outputs;
-- the RP2350B's supply, from USB or `1_5V` only: with only U3 and U4 up it is
-  off (a third diode from `2_5V` would fix that); and while a module's rail
-  is down, firmware must not drive its JTAG or UART RX high, which would feed
-  it through its clamp diodes;
+- the series resistors in the RP2350B's outputs, which limit what a firmware
+  slip feeds an unpowered module through its clamp diodes: the fourth
+  netlist has them on TCK, TMS, the UART and the reset, but on TDO instead of
+  TDI;
+- the reset on pin 194 (ball C17): its polarity, and a pull to its inactive
+  level, since it floats while the RP2350B boots;
 - what each module's flash holds at first power-up: the Atari 800 base
-  board's JOP image drives SODIMM 50-66, mesh lines here, until the RP2040
+  board's JOP image drives SODIMM 50-66, mesh lines here, until the RP2350B
   reloads it;
 - the PCB checks: resistor rows, vias, Ethernet pairs, and the equal-length
   groups the netlist does not have yet.
