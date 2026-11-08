@@ -41,7 +41,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 
 1. **[#165](#item-165)** — A halted core keeps executing until its next `wait`, so it can dirty its stack AFTER the stop-the-world flush: measured in simulation, the collector's `halted && flushed` acknowledgement reads true for 2-6 cycles and is then withdrawn while a second flush runs. Whether the collector can act inside that window is unassessed
 2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
-3. **[#178](#item-178)** — The JOP cluster carrier (four i9+ on one board, linked by a mesh) is not made yet: its pin plan builds clean in Vivado for all four sockets, three XDC fixes go back to its designer, and bank VCCO, the speed grade, the UART direction and the ETH1 LED pins stay open. Ranked here because the plan has to settle before the board is made
+3. **[#178](#item-178)** — The JOP cluster carrier (four i9+ on one board, linked by a mesh) is not made yet: one bitstream serves all four sockets, reading the straps the PCB added, and builds clean in Vivado; the PCB netlist matches pin plan v2. XDC fixes go back to its designer, and bank VCCO, the speed grade, the UART direction, the ETH1 LED pins, the strap ties and what the modules' flash holds stay open. Ranked here because the plan has to settle before the board is made
 4. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 5. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
 6. **[#138](#item-138)** — The class-struct layout is restated in four languages and header word 1 has no name: `JVMHelp.java:313,322` read it as `rdMem(p+1)`, and nothing ties `CLS_HEAD` to what JOPizer emits. Nothing is broken today; a header reorder would leave a board with no output at all
@@ -213,7 +213,7 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[167](#item-167)** — REGRESSION: the A-E115FB's minor-GC copy phase is 13.5 % slower than in August
 - **[168](#item-168)** — `xc7a100tDbEth` misses timing by 0.058 ns, on a core path
 - **[170](#item-170)** — the XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s when the data toggles, and each loss blacks the receiver out
-- **[178](#item-178)** — The JOP cluster carrier's mesh pin plan builds clean for all four sockets; questions stay open before it is made
+- **[178](#item-178)** — The JOP cluster carrier's mesh builds clean as one bitstream for all four sockets, and its PCB netlist matches the plan; questions stay open before it is made
 
 ### Closed
 
@@ -2740,6 +2740,11 @@ is under test ([item 178](#item-178)). They are declared as gap until the
 carrier is a `hw.Board` that can generate them. Its own `mesh_prbs.xdc` is
 declared by design.
 
+**2026-11-08: converted, both.** The carrier flow now builds one bitstream for
+all four sockets and generates its XDC with the RTL from `mesh_pads.csv`. No
+build reads `carrier_U1`-`U4.xdc` (kept in the plan, as delivered) or
+`mesh_prbs.xdc` (deleted), and their five declarations are gone.
+
 <a id="item-150"></a>
 
 ### Item 150 — Four test apps and a sim are referenced by nothing
@@ -5184,7 +5189,7 @@ sim that runs DoAll applies it).
 
 <a id="item-178"></a>
 
-### Item 178 — The JOP cluster carrier is not made yet: its mesh pin plan builds clean for all four sockets, and questions stay open before the spin
+### Item 178 — The JOP cluster carrier is not made yet: one mesh bitstream builds clean for all four sockets, and questions stay open before the spin
 
 **Opened 2026-11-06** from the carrier designer's handoff, plan v2 of
 2026-11-05. It describes four Colorlight i9+ modules (XC7A50T) on one carrier,
@@ -5193,16 +5198,30 @@ source-synchronous mesh. `fpga/cluster-carrier-mesh/` holds the plan as
 delivered, the build check (the handoff's test plan, step 1) and its results;
 its README has the detail.
 
-**Done: the build check.** `jop.system.MeshPrbsTop` runs PRBS7 on every mesh
-line, forwards each clock through an ODDR, captures in BUFG-clocked I/O-tile
-flip-flops and reports on the UART. It builds to a bitstream for every socket:
-setup +5.35 ns, hold +0.10 ns, no DRC check at all, every TX line from an ODDR,
-every RX capture in ILOGIC, every RX clock IBUF -> BUFG. The pin plan agrees
-with the repo's i9+ table (106 pins), the wuxx table (150 pins) and Vivado's
-package data (banks, functions, and all 12 RX clocks on the P side of a
-clock-capable pair). Ball T4 is on pins 51 and 53 both, confirmed. The link
-logic is held by `MeshPrbsLinkTest` (jop.io, which CI runs): the launch edge,
-lock, the error count, and no lock on a dead line, each proved red.
+**Done 2026-11-08: the build check, as ONE bitstream for all four
+sockets.** The plan's 24 per-socket port groups are only ten six-pin bundles,
+each pin with one role in every socket, so only a bundle's direction depends
+on the socket. The PCB added three socket straps -- SODIMM 113 grounded on
+every socket, 115 (LSB) and 117 (MSB) the node number -- and
+`jop.system.MeshPrbsTop` reads them at start-up and then drives only that
+socket's TX bundles: nothing before they are read, nothing on a board that
+does not ground 113. Its XDC is generated with the RTL from `mesh_pads.csv`.
+It builds to one bitstream: setup +5.349 ns, hold +0.033 ns, no DRC check at
+all, 48/48 TX lines from ODDRs, 40/40 RX captures in ILOGIC, 8/8 RX clocks
+IBUF -> BUFG, every output's buffer switched by a register, every pull in
+place. The per-socket builds of 2026-11-06 against the designer's own XDCs
+(setup +5.35, hold +0.10 ns) agreed; that flow was replaced, and the XDCs are
+kept in `plan/xdc/` as delivered.
+
+The pin plan agrees with the repo's i9+ table (106 pins), the wuxx table (150
+pins) and Vivado's package data (banks, functions, and all 12 RX clocks on
+the P side of a clock-capable pair). Ball T4 is on pins 51 and 53 both,
+confirmed.
+
+**The PCB netlist (2026-11-08)** matches plan v2 on all 72 mesh nets, with the
+placement file's resistor designators, and its straps decode as above. The
+U4 -> U1 clock stays on pin 192 with a 0.64 mm jog around the JTAG pogo holes;
+the only other pin that could take it was 198, the UART RX.
 
 **Findings for the plan's XDC**, to go back to its designer:
 
@@ -5221,15 +5240,28 @@ lock, the error count, and no lock on a dead line, each proved red.
 - the UART direction on pins 197/198;
 - the ETH1 LED nets on pins 41/43, which are FPGA balls R2/P6, not PHY
   outputs;
-- the PCB checks: resistor rows, vias, Ethernet pairs.
+- the strap ties, which go straight to ground: a bitstream driving 113, 115
+  or 117 high would short an output, and about 1 kohm in each tie would not;
+- what each module's flash holds at first power-up: the Atari 800 base
+  board's JOP image drives SODIMM 50-66, mesh lines here, until the RP2040
+  reloads it;
+- the PCB checks: resistor rows, vias, Ethernet pairs, and the equal-length
+  groups the netlist does not have yet.
 
 **Open after it:** the test plan's steps 2-5 -- the bank-voltage bitstream,
 per-link PRBS on the board (this design), `MeshPort`, and the cluster
 software.
 
-Guard: `spinalhdl/src/test/scala/jop/io/MeshPrbsLinkTest.scala` (the link
-logic) and `spinalhdl/src/test/scala/jop/config/FpgaPartTest.scala` (the flow's
-part). The build check itself runs by hand: `make -C fpga/cluster-carrier-mesh`.
+Guard (jop.io, which CI runs): `MeshPrbsLinkTest` (the link logic: launch
+edge, lock, error count, no lock on a dead line, each proved red),
+`MeshPlanTest` (the bundle table, and every net of `mesh_nets.csv` against
+it), `MeshStrapsTest` (the strap reader) and `MeshPrbsCarrierTest` (the one
+design in all four sockets, wired as `mesh_nets.csv`: twelve links clean, no
+net driven from both ends, nothing driven before the straps or off the
+carrier -- proved red three ways, one of them a port reporting its own
+looped-back TX bundle, which only the off-carrier test catches); and
+`jop.config.FpgaPartTest` (the flow's part). The build check itself runs by
+hand: `make -C fpga/cluster-carrier-mesh`.
 
 <a id="item-69"></a>
 
