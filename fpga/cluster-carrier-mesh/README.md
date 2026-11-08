@@ -46,7 +46,7 @@ A dash is a bundle the socket leaves unconnected. Every bundle that is ever
 an RX has its clock on the P side of a clock-capable pair.
 
 **The socket straps** tell the design where it is. `plan/straps.csv` is the
-PCB netlist's strap wiring (the third and fourth netlists of 2026-11-08), and the design
+PCB netlist's strap wiring (the third to fifth netlists of 2026-11-08), and the design
 takes its strap pins from it. Each grounded strap goes through 1 kohm
 (R91-R98); the FPGA pulls all three up, so an open strap reads 1:
 
@@ -63,12 +63,22 @@ the straps have held one value for 1 ms, and never on a board where 120 reads
 1. A board that grounds 120 for some other reason would pass that check.
 
 **The UART** to the carrier's RP2350B is SODIMM 197 and 198 on every socket.
-`plan/uart.csv` is the netlist's UART wiring (the fourth of 2026-11-08): the
-RP2350B drives 197, through 470 ohm, so the design receives on 197
-(`uart_rx`) and sends on 198 (`uart_tx`). It takes both pins from that
+`plan/uart.csv` is the netlist's UART wiring (the fourth and fifth of
+2026-11-08): the RP2350B drives 197, through 470 ohm, so the design receives
+on 197 (`uart_rx`) and sends on 198 (`uart_tx`). It takes both pins from that
 table, which must give every socket the same two: one bitstream serves all
 four, so a socket whose UART ran the other way would need a PCB fix, not a
-second build.
+second build. While the RP2350B boots, or sits in BOOTSEL, its pads pull
+down, so `uart_rx` reads a break until its firmware drives the line. This
+design ignores what it receives; a JOP build must ignore a break.
+
+**The reset** is SODIMM 194 (ball C17) on every socket, driven by the RP2350B
+through 470 ohm and pulled to ground by 10 kohm at the module (R116,
+R120-R122, the fifth netlist). A module therefore runs until the RP2350B
+drives it high, including while the RP2350B boots, so a design that uses it
+takes high as reset. It must not pull it up: the FPGA's pull-up against the
+10k could hold it at up to half the rail. This design does not use it;
+Vivado pulls an unused pin down, which agrees.
 
 ## The design
 
@@ -194,16 +204,23 @@ was replaced by this one.
      124) as SelectMAP's CSI_B. Only parallel configuration uses them; the
      modules boot from SPI, after which they are ordinary I/O.
 
-**The PCB netlist** (EasyEDA, the fourth of 2026-11-08) matches plan v2 on all
+**The PCB netlist** (EasyEDA, the fifth of 2026-11-08) matches plan v2 on all
 72 mesh nets: each is driver pin, one 33 ohm resistor, receiver pin, nothing
 else, and the resistor designators match `mesh_resistor_placement.csv`. Its
 straps are as tabled above. The U4 -> U1 clock stays on pin 192 with a jog
 around the JTAG pogo holes, which adds 0.64 mm (about 4 ps) to it; the only
 other pin that could take it is 198, the UART TX. Each module's UART, JTAG
-and a reset line (pin 194) go to a Waveshare Core2350B (RP2350B), powered
-from USB VBUS, `1_5V` or `2_5V` through three Schottky diodes, so it is up
-whenever any module is. It reads each 5 V rail on its ADC, through 100k/100k
-with 100 nF.
+and reset go to a Waveshare Core2350B (RP2350B), powered from USB VBUS,
+`1_5V` or `2_5V` through three Schottky diodes, so it is up whenever any
+module is. It reads each 5 V rail on its ADC, through 100k/100k with 100 nF.
+
+Every line the RP2350B drives has a series resistor: 220 ohm on TCK, TMS and
+TDI, 470 ohm on the UART and the reset. A module whose rail is off would be
+fed through its clamp diodes by a line driven high, so the firmware holds a
+module's pins as inputs while the ADC says its rail is down, and the
+resistor limits the current if it ever does not. Each module's UART lines
+up with a hardware UART: U2 and U3 with UART0, U1 and U4 with UART1, so one
+of each pair can have it and the other a PIO UART.
 
 ## Findings for the plan's XDC
 
@@ -239,20 +256,6 @@ These come from handoff section 8, with what this check adds:
 - **Pins 41 and 43**, the carrier's ETH1 LED nets, are FPGA balls R2 and P6
   on the i9+, not PHY outputs. The jack's LEDs light only if the FPGA drives
   them.
-- **A module whose rail is off must not see a line driven high.** The FPGA's
-  input clamp diodes would feed its unpowered banks from the RP2350B, so
-  firmware holds a module's pins as inputs while the ADC says its rail is
-  down, and a series resistor in each RP2350B output limits the current if
-  it ever does not. The fourth netlist has them on TCK, TMS, the UART and
-  the reset, but on TDO, which the module drives, instead of TDI, which the
-  RP2350B drives.
-- **The reset on pin 194** (ball C17), new in the fourth netlist: this design
-  does not use it yet. Its polarity is still to be chosen, and it floats
-  while the RP2350B boots, so the design should pull it to its inactive
-  level.
-- **Two RP2350B pin choices** in the fourth netlist: U1's UART is on GP42/43
-  the wrong way round for hardware UART1 (a PIO UART does not mind), and
-  U1's TMS is on GP39, which carries the Core2350B's LED.
 - **What each module's flash holds at first power-up.** A module runs its
   flash image until the RP2350B loads it over JTAG. The Atari 800 base board's
   JOP image drives SODIMM 50-66 as LEDs, and on the carrier 58-66 are mesh
