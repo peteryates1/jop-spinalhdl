@@ -41,7 +41,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 
 1. **[#165](#item-165)** — A halted core keeps executing until its next `wait`, so it can dirty its stack AFTER the stop-the-world flush: measured in simulation, the collector's `halted && flushed` acknowledgement reads true for 2-6 cycles and is then withdrawn while a second flush runs. Whether the collector can act inside that window is unassessed
 2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
-3. **[#178](#item-178)** — The JOP cluster carrier (four i9+ on one board, linked by a mesh) is not made yet: one bitstream serves all four sockets, taking its straps and its UART pins from the PCB's tables, and builds clean in Vivado; the PCB netlist matches pin plan v2. XDC fixes go back to its designer, and bank VCCO, the speed grade, the ETH1 LED pins and what the modules' flash holds stay open. Ranked here because the plan has to settle before the board is made
+3. **[#178](#item-178)** — The JOP cluster carrier (four i9+ on one board, linked by a mesh) is not made yet: one bitstream serves all four sockets, taking its straps and its UART pins from the PCB's tables, and builds clean in Vivado; the PCB netlist matches pin plan v2, and in the layout each link's lines match in length to 1.1 mm. XDC fixes go back to its designer, and bank VCCO, the speed grade, the ETH1 LED pins, the Ethernet pairs' impedance and what the modules' flash holds stay open. Ranked here because the plan has to settle before the board is made
 4. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 5. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
 6. **[#138](#item-138)** — The class-struct layout is restated in four languages and header word 1 has no name: `JVMHelp.java:313,322` read it as `rdMem(p+1)`, and nothing ties `CLS_HEAD` to what JOPizer emits. Nothing is broken today; a header reorder would leave a board with no output at all
@@ -5224,9 +5224,8 @@ confirmed.
 
 **The PCB netlist (the fifth of 2026-11-08)** matches plan v2 on all 72 mesh
 nets, with the placement file's resistor designators, and its straps decode
-as above. The U4 -> U1 clock stays on pin 192 with a 0.64 mm jog around the
-JTAG pogo holes; the only other pin that could take it was 198, now the UART
-TX. The modules' UART, JTAG and reset go to a Waveshare Core2350B (RP2350B),
+as above. The U4 -> U1 clock stays on pin 192 with a jog around the JTAG
+pogo holes; the only other pin that could take it was 198, now the UART TX. The modules' UART, JTAG and reset go to a Waveshare Core2350B (RP2350B),
 powered from USB, `1_5V` or `2_5V` through three Schottky diodes, which reads
 each module rail on its ADC (100k/100k, 100 nF). Every line it drives has a
 series resistor (220 ohm on TCK, TMS and TDI, 470 ohm on the UART and the
@@ -5237,6 +5236,16 @@ U3 with UART0, U1 and U4 with UART1). The reset, SODIMM 194 (ball C17), has
 it high: a design that uses it takes high as reset and must not pull it up.
 This design does not use it, and Vivado's default pull-down on an unused pin
 agrees.
+
+**The PCB layout (the EasyEDA project of 2026-11-09)**, read from its own
+file: four layers, JLC04161H-7628, each outer layer 0.21 mm from a solid GND
+plane; all 345 signal nets routed pad to pad. Traced driver pad -> 33 ohm ->
+receiver pad, the six lines of each link direction agree to 0.25 mm, except
+U4 -> U1, whose clock's jog makes it 1.1 mm (about 7 ps) longer than its
+data: well inside the handoff's 10 mm. Every line has one via where the plan
+changes layer and none where it does not; each resistor is on its driver's
+side, 3-7 mm from the driver's pad and at least 1.05 mm from any socket pad.
+The 16 Ethernet pairs match within 0.12 mm.
 
 **Findings for the plan's XDC**, to go back to its designer:
 
@@ -5257,8 +5266,9 @@ agrees.
 - what each module's flash holds at first power-up: the Atari 800 base
   board's JOP image drives SODIMM 50-66, mesh lines here, until the RP2350B
   reloads it;
-- the PCB checks: resistor rows, vias, Ethernet pairs, and the equal-length
-  groups the netlist does not have yet.
+- the Ethernet pairs' impedance: 0.1 mm tracks 0.1 mm apart, about
+  110-120 ohm differential where the PHYs expect 100 ohm;
+- EasyEDA's DRC, for clearances and the pours' and planes' connections.
 
 **Open after it:** the test plan's steps 2-5 -- the bank-voltage bitstream,
 per-link PRBS on the board (this design), `MeshPort`, and the cluster
