@@ -208,8 +208,8 @@ was replaced by this one.
 72 mesh nets: each is driver pin, one 33 ohm resistor, receiver pin, nothing
 else, and the resistor designators match `mesh_resistor_placement.csv`. Its
 straps are as tabled above. The U4 -> U1 clock stays on pin 192 with a jog
-around the JTAG pogo holes, which adds 0.64 mm (about 4 ps) to it; the only
-other pin that could take it is 198, the UART TX. Each module's UART, JTAG
+around the JTAG pogo holes (1.1 mm, below); the only other pin that could
+take it is 198, the UART TX. Each module's UART, JTAG
 and reset go to a Waveshare Core2350B (RP2350B), powered from USB VBUS,
 `1_5V` or `2_5V` through three Schottky diodes, so it is up whenever any
 module is. It reads each 5 V rail on its ADC, through 100k/100k with 100 nF.
@@ -221,6 +221,30 @@ module's pins as inputs while the ADC says its rail is down, and the
 resistor limits the current if it ever does not. Each module's UART lines
 up with a hardware UART: U2 and U3 with UART0, U1 and U4 with UART1, so one
 of each pair can have it and the other a PIO UART.
+
+**The PCB layout** (the EasyEDA project of 2026-11-09, read from its own
+file) is four layers, 1.6 mm, JLCPCB's JLC04161H-7628 stack-up: each outer
+layer sits 0.21 mm of 7628 above or below a solid GND plane, with `1_5V`
+poured on the top and `2_5V` on the bottom. All 345 signal nets are routed
+pad to pad. Traced from driver pad through its 33 ohm resistor to receiver
+pad, with each via counted as the board's 1.59 mm:
+
+| Link | Each line | The six lines of a direction agree to |
+|---|---|---|
+| L1 (U1-U2 top, U3-U4 bottom) | 47.5 mm | 0.16 mm |
+| L2 (U1-U3, U2-U4) | 29.0 mm | 0.25 mm |
+| L3 U1-U4 | 84.0 mm | 1.1 mm (U4 -> U1: its clock's jog) |
+| L3 U2-U3 | 14.0 mm | 0.03 mm |
+
+That is about 7 ps at most, well inside the handoff's 10 mm, so the
+equal-length groups it asked for would only guard later edits. Every line
+has one via where the plan changes layer and none where it does not. They
+sit at y = 23 and -31.5 mm on L2 and at ±3-4 mm on L3 U2-U3, not the
+handoff's ±27 and ±1, which mattered only for the matching. Each resistor is
+on its driver's side of the board, 3-7 mm of track from the driver's pad,
+and none comes nearer than 1.05 mm to a socket pad, so the rows clear the
+socket's pads. The mesh tracks are 0.1 mm wide, about 85 ohm by the usual
+microstrip formula. The 16 Ethernet pairs match within 0.12 mm.
 
 ## Findings for the plan's XDC
 
@@ -261,6 +285,12 @@ These come from handoff section 8, with what this check adds:
   JOP image drives SODIMM 50-66 as LEDs, and on the carrier 58-66 are mesh
   lines: a module carrying it would fight its peer's driver through the 33 ohm
   resistor. Erase the flash, or write this bitstream to it, first.
-- **The resistor rows, the via positions and the Ethernet pairs.** These are
-  PCB checks; nothing here covers them. The netlist has no equal-length groups
-  yet.
+- **The Ethernet pairs' impedance.** They are 0.1 mm tracks 0.1 mm apart,
+  about 110-120 ohm differential on this stack-up, where the PHYs expect 100
+  ohm. Over runs of 24-48 mm that is a small mismatch. Tracks of roughly
+  0.17 mm at the same gap come near 100 ohm; JLCPCB's impedance calculator
+  gives the exact width for JLC04161H-7628. Pair DP2 also names its `-` net
+  as the positive one.
+- **EasyEDA's DRC**, for what the layout check above does not cover:
+  clearances, and the connections the pours and planes make, which is how
+  the power nets are joined.
