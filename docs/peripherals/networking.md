@@ -8,13 +8,14 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 
 | Board | PHY / interface | Preset | Hardware |
 |-------|-----------------|--------|----------|
-| EP4CGX150 + DB_FPGA V4 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbFull` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content, DoAll 68/68 (2026-10-12, below); at 1 Gb/s, GMII, 3-5 % of received frames failed CRC, a hardware limit of this module (status item 166) |
+| EP4CGX150 + DB_FPGA V4 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbFull` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content, DoAll 68/68 (2026-10-12, below); at 1 Gb/s, GMII, 3-5 % of received frames failed CRC, a hardware limit of this module (status item 166); 2026-11-10 with the 16 KB receive buffer: TCP echo 96 kB/s each way, DoAll 68/68 ([receive buffer](#receive-buffer)) |
 | EP4CGX150 + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbV5Mii` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content (2026-10-12, below) |
-| XC7A100T + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `xc7a100tDbMii` | ping, UDP and TCP echo at 100M, no receive errors on any content, DoAll 68/68 (2026-10-28); at 1 Gb/s (`xc7a100tDbEth`) frames whose data toggles are lost and TCP fails (status item 170) |
-| Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68; on a v6.0 module 2026-11-10 (no DNS run) |
+| XC7A100T + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `xc7a100tDbMii` | ping, UDP and TCP echo at 100M, no receive errors on any content, DoAll 68/68 (2026-10-28); at 1 Gb/s (`xc7a100tDbEth`) frames whose data toggles are lost and TCP fails (status item 170); 2026-11-10 with the 16 KB receive buffer: TCP echo 114 kB/s each way, DoAll 68/68 ([receive buffer](#receive-buffer)) |
+| Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68; on a v6.0 module 2026-11-10 (no DNS run); the same day with the 16 KB receive buffer: TCP echo 63 kB/s each way, DoAll 68/68 ([receive buffer](#receive-buffer)) |
+| Colorlight i5 on the second fpga-db-colorlight-i5 | B50612D U28, RGMII 100 Mb/s | `colorlightDbI5Eth` | ping, UDP and TCP echo, DHCP, DoAll 68/68 (2026-10-27, [below](#colorlight-i5-rgmii-at-100-mbs)); 2026-11-10 with the 16 KB receive buffer: TCP echo 50 kB/s each way, DoAll 68/68 ([receive buffer](#receive-buffer)) |
 | Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 1000 Mb/s | `colorlightDbI9PlusEth1000` | ping, UDP and TCP echo, DHCP at 1000M, no receive errors, DoAll 68/68 (2026-11-10, v6.0 module, below); TCP echo 63 kB/s each way; the link at line rate through the hardware UDP echo, 989.9 Mb/s, about 2.9 GB each way with no FCS error |
-| A-E115FB (EP4CE115 + DDR2) | 88E1111, GMII 1 Gb/s | `ae115fbDdr2Eth` | ping, UDP and TCP echo, DHCP, DNS at 1000M, no receive errors on any content, DoAll 68/68 (2026-10-12, below) |
-| QMTECH Wukong V3 | RTL8211EG, GMII 1 Gb/s | `wukongFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12), DoAll 68/68; the same build with the re-latch restored: `Link UP 1000M` and nothing received (below) |
+| A-E115FB (EP4CE115 + DDR2) | 88E1111, GMII 1 Gb/s | `ae115fbDdr2Eth` | ping, UDP and TCP echo, DHCP, DNS at 1000M, no receive errors on any content, DoAll 68/68 (2026-10-12, below); 2026-11-10 with the 16 KB receive buffer: TCP echo 87 kB/s each way, DoAll 68/68 ([receive buffer](#receive-buffer)) |
+| QMTECH Wukong V3 | RTL8211EG, GMII 1 Gb/s | `wukongFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12), DoAll 68/68; the same build with the re-latch restored: `Link UP 1000M` and nothing received (below); 2026-11-10 with the 16 KB receive buffer: TCP echo 134 kB/s each way, DoAll 68/68 ([receive buffer](#receive-buffer)) |
 
 ## Status
 
@@ -25,7 +26,7 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 | IPv4 | Working | No fragmentation (MTU 1500 sufficient) |
 | ICMP echo (ping) | Working | No loss; the EP4CGX150's 3-5 % at 1 Gb/s was its RX clock (status item 166) |
 | UDP | Working | Echo tested on port 7; a hardware echo at line rate on the i9+'s gigabit build (port 7007) |
-| TCP | Working | Echo verified on port 7; large payload (10KB+) with backpressure; 63 kB/s each way on the i9+ at 1000M, the CPU the limit |
+| TCP | Working | Echo verified on port 7; large payload (10KB+) with backpressure; 50 to 134 kB/s each way on six boards, the CPU the limit ([receive buffer](#receive-buffer)) |
 | DHCP | Working | Client state machine, lease renewal, optional (NetConfig.useDhcp) |
 | DNS | Working | Blocking A record resolver, 4-entry cache, 5-min TTL cap |
 | java.net API | Written | Socket, ServerSocket, DatagramSocket stubs |
@@ -245,6 +246,42 @@ PHY pins → [I/O block registers] → rxArea single-stage pipeline
 - CRC-32: IEEE 802.3, polynomial 0x04C11DB7, reflected I/O, init 0xFFFFFFFF
 - Frames with CRC errors are flagged; MacRxBuffer discards them
 - Stats counters (errors, drops) crossed to system clock via PulseCCByToggle
+
+### Receive buffer
+
+MacRxBuffer holds 16 KB of received frames, ten of full size
+(`Mac.RxBufferBytes`; a preset can set the Ethernet device's `rxBufferBytes`).
+Until 2026-11-10 it held 2 KB, one frame. The CPU takes milliseconds to read
+a frame out, and the next one arrives 123 us later at 100 Mb/s, 12 us at 1000,
+so the second of two frames that came back to back was dropped. A host's TCP
+sends segments in pairs, and it sent each lost one again only after a
+retransmit timeout of 200 ms or more.
+
+Each board ran one NetTest image twice: on its last bitstream with 2 KB (built
+2026-10-28 to 11-10) and on one built with 16 KB (6a8f141). Three 200 KB TCP
+echoes from the lab's VM each time; `Dr` is NetTest's count of frames the MAC
+dropped during the run.
+
+| Board | Link | Clock | 2 KB: TCP echo, each way | `Dr` | 16 KB: TCP echo, each way | `Dr` |
+|-------|------|-------|--------------------------|------|---------------------------|------|
+| Colorlight i5 | RGMII 100M | 40 MHz | 22.0 kB/s | 68 | 50.3 kB/s | 0 |
+| Colorlight i9+ | RGMII 100M | 50 MHz | 24.1 kB/s | 66 | 62.9 kB/s | 0 |
+| EP4CGX150 + DB_FPGA V4 | MII 100M | 80 MHz | 28.3 kB/s | 71 | 96.1 kB/s | 0 |
+| XC7A100T + DB_FPGA V5 | MII 100M | 100 MHz | 29.5 kB/s | 66 | 114.1 kB/s | 0 |
+| A-E115FB | GMII 1000M | 75 MHz | 27.3 kB/s | 67 | 87.4 kB/s | 0 |
+| Wukong | GMII 1000M | 100 MHz | 31.0 kB/s | 66 | 134.0 kB/s | 0 |
+
+With one frame of buffer every board ran at 22 to 31 kB/s, whatever its
+clock: the timeouts set the pace. With 16 KB nothing is dropped, and the rate
+follows the CPU. Ping times did not change. Every new bitstream met timing and
+passed DoAll 68/68 -- the Wukong on its second run: on the first its 1 Mbaud
+console lost a line break and the start of a test's name, merging two `ok`
+lines into one. `net_echo_check.py` (echo, reset, idle) and UDP echo at 22 and
+1400 bytes passed on each. The i9+ at 1000 Mb/s went from 20.8 to 63 kB/s the
+same way ([Throughput](#throughput)).
+
+The buffer costs block RAM: 3.5 of the i9+'s 75 tiles (12 to 15.5, measured
+on its gigabit build), and the i5's build now uses 28 of its 56 DP16KD.
 
 ### TX Pipeline (system clock domain → PHY clock domain)
 
@@ -620,8 +657,9 @@ It looked like a delayed ACK and was not one. The host's socket state
 - **Lost frames.** A third of the bytes were retransmitted, each after a
   timeout of 200 ms or more. The MAC's 2 KB receive buffer held one full
   frame, so the second of two that arrived back to back was dropped, and the
-  stack sent no duplicate ACK for the segment after the gap. The gigabit
-  preset's MAC now buffers 16 KB (`rxBufferBytes`). The stack now:
+  stack sent no duplicate ACK for the segment after the gap. The MAC now
+  buffers 16 KB, this preset first and every preset since
+  ([Receive buffer](#receive-buffer)). The stack now:
   - ACKs a segment past a gap at once;
   - keeps the new part of an overlapping retransmission;
   - advertises room the application makes ([TCP](#tcp)).

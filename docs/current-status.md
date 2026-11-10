@@ -3795,7 +3795,9 @@ four data lines switch, against the six that trigger the extra edge.
 | DhcpTest | BOUND on the first offer, DNS resolved, the lease answers 10/10 |
 
 `Dr=7` in NetTest is the receive buffer overflowing during TCP bursts, recovered
-by retransmission. The build needed two generator fixes, both test-first in
+by retransmission. (It held one frame; since 2026-11-10 it holds 16 KB on every
+board and TCP drops nothing: [receive buffer](peripherals/networking.md#receive-buffer).)
+The build needed two generator fixes, both test-first in
 `GeneratedConstraintsTest`. The SDC now creates the PHY's TX clock `e_txc` and
 names the Ethernet PLL only in a GMII design. An MII design also no longer
 declares GMII's `e_gtxc`: the fitter had put it on J3:31, the PHY's COL pin.
