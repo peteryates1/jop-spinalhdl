@@ -106,6 +106,32 @@ def stale_sources(image, src_dirs, limit=5, exts=(".java", ".properties")):
     return sorted(newer)[:limit]
 
 
+# Library trees an app is built with (EXTRA_SRC), and the packages they hold.
+LIBRARY_SOURCES = (
+    ("java/net/src", ("com.jopdesign.net.", "java.net.")),
+    ("java/fat32/src", ("com.jopdesign.fat32.",)),
+)
+
+
+def linked_library_dirs(image):
+    """The library source trees an app image was built from.
+
+    NetTest and HttpServer are built with EXTRA_SRC=../../net/src, and the
+    stale check looked only at the app's and the runtime's sources: on
+    2026-11-10 the stack was being changed under a NetTest that would have run
+    unrebuilt -- the old stack, with a clean verdict. JOPizer's link map,
+    <image>.link.txt, names every class the image holds. Without one, every
+    tree: a rebuild costs less than a run of code that is not in the image.
+    """
+    try:
+        with open(image + ".link.txt") as f:
+            linked = f.read()
+    except OSError:
+        return [os.path.join(ROOT, d) for d, _ in LIBRARY_SOURCES]
+    return [os.path.join(ROOT, d) for d, pkgs in LIBRARY_SOURCES
+            if any(p in linked for p in pkgs)]
+
+
 def find_bitstream(cfg_dir, tool=None):
     """The file to program, in the format the chosen TOOL can actually read.
 
@@ -596,7 +622,8 @@ def main():
         cfg = " ".join([a.preset] + list(a.args)) + inst
         app_dir = os.path.join(ROOT, "java", "apps", a.app.split("/")[0], "src")
         rt_dir  = os.path.join(ROOT, "java", "runtime", "src")
-        stale = stale_sources(jop, [d for d in (app_dir, rt_dir) if os.path.isdir(d)])
+        stale = stale_sources(jop, [d for d in (app_dir, rt_dir) if os.path.isdir(d)]
+                              + linked_library_dirs(jop))
         if stale:
             die("the app image is OLDER than its source -- this run would test\n"
                 "  code that is not in it, and would look like a clean result:\n"

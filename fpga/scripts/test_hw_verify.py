@@ -21,6 +21,10 @@
 #   test_doall_announces_its_count_in_the_format_judged -- red against the
 #   verdict as it stood (ok >= --expect-ok, default 66), which was first moved
 #   unchanged out of main() into judge_count so the tests could reach it.
+# PROVED RED 2026-11-10:
+#   test_an_image_that_links_the_network_stack_is_checked_against_it -- red
+#   before linked_library_dirs existed (AttributeError), when the stale check
+#   read only the app's and the runtime's sources.
 # If you change these, re-prove them.
 # ---------------------------------------------------------------------------
 # hw_verify decides whether a hardware run counts as a pass, and until now
@@ -122,6 +126,33 @@ def test_a_current_image_is_accepted():
         time.sleep(0.01)
         open(jop, "w").write("image")       # image is NEWER
         assert hw_verify.stale_sources(jop, [d]) == [], "a current image was called stale"
+
+
+def test_an_image_that_links_the_network_stack_is_checked_against_it():
+    """NetTest is built with EXTRA_SRC=../../net/src, and the stale check looked
+    only at the app's and the runtime's sources: on 2026-11-10 the stack was
+    being changed under a NetTest that hw_verify would have run unrebuilt,
+    the old stack, with a clean verdict. The image's link map names every
+    class it holds, so it says which library trees the image came from."""
+    import tempfile
+    net = os.path.join(hw_verify.ROOT, "java", "net", "src")
+    fat = os.path.join(hw_verify.ROOT, "java", "fat32", "src")
+    with tempfile.TemporaryDirectory() as d:
+        jop = os.path.join(d, "NetTest.jop")
+        open(jop, "w").write("image")
+        open(jop + ".link.txt", "w").write(
+            "static java.lang.Float.MAX_VALUEF 4\n"
+            "static com.jopdesign.net.NetConfig.macHiI 21\n")
+        assert hw_verify.linked_library_dirs(jop) == [net], hw_verify.linked_library_dirs(jop)
+        open(jop + ".link.txt", "w").write("static com.jopdesign.fat32.FsInfo.xI 3\n")
+        assert hw_verify.linked_library_dirs(jop) == [fat], hw_verify.linked_library_dirs(jop)
+        # An image linking neither (DoAll) is not held to them
+        open(jop + ".link.txt", "w").write("static java.lang.Float.MAX_VALUEF 4\n")
+        assert hw_verify.linked_library_dirs(jop) == []
+        # No map to read: every library tree, a rebuild being cheaper than
+        # a run of code that is not in the image
+        os.remove(jop + ".link.txt")
+        assert hw_verify.linked_library_dirs(jop) == [net, fat]
 
 
 def test_a_stale_bitstream_is_refused():
