@@ -114,12 +114,22 @@ public class Packet {
 		setByte(off + 3, val & 0xFF);
 	}
 
+	// --- Bulk paths ---
+	//
+	// One call per pass over the data, the accessors written out inline. On
+	// JOP a call invalidates the object and array caches, so a byte accessor
+	// costs about 1000 cycles a byte -- getShort per two bytes as much --
+	// and a 1460-byte TCP segment that went through them once per pass took
+	// about 100 ms to acknowledge (NetBench, 2026-11-10).
+
 	/**
 	 * Copy bytes from this packet to a byte array.
 	 */
 	public void copyTo(int srcOff, byte[] dst, int dstOff, int count) {
-		for (int i = 0; i < count; i++) {
-			dst[dstOff + i] = (byte) getByte(srcOff + i);
+		int[] b = buf;
+		int end = srcOff + count;
+		for (int i = srcOff; i < end; i++) {
+			dst[dstOff++] = (byte) (b[i >> 2] >>> ((i & 3) << 3));
 		}
 	}
 
@@ -127,8 +137,87 @@ public class Packet {
 	 * Copy bytes from a byte array into this packet.
 	 */
 	public void copyFrom(byte[] src, int srcOff, int dstOff, int count) {
-		for (int i = 0; i < count; i++) {
-			setByte(dstOff + i, src[srcOff + i] & 0xFF);
+		int[] b = buf;
+		int end = dstOff + count;
+		for (int i = dstOff; i < end; i++) {
+			int w = i >> 2;
+			int shift = (i & 3) << 3;
+			b[w] = (b[w] & ~(0xFF << shift)) | ((src[srcOff++] & 0xFF) << shift);
 		}
+	}
+
+	/**
+	 * Copy count bytes of another packet, from srcOff, into this one at dstOff.
+	 */
+	public void copy(Packet src, int srcOff, int dstOff, int count) {
+		int[] s = src.buf;
+		int[] b = buf;
+		int end = dstOff + count;
+		for (int i = dstOff; i < end; i++) {
+			int w = i >> 2;
+			int shift = (i & 3) << 3;
+			int v = (s[srcOff >> 2] >>> ((srcOff & 3) << 3)) & 0xFF;
+			b[w] = (b[w] & ~(0xFF << shift)) | (v << shift);
+			srcOff++;
+		}
+	}
+
+	/**
+	 * The Internet checksum's sum over bytes [off, off + len): the 16-bit
+	 * big-endian words, a trailing odd byte as the high half of a word, its
+	 * carries folded in or not -- the caller adds whatever else the checksum
+	 * covers (a pseudo-header), folds the total and complements it. Zero
+	 * exactly when every byte is.
+	 *
+	 * The words are summed as they are stored, little-endian, and the folded
+	 * sum byte-swapped, which is the big-endian sum (RFC 1071, byte order
+	 * independence): a word at a time where getShort took two bytes a call.
+	 */
+	public int sum16(int off, int len) {
+		int sum = 0;
+		if ((off & 1) != 0) {
+			// No header this stack builds starts on an odd byte
+			int i;
+			for (i = 0; i + 1 < len; i += 2) {
+				sum += getShort(off + i);
+			}
+			if (i < len) {
+				sum += getByte(off + i) << 8;
+			}
+			return sum;
+		}
+		int[] b = buf;
+		int w = off >> 2;
+		int rest = len;
+		if ((off & 2) != 0) {
+			// Starts in the upper half of a word
+			if (rest == 1) {
+				return ((b[w] >>> 16) & 0xFF) << 8;
+			}
+			if (rest >= 2) {
+				sum = b[w] >>> 16;
+				w++;
+				rest -= 2;
+			}
+		}
+		while (rest >= 4) {
+			int v = b[w];
+			sum += (v & 0xFFFF) + (v >>> 16);
+			w++;
+			rest -= 4;
+		}
+		if (rest >= 2) {
+			int v = b[w];
+			sum += v & 0xFFFF;
+			if (rest == 3) {
+				sum += (v >>> 16) & 0xFF;
+			}
+		} else if (rest == 1) {
+			sum += b[w] & 0xFF;
+		}
+		while ((sum >>> 16) != 0) {
+			sum = (sum & 0xFFFF) + (sum >>> 16);
+		}
+		return ((sum & 0xFF) << 8) | (sum >>> 8);
 	}
 }

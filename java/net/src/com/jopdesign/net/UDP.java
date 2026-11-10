@@ -173,18 +173,9 @@ public class UDP {
 	 * Returns 0 if existing checksum is valid.
 	 */
 	static int checksum(Packet pkt, int off, int udpLen) {
-		// Start with pseudo-header
-		int sum = IP.pseudoHeaderChecksum(pkt, IP.PROTO_UDP, udpLen);
-
-		// Add UDP header + data
-		int i;
-		for (i = 0; i + 1 < udpLen; i += 2) {
-			sum += pkt.getShort(off + i);
-		}
-		// Handle odd byte
-		if (i < udpLen) {
-			sum += pkt.getByte(off + i) << 8;
-		}
+		// Pseudo-header, then the UDP header and data
+		int sum = IP.pseudoHeaderChecksum(pkt, IP.PROTO_UDP, udpLen)
+			+ pkt.sum16(off, udpLen);
 
 		// Fold carries
 		while ((sum >>> 16) != 0) {

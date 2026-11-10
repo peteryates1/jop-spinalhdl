@@ -41,34 +41,73 @@ public class TCPOutputStream {
 		if (closed) return -2;
 		if (bufferFull || bufferBlocked) return -1;
 		buffer[writePtr] = (byte) (b & 0xFF);
-		writePtr = (writePtr + 1) % size;
+		if (++writePtr == size) writePtr = 0;
 		if (writePtr == readPtr) bufferBlocked = true;
 		if (writePtr == ackWaitPtr) bufferFull = true;
 		return 0;
 	}
 
-	/** Write multiple bytes. Returns number of bytes written, or -1 if closed. */
+	/** Write multiple bytes. Returns number of bytes written, or -2 if closed. */
 	public int write(byte[] data, int off, int len) {
 		if (closed) return -2;
-		int count = 0;
-		for (int i = 0; i < len; i++) {
-			if (bufferFull || bufferBlocked) break;
-			buffer[writePtr] = data[off + i];
-			writePtr = (writePtr + 1) % size;
-			if (writePtr == readPtr) bufferBlocked = true;
-			if (writePtr == ackWaitPtr) bufferFull = true;
-			count++;
+		if (bufferFull || bufferBlocked) return 0;
+		// Free space runs up to ackWaitPtr, which comes before readPtr going
+		// round: writing it all meets readPtr only where the two are equal.
+		int n = getFreeBufferSpace();
+		if (n > len) n = len;
+		if (n <= 0) return 0;
+		byte[] dst = buffer;
+		int wp = writePtr;
+		int sz = size;
+		int end = off + n;
+		for (int i = off; i < end; i++) {
+			dst[wp] = data[i];
+			if (++wp == sz) wp = 0;
 		}
-		return count;
+		writePtr = wp;
+		if (wp == readPtr) bufferBlocked = true;
+		if (wp == ackWaitPtr) bufferFull = true;
+		return n;
 	}
 
 	/** Read one byte for TCP to send. Returns byte value, or -1 if no more data. */
 	public int read() {
 		if (isNoMoreDataToRead()) return -1;
 		int out = buffer[readPtr] & 0xFF;
-		readPtr = (readPtr + 1) % size;
+		if (++readPtr == size) readPtr = 0;
 		bufferBlocked = false;
 		return out;
+	}
+
+	/**
+	 * Copy up to max bytes not yet sent into a packet at off, in one call (see
+	 * Packet's bulk paths), advancing as read() does. Returns how many: 0 when
+	 * nothing is waiting to be sent.
+	 */
+	public int read(Packet pkt, int off, int max) {
+		int n;
+		if (bufferBlocked) {
+			n = size;  // writePtr met readPtr: all of it is unsent
+		} else {
+			n = writePtr - readPtr;
+			if (n < 0) n += size;
+		}
+		if (n > max) n = max;
+		if (n <= 0) return 0;
+		byte[] src = buffer;
+		int[] dst = pkt.buf;
+		int rp = readPtr;
+		int sz = size;
+		int end = off + n;
+		for (int i = off; i < end; i++) {
+			int w = i >> 2;
+			int shift = (i & 3) << 3;
+			dst[w] = (dst[w] & ~(0xFF << shift)) | ((src[rp] & 0xFF) << shift);
+			if (++rp == sz) rp = 0;
+		}
+		readPtr = rp;
+		bufferBlocked = false;
+		return n;
 	}
 
 	/** Acknowledge num_bytes of data, freeing buffer space. */

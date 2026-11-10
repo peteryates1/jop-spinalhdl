@@ -180,10 +180,7 @@ public class IP {
 	 */
 	public static int checksumIpHeader(Packet pkt) {
 		int ihl = (pkt.getByte(IP_OFF + 0) & 0x0F) * 4;
-		int sum = 0;
-		for (int i = 0; i < ihl; i += 2) {
-			sum += pkt.getShort(IP_OFF + i);
-		}
+		int sum = pkt.sum16(IP_OFF, ihl);
 		// Fold carries
 		while ((sum >>> 16) != 0) {
 			sum = (sum & 0xFFFF) + (sum >>> 16);

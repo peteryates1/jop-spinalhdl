@@ -29,37 +29,62 @@ public class TCPInputStream {
 		if (closed) return -2;
 		if (bufferFull) return -1;
 		buffer[writePtr] = (byte) (b & 0xFF);
-		writePtr = (writePtr + 1) % size;
+		if (++writePtr == size) writePtr = 0;
 		if (writePtr == readPtr) bufferFull = true;
 		return 0;
+	}
+
+	/**
+	 * Append bytes [off, off + len) of a received packet, as many as fit, in
+	 * one call (see Packet's bulk paths). Returns how many it took: 0 when
+	 * the buffer is full or closed.
+	 */
+	public int write(Packet pkt, int off, int len) {
+		if (closed) return 0;
+		int n = getFreeBufferSpace();
+		if (n > len) n = len;
+		if (n <= 0) return 0;
+		int[] src = pkt.buf;
+		byte[] dst = buffer;
+		int wp = writePtr;
+		int sz = size;
+		int end = off + n;
+		for (int i = off; i < end; i++) {
+			dst[wp] = (byte) (src[i >> 2] >>> ((i & 3) << 3));
+			if (++wp == sz) wp = 0;
+		}
+		writePtr = wp;
+		if (wp == readPtr) bufferFull = true;
+		return n;
 	}
 
 	/** Read one byte from the buffer. Returns byte value (0-255), or -1 if empty/closed. */
 	public int read() {
 		if (isBufferEmpty()) {
-			if (closed) return -1;
 			return -1;
 		}
 		int out = buffer[readPtr] & 0xFF;
-		readPtr = (readPtr + 1) % size;
+		if (++readPtr == size) readPtr = 0;
 		bufferFull = false;
 		return out;
 	}
 
 	/** Read up to len bytes into buf. Returns number of bytes read, or -1 if empty/closed. */
 	public int read(byte[] buf, int off, int len) {
-		if (isBufferEmpty()) {
-			if (closed) return -1;
-			return -1;
+		int n = available();
+		if (n > len) n = len;
+		if (n <= 0) return -1;
+		byte[] src = buffer;
+		int rp = readPtr;
+		int sz = size;
+		int end = off + n;
+		for (int i = off; i < end; i++) {
+			buf[i] = src[rp];
+			if (++rp == sz) rp = 0;
 		}
-		int count = 0;
-		while (count < len && !isBufferEmpty()) {
-			buf[off + count] = (byte) (buffer[readPtr] & 0xFF);
-			readPtr = (readPtr + 1) % size;
-			bufferFull = false;
-			count++;
-		}
-		return count > 0 ? count : -1;
+		readPtr = rp;
+		bufferFull = false;
+		return n;
 	}
 
 	/** Return number of bytes available for reading. */

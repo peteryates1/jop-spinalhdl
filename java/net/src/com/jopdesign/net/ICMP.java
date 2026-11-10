@@ -59,9 +59,7 @@ public class ICMP {
 
 		// Copy ICMP data from request
 		int icmpOff = IP.IP_OFF + IP.IP_HEADER_LEN;
-		for (int i = 0; i < len; i++) {
-			pkt.setByte(icmpOff + i, rxPkt.getByte(off + i));
-		}
+		pkt.copy(rxPkt, off, icmpOff, len);
 
 		// Change type to echo reply
 		pkt.setByte(icmpOff + 0, TYPE_ECHO_REPLY);
@@ -104,9 +102,7 @@ public class ICMP {
 		if (rxPkt.len - rxIpOff < copyLen) {
 			copyLen = rxPkt.len - rxIpOff;
 		}
-		for (int i = 0; i < copyLen; i++) {
-			pkt.setByte(icmpOff + 8 + i, rxPkt.getByte(rxIpOff + i));
-		}
+		pkt.copy(rxPkt, rxIpOff, icmpOff + 8, copyLen);
 
 		int icmpLen = 8 + copyLen;
 		int cksum = checksum(pkt, icmpOff, icmpLen);
@@ -121,15 +117,7 @@ public class ICMP {
 	 * Returns 0 if existing checksum is valid.
 	 */
 	private static int checksum(Packet pkt, int off, int len) {
-		int sum = 0;
-		int i;
-		for (i = 0; i + 1 < len; i += 2) {
-			sum += pkt.getShort(off + i);
-		}
-		// Handle odd byte
-		if (i < len) {
-			sum += pkt.getByte(off + i) << 8;
-		}
+		int sum = pkt.sum16(off, len);
 		// Fold carries
 		while ((sum >>> 16) != 0) {
 			sum = (sum & 0xFFFF) + (sum >>> 16);

@@ -101,17 +101,9 @@ public class TCP {
 	 * Calculate TCP checksum including pseudo-header.
 	 */
 	static int checksum(Packet pkt, int tcpOff, int tcpLen) {
-		// Pseudo-header
-		int sum = IP.pseudoHeaderChecksum(pkt, IP.PROTO_TCP, tcpLen);
-
-		// TCP header + data
-		int i;
-		for (i = 0; i + 1 < tcpLen; i += 2) {
-			sum += pkt.getShort(tcpOff + i);
-		}
-		if (i < tcpLen) {
-			sum += pkt.getByte(tcpOff + i) << 8;
-		}
+		// Pseudo-header, then the TCP header and data
+		int sum = IP.pseudoHeaderChecksum(pkt, IP.PROTO_TCP, tcpLen)
+			+ pkt.sum16(tcpOff, tcpLen);
 		while ((sum >>> 16) != 0) {
 			sum = (sum & 0xFFFF) + (sum >>> 16);
 		}
@@ -521,12 +513,7 @@ public class TCP {
 		// Simple in-order delivery: only accept if seq matches rcvNext
 		if (seqNr != conn.rcvNext) return;
 
-		int bytesWritten = 0;
-		for (int i = 0; i < dataLen; i++) {
-			int b = pkt.getByte(dataStart + i);
-			if (conn.iStream.write(b) < 0) break;
-			bytesWritten++;
-		}
+		int bytesWritten = conn.iStream.write(pkt, dataStart, dataLen);
 		conn.rcvNext += bytesWritten;
 
 		// Update receive window
@@ -604,12 +591,7 @@ public class TCP {
 				maxData = Packet.MAX_BYTES - dataStart;
 			}
 
-			for (int i = 0; i < maxData; i++) {
-				int b = conn.oStream.read();
-				if (b == -1) break;
-				pkt.setByte(dataStart + i, b);
-				dataLen++;
-			}
+			dataLen = conn.oStream.read(pkt, dataStart, maxData);
 
 			if (dataLen > 0) flags |= FLAG_PSH;
 		}

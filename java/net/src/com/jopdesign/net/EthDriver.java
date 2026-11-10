@@ -170,12 +170,17 @@ public class EthDriver {
 		int wordCount = (byteLen + 3) / 4;
 
 		// Write bit length, then data words
-		// Wait for TX ready (bit 1 of status) before each write
+		// Wait for TX ready (bit 1 of status) before each write -- polled
+		// inline: a call per word cost more than the write (see Packet's
+		// bulk paths)
 		waitTxReady();
 		Native.wr(bitLen, Const.IO_ETH + 2);
+		int[] b = pkt.buf;
 		for (int i = 0; i < wordCount; i++) {
-			waitTxReady();
-			Native.wr(pkt.buf[i], Const.IO_ETH + 2);
+			while ((Native.rd(Const.IO_ETH + 0) & (1 << 1)) == 0) {
+				// busy wait
+			}
+			Native.wr(b[i], Const.IO_ETH + 2);
 		}
 	}
 
@@ -206,8 +211,9 @@ public class EthDriver {
 		int wordCount = (byteLen + 3) / 4;
 
 		pkt.len = byteLen;
+		int[] b = pkt.buf;
 		for (int i = 0; i < wordCount; i++) {
-			pkt.buf[i] = Native.rd(Const.IO_ETH + 3);
+			b[i] = Native.rd(Const.IO_ETH + 3);
 		}
 
 		// Drain remaining words if frame was truncated

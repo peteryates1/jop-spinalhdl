@@ -35,10 +35,11 @@ public class NetTest {
 	 * slot for the rest of the boot. */
 	static final int TCP_IDLE_MS = 30000;
 
-	/** TCP echo clients, one per pool slot, and the byte each could not yet
-	 * echo (-1 = none). */
+	/** TCP echo clients, one per pool slot. */
 	static TCPConnection[] tcpClients = new TCPConnection[NetConfig.MAX_TCP_CONN];
-	static int[] pendingBytes = new int[NetConfig.MAX_TCP_CONN];
+
+	/** What an echo moves from a client's receive stream to its send stream. */
+	static byte[] echoBuf = new byte[4096];
 
 	static char[] hexChars = {'0','1','2','3','4','5','6','7',
 	                          '8','9','A','B','C','D','E','F'};
@@ -108,24 +109,18 @@ public class NetTest {
 			JVMHelp.wr("TI\n");
 			return false;
 		}
-		// Retry the pending byte first, then read from iStream to oStream
-		int pending = pendingBytes[i];
-		if (pending >= 0 && c.oStream.write(pending) == 0) {
-			pending = -1;
+		// As much as the send stream has room for, a pass each way: a byte
+		// at a time cost a call per byte per stream, ~1000 cycles each
+		int n = c.iStream.available();
+		int free = c.oStream.getFreeBufferSpace();
+		if (n > free) n = free;
+		if (n > echoBuf.length) n = echoBuf.length;
+		if (n > 0) {
+			c.iStream.read(echoBuf, 0, n);
+			c.oStream.write(echoBuf, 0, n);
 		}
-		if (pending < 0) {
-			int b = c.iStream.read();
-			while (b != -1) {
-				if (c.oStream.write(b) != 0) {
-					pending = b;
-					break;
-				}
-				b = c.iStream.read();
-			}
-		}
-		pendingBytes[i] = pending;
 		// Only close when all data has been echoed
-		if (pending < 0 && c.state == TCPConnection.STATE_CLOSE_WAIT) {
+		if (c.iStream.available() == 0 && c.state == TCPConnection.STATE_CLOSE_WAIT) {
 			c.close();
 			JVMHelp.wr("TX\n");
 			return false;
@@ -242,7 +237,6 @@ public class NetTest {
 				for (int i = 0; i < tcpClients.length; i++) {
 					if (tcpClients[i] == null) {
 						tcpClients[i] = tcpListen;
-						pendingBytes[i] = -1;
 						tcpListen = null;
 						JVMHelp.wr("TC\n");
 						break;
