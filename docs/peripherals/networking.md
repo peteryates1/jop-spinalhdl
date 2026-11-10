@@ -3,7 +3,8 @@
 Comprehensive documentation for the JOP networking module: a poll-based TCP/IP
 stack, first run on the QMTECH EP4CGX150 + DB_FPGA daughter board with RTL8211EG
 Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
-100 Mb/s; see [Colorlight i9+](#colorlight-i9-rgmii-at-100-mbs)).
+100 Mb/s; see [Colorlight i9+](#colorlight-i9-rgmii-at-100-mbs)), at
+1000 Mb/s since 2026-11-10 ([below](#colorlight-i9-rgmii-at-1000-mbs)).
 
 | Board | PHY / interface | Preset | Hardware |
 |-------|-----------------|--------|----------|
@@ -11,6 +12,7 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 | EP4CGX150 + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbV5Mii` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content (2026-10-12, below) |
 | XC7A100T + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `xc7a100tDbMii` | ping, UDP and TCP echo at 100M, no receive errors on any content, DoAll 68/68 (2026-10-28); at 1 Gb/s (`xc7a100tDbEth`) frames whose data toggles are lost and TCP fails (status item 170) |
 | Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68; on a v6.0 module 2026-11-10 (no DNS run) |
+| Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 1000 Mb/s | `colorlightDbI9PlusEth1000` | ping, UDP and TCP echo, DHCP at 1000M, no receive errors, DoAll 68/68 (2026-11-10, v6.0 module, below) |
 | A-E115FB (EP4CE115 + DDR2) | 88E1111, GMII 1 Gb/s | `ae115fbDdr2Eth` | ping, UDP and TCP echo, DHCP, DNS at 1000M, no receive errors on any content, DoAll 68/68 (2026-10-12, below) |
 | QMTECH Wukong V3 | RTL8211EG, GMII 1 Gb/s | `wukongFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12), DoAll 68/68; the same build with the re-latch restored: `Link UP 1000M` and nothing received (below) |
 
@@ -18,7 +20,7 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Link layer (EthDriver) | Working | GMII 1 Gb/s; MII and RGMII 100 Mb/s; MDIO PHY management |
+| Link layer (EthDriver) | Working | GMII and RGMII 1 Gb/s; MII and RGMII 100 Mb/s; MDIO PHY management |
 | ARP | Working | 8-entry cache, snooping, gratuitous ARP |
 | IPv4 | Working | No fragmentation (MTU 1500 sufficient) |
 | ICMP echo (ping) | Working | No loss; the EP4CGX150's 3-5 % at 1 Gb/s was its RX clock (status item 166) |
@@ -61,7 +63,8 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 │    ├── Eth       (I/O device: Mac + Mdio)                       │
 │    ├── Mac       (registers around MacEth; optional RX capture) │
 │    ├── MacEth    (preamble → CRC → aligner → buffer CDC)        │
-│    └── Rgmii100  (RGMII at 100 Mb/s, Colorlight i9+ only)       │
+│    ├── Rgmii100  (RGMII at 100 Mb/s, Colorlight i9+ only)       │
+│    └── Rgmii1000 (RGMII at 1000 Mb/s, Colorlight i9+)           │
 ├──────────────────────────────────────────────────────────────────┤
 │  FPGA Hardware                                                   │
 │    ├── pll_125      (125 MHz GMII TX clock, Altera; generated)  │
@@ -522,6 +525,68 @@ The modules above are v6.1, and both versions carry the same factory bitstreams
 BOUND, ping 50/50 at 64 bytes (8.1 ms) and 5/5 at 1400 (112.5 ms), UDP and TCP
 echo identical (22 and 1400 bytes; 10 KB and 50 KB), `net_echo_check.py` echo,
 reset and idle PASS, DoAll 68/68. DNS was not run.
+
+## Colorlight i9+ (RGMII at 1000 Mb/s)
+
+The same B50612D U9 (MDIO address 1, RJ1), preset `colorlightDbI9PlusEth1000`,
+50 MHz, with the MAC in its 8-bit mode. The 100 Mb/s preset above stays.
+
+- **RGMII:** `jop.io.Rgmii1000`. A byte a clock on four wires: bits 3:0 on
+  the rising edge, 7:4 on the falling one. CTL carries the enable on the
+  rising edge, and the enable XOR the error on the falling one.
+  `Rgmii1000Test` checks both directions at the pins.
+- **PHY clock delays:** the PHYs run RGMII-ID (above), so the FPGA shifts
+  neither clock.
+- **TX:** every pin, TXC too, leaves an ODDR on the PLL's 125 MHz output.
+  TXC's ODDR is (1, 0), so its edges come with the data's, and the PHY adds
+  its own delay. Routed, the six pins leave within 12 ps of each other
+  (`report_datasheet`).
+- **RX:** RXC's pin, L3, is clock-capable. It drives a BUFIO for the IDDRs
+  and a BUFR for the receive logic. Each RX pin goes through an IDELAYE2 (9
+  taps) into an IDDR. The XDC times these pins against the PHY's window, data
+  valid 1.2 ns either side of each RXC edge, rather than false-pathing them.
+  A sweep of the routed design over the tap count met setup and hold from 4
+  to 14 taps, and 9 gives +0.438 ns setup and +0.400 ns hold. Through a BUFG
+  instead, no tap count met both: RXC reached the IDDRs about 2 ns after the
+  data, and the 28 taps that made that up brought 0.5 ns of uncertainty of
+  their own.
+- **Clocks:** the design's PLL makes the 50 MHz system clock, its SDRAM copy,
+  125 MHz for TX and IDELAYCTRL's 200 MHz, all from one 1000 MHz VCO.
+  IDELAYCTRL is reset for 32 reference cycles after the PLL locks.
+- **Driver:** `Const.ETH_GIGABIT` is true, so EthDriver advertises
+  1000BASE-T. It still advertises 10 and 100 as well: a partner without
+  gigabit would link at 100, which this build cannot carry.
+
+```bash
+make -C fpga/colorlight-db-i9plus CFG=colorlightDbI9PlusEth1000 build
+make -C java all JOP_PRESET=colorlightDbI9PlusEth1000 JOP_INSTANCE=jop-i9plus-1
+make -C java/apps/Small JOP_PRESET=colorlightDbI9PlusEth1000 JOP_INSTANCE=jop-i9plus-1 \
+    APP_NAME=NetTest EXTRA_SRC=../../net/src
+python3 fpga/scripts/hw_verify.py colorlightDbI9PlusEth1000 --instance jop-i9plus-1 \
+    --app Small/NetTest --expect-text IP= --timeout 60
+```
+
+Hardware, 2026-11-10, a v6.0 module, timing met (WNS +0.438 ns), RJ1 to a
+gigabit switch, tested from a VM on the same LAN:
+
+| Test | Result |
+|------|--------|
+| Link | `Link UP 1000M` |
+| DHCP | OFFER and BOUND 192.168.0.227 |
+| ping, 64 bytes | 50/50, 8.0 ms |
+| ping, 1400 bytes | 5/5, 112.2 ms |
+| UDP echo, port 7 | 22 and 1400 bytes back identical |
+| TCP echo, port 7 | 10 KB and 50 KB back identical; `net_echo_check.py` echo, reset and idle PASS |
+| Receive errors | none (NetTest's `Er=0`) |
+| DoAll | 68/68 |
+
+The round trips equal the 100 Mb/s build's: the 50 MHz CPU sets them, not the
+wire. The MAC's receive buffer is 2 KB, one full frame, and a burst of
+back-to-back segments at 1000 Mb/s overflows it: 30 drops over the tests
+above (NetTest's `Dr`), which TCP retransmitted. TCP echo runs at about 7 kB/s
+each way at either speed: 200 KB took about 30 s on this build and on the
+100 Mb/s one. That is about 210 ms a segment, the pattern of a delayed ACK,
+and a matter for the stack, not the link; it was not investigated.
 
 ## Colorlight i5 (RGMII at 100 Mb/s)
 
