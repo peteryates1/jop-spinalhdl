@@ -21,7 +21,7 @@ import jop.config.JopCoreConfig
  * @param phyTxDataWidth   PHY TX data width (4 for MII, 8 for GMII)
  * @param phyRxDataWidth   PHY RX data width (4 for MII, 8 for GMII)
  * @param mdioClkDivider   MDC clock divider
- * @param rxBufferByteSize RX buffer size in bytes
+ * @param rxBufferByteSize RX buffer size in bytes (default Mac.RxBufferBytes)
  * @param txBufferByteSize TX buffer size in bytes
  * @param rxCapture        add the MAC's RX capture (a diagnostic; see Mac)
  * @param udpEcho          add the MAC's hardware UDP echo (jop.io.UdpEcho)
@@ -32,7 +32,7 @@ case class Eth(
   phyTxDataWidth: Int = 4,
   phyRxDataWidth: Int = 4,
   mdioClkDivider: Int = 40,
-  rxBufferByteSize: Int = 2048,
+  rxBufferByteSize: Int = Mac.RxBufferBytes,
   txBufferByteSize: Int = 2048,
   rxCapture: Boolean = false,
   udpEcho: Boolean = false

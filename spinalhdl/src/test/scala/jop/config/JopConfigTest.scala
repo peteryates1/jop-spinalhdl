@@ -372,4 +372,27 @@ class JopConfigTest extends AnyFunSuite {
     assert(pinMap.contains("sd_clk"))
     assert(pins.size > 30)  // UART(2) + GMII(~20) + SD(7) = ~29 pins
   }
+
+  // THE MAC'S RECEIVE BUFFER (2026-11-10). At 2 KB, one full-size frame, the
+  // second of two frames that arrived back to back was dropped: they come
+  // 12 us apart at 1000 Mb/s and 123 us at 100, and the CPU takes
+  // milliseconds to read one out. A host's TCP sends segments in pairs, and
+  // a lost one came back only after a retransmit timeout of 200 ms or more.
+  // With 16 KB the i9+'s gigabit preset went from 20.8 to 63 kB/s of TCP
+  // echo with no retransmits; the EP4CGX150's NetTest at 100 Mb/s had
+  // counted the drops too (Dr=7, item 166).
+  test("every preset with Ethernet buffers 16 KB of received frames") {
+    // Found as BramBuildTest finds them: there is no registry.
+    val eth = for {
+      m <- JopConfig.getClass.getMethods.toSeq
+      if m.getParameterCount == 0 && m.getReturnType == classOf[JopConfig]
+      sys <- m.invoke(JopConfig).asInstanceOf[JopConfig].systems
+      dev <- sys.effectiveDevices.values if dev.deviceType == DeviceType.Ethernet
+    } yield m.getName -> DeviceType.Ethernet.rxBufferBytes(dev.params)
+    for (p <- Seq("wukongFull", "wukongSdrFull", "ae115fbDdr2Eth", "ep4cgx150DbFull",
+        "xc7a100tDbMii", "colorlightDbI5Eth", "colorlightDbI9PlusEth"))
+      assert(eth.exists(_._1 == p), s"$p is not among the Ethernet presets found: ${eth.map(_._1)}")
+    val small = eth.filter(_._2 < 16 * 1024)
+    assert(small.isEmpty, s"less than 16 KB: ${small.mkString(", ")}")
+  }
 }

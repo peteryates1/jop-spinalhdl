@@ -56,8 +56,9 @@ object DeviceType {
       * connector), so there is no e_rxer or e_txer port; the MAC sees no
       * receive errors and transmits none.
       * `rxCapture`: the MAC's RX capture, a diagnostic (jop.io.Mac).
-      * `rxBufferBytes`: the MAC's receive buffer, a power of two (default 2048,
-      * one full-size frame: the second of two back to back is dropped).
+      * `rxBufferBytes`: the MAC's receive buffer, a power of two (default
+      * Mac.RxBufferBytes, 16 KB; 2 KB, one full-size frame, lost the second
+      * of two that arrived back to back).
       * `udpEcho`: the MAC's hardware UDP echo, at line rate (jop.io.UdpEcho;
       * an 8-bit MAC). JOP turns it on: EthDriver.udpEcho. */
     override def verilogPins(p: Map[String, Any]) = {
@@ -78,6 +79,9 @@ object DeviceType {
       if (p.getOrElse("rgmii", false).asInstanceOf[Boolean])
         (if (p.getOrElse("gigabit", false).asInstanceOf[Boolean]) 8 else 4)
       else p.getOrElse("phyDataWidth", 4).asInstanceOf[Int]
+    /** The MAC's receive buffer in bytes: `rxBufferBytes`, or the default. */
+    def rxBufferBytes(p: Map[String, Any]): Int =
+      p.getOrElse("rxBufferBytes", Mac.RxBufferBytes).asInstanceOf[Int]
     def create(cfg: JopCoreConfig, p: Map[String, Any], ctx: DeviceContext) =
       Eth(
         txCd = ctx.ethTxCd.get,
@@ -85,7 +89,7 @@ object DeviceType {
         phyTxDataWidth = macWidth(p),
         phyRxDataWidth = macWidth(p),
         mdioClkDivider = p.getOrElse("mdioClkDivider", 40).asInstanceOf[Int],
-        rxBufferByteSize = p.getOrElse("rxBufferBytes", 2048).asInstanceOf[Int],
+        rxBufferByteSize = rxBufferBytes(p),
         rxCapture = p.getOrElse("rxCapture", false).asInstanceOf[Boolean],
         udpEcho = p.getOrElse("udpEcho", false).asInstanceOf[Boolean])
   }

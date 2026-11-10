@@ -44,7 +44,7 @@ import spinal.lib.com.eth._
  * @param rxCd RX PHY clock domain (25 MHz for 100M MII)
  * @param phyTxDataWidth PHY TX data width (4 for MII, 8 for GMII)
  * @param phyRxDataWidth PHY RX data width (4 for MII, 8 for GMII)
- * @param rxBufferByteSize RX buffer size in bytes
+ * @param rxBufferByteSize RX buffer size in bytes (default Mac.RxBufferBytes)
  * @param txBufferByteSize TX buffer size in bytes
  * @param rxCapture add the RX capture (2048 entries, four M9K/BRAM blocks)
  * @param udpEcho add the hardware UDP echo (jop.io.UdpEcho)
@@ -54,7 +54,7 @@ case class Mac(
   rxCd: ClockDomain,
   phyTxDataWidth: Int = 4,
   phyRxDataWidth: Int = 4,
-  rxBufferByteSize: Int = 2048,
+  rxBufferByteSize: Int = Mac.RxBufferBytes,
   txBufferByteSize: Int = 2048,
   rxCapture: Boolean = false,
   udpEcho: Boolean = false
@@ -379,4 +379,14 @@ case class Mac(
   override def busRdData: Bits = bus.rdData
   override def busInterrupts: Seq[Bool] = Seq(bus.rxInterrupt, bus.txInterrupt)
   override def busExternalIo: Option[Bundle] = Some(io)
+}
+
+object Mac {
+  /** The receive buffer's default, 16 KB: ten full-size frames. With one
+    * frame's worth, the default until 2026-11-10, the second of two frames
+    * that arrived back to back was lost -- they come 12 us apart at
+    * 1000 Mb/s and 123 us apart at 100, and the CPU takes milliseconds to
+    * read one out -- and a TCP sender sent each lost segment again only
+    * after a retransmit timeout of 200 ms or more. */
+  val RxBufferBytes = 16 * 1024
 }
