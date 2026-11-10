@@ -63,6 +63,8 @@ to restore, unprotect and write that file back raw at offset 0.
 same FPGA (IDCODE 0362C093) and the same flash (MX25L12833, factory status 0x3c, BP=0xF).
 Its factory flash holds the same two bitstreams as the v6.1 backup, byte for byte (at 0x30
 and 0x240030). Only the LED receiver's settings differ (25 KB in 0xA80000-0xA90A00). Colorlight ships one FPGA design for both
-versions, so the pinout this image uses, K4 and A18, should be the same. Its factory
+versions. D2 blinks, so K4 and A18 are the same on v6.0. It still blinked after a cold power
+cycle, and STAT then read DONE=1 with no CRC error. The base board's eight LEDs, which the
+factory image left partly lit, are dark. Its factory
 contents are backed up (two identical 16 MB reads, md5 8c2b9b10...) in
 `~/workspaces/colorlight-db-backup/i9plus-v6.0-dna00409c286b5a2854-factory-flash.bin`.
