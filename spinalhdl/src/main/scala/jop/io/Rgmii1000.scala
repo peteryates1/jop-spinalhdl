@@ -72,6 +72,34 @@ class XilinxIdelayctrl extends BlackBox {
   setDefinitionName("IDELAYCTRL")
 }
 
+/** Xilinx 7-series BUFIO (UG472): a clock-capable pin's clock to the I/O
+  * cells (ILOGIC, OLOGIC) of its own bank only, with the least delay any
+  * clock buffer has. */
+class XilinxBufio extends BlackBox {
+  val io = new Bundle {
+    val I = in Bool()
+    val O = out Bool()
+  }
+  noIoPrefix()
+  setDefinitionName("BUFIO")
+}
+
+/** Xilinx 7-series BUFR (UG472), undivided: a clock-capable pin's clock to
+  * the logic of its own clock region, built to take data from I/O cells on
+  * the BUFIO of the same pin. */
+class XilinxBufr extends BlackBox {
+  addGeneric("BUFR_DIVIDE", "BYPASS")
+  addGeneric("SIM_DEVICE", "7SERIES")
+  val io = new Bundle {
+    val I   = in Bool()
+    val CE  = in Bool()
+    val CLR = in Bool()
+    val O   = out Bool()
+  }
+  noIoPrefix()
+  setDefinitionName("BUFR")
+}
+
 object Rgmii1000 {
   /** The TX clock: one byte a cycle at 1000 Mb/s. */
   val TxClockMhz = 125
@@ -97,16 +125,24 @@ object Rgmii1000 {
  * transitions.
  *
  * RX: `rxCd` is RXC. Every RX pin goes through an IDELAYE2 (FIXED,
- * `rxDelayTaps`) into an IDDR (SAME_EDGE_PIPELINED) on RXC: Q1 is the rising-
+ * `rxDelayTaps`) into an IDDR (SAME_EDGE_PIPELINED) on RXC -- `rxIoCd`'s, RXC
+ * through a BUFIO, where the top has one, else rxCd's: Q1 is the rising-
  * edge nibble, bits 3:0, Q2 the falling-edge one, 7:4; on RX_CTL, Q1 is RX_DV
  * and Q1 ^ Q2 is RX_ER. The PHY centres RXC in each nibble at its pins. The
  * delay moves the data so that RXC still sits mid-nibble at the IDDR after
  * RXC's own way through its clock buffer. How many taps that takes is for the
  * build's timing report (the XDC constrains the PHY's window), not a guess.
  * The IDELAYE2s need an IDELAYCTRL with a 200 MHz reference in their bank; the
- * top-level wiring makes it.
+ * top-level wiring makes it, and the BUFIO and the BUFR that is rxCd's clock.
+ *
+ * WHY A BUFIO. Through a BUFG, RXC reached the IDDRs about 2 ns after the data:
+ * 28 taps to make up, and Vivado's per-tap uncertainty (87.5 ps max against
+ * 68.5 min) left setup + hold 0.2 to 0.7 ns short of the PHY's 2.4 ns window at
+ * every count (first build, 2026-11-10). A BUFIO is the shortest clock path
+ * there is, and it reaches every RX pin: all are in bank 35 with RXC (L3).
  */
-case class Rgmii1000(txCd: ClockDomain, rxCd: ClockDomain, rxDelayTaps: Int = 0) extends Component {
+case class Rgmii1000(txCd: ClockDomain, rxCd: ClockDomain, rxDelayTaps: Int = 0,
+                     rxIoCd: Option[ClockDomain] = None) extends Component {
   val io = new Bundle {
     val phy   = slave(PhyIo(PhyParameter(txDataWidth = 8, rxDataWidth = 8)))
     val txc   = out Bool()
@@ -139,6 +175,10 @@ case class Rgmii1000(txCd: ClockDomain, rxCd: ClockDomain, rxDelayTaps: Int = 0)
   io.txCtl := oddr(tx.en, tx.en)
   io.txc := oddr(True, False)
 
+  /** The IDDRs' clock: RXC through the top's BUFIO, or rxCd's own. */
+  val ioClock = Bool()
+  ioClock := rxIoCd.getOrElse(rxCd).readClockWire
+
   /** One RX pin: its delay, then its IDDR on RXC; (rising, falling) samples. */
   def iddr(pad: Bool): (Bool, Bool) = {
     val delay = new XilinxIdelaye2(rxDelayTaps)
@@ -153,7 +193,7 @@ case class Rgmii1000(txCd: ClockDomain, rxCd: ClockDomain, rxDelayTaps: Int = 0)
     delay.io.LDPIPEEN := False
     delay.io.REGRST := False
     val cell = new XilinxIddr
-    cell.io.C := rxCd.readClockWire
+    cell.io.C := ioClock
     cell.io.CE := True
     cell.io.D := delay.io.DATAOUT
     cell.io.R := False

@@ -47,7 +47,10 @@ case class TopWiringContext(
 case class DeviceClockDomains(
   ethTxCd: Option[ClockDomain] = None,
   ethRxCd: Option[ClockDomain] = None,
-  vgaCd: Option[ClockDomain] = None
+  vgaCd: Option[ClockDomain] = None,
+  /** RGMII at 1000 Mb/s: RXC through a BUFIO, for the IDDRs alone; ethRxCd
+    * is the same pin through a BUFR (jop.io.Rgmii1000). */
+  ethRxIoCd: Option[ClockDomain] = None
 )
 
 /**
@@ -185,7 +188,20 @@ object EthernetTopWiring extends DeviceTopWiring {
       if (sys.ethRgmii && !sys.ethRgmii1000) Rgmii100.txDomain(raw) else raw
     }
 
-    val ethRxClk = ioPins("e_rxc").asInstanceOf[Bool]
+    // RGMII at 1000 Mb/s: RXC's pin drives a BUFIO for the IDDRs and a BUFR
+    // for the receive logic (jop.io.Rgmii1000 says why). Elsewhere the pin is
+    // the clock, and Vivado puts it on a BUFG.
+    val rxPin = ioPins("e_rxc").asInstanceOf[Bool]
+    val (ethRxClk, ethRxIoCd) =
+      if (sys.ethRgmii1000) {
+        val bufio = new XilinxBufio
+        bufio.io.I := rxPin
+        val bufr = new XilinxBufr
+        bufr.io.I := rxPin
+        bufr.io.CE := True
+        bufr.io.CLR := False
+        (bufr.io.O, Some(ClockDomain(bufio.io.O)))
+      } else (rxPin, None)
     val ethRxCd = {
       val rxBootCd = ClockDomain(ethRxClk, config = ClockDomainConfig(resetKind = BOOT))
       val rxReset = ResetCtrl.asyncAssertSyncDeassert(
@@ -201,7 +217,7 @@ object EthernetTopWiring extends DeviceTopWiring {
       )
     }
 
-    DeviceClockDomains(ethTxCd = Some(ethTxCd), ethRxCd = Some(ethRxCd))
+    DeviceClockDomains(ethTxCd = Some(ethTxCd), ethRxCd = Some(ethRxCd), ethRxIoCd = ethRxIoCd)
   }
 
   def wireDevice(
@@ -239,7 +255,8 @@ object EthernetTopWiring extends DeviceTopWiring {
     if (sys.ethRgmii1000) {
       val taps = sys.effectiveDevices.get(instanceName)
         .flatMap(_.params.get("rxDelayTaps")).map(_.asInstanceOf[Int]).getOrElse(0)
-      val rgmii = Rgmii1000(clockDomains.ethTxCd.get, clockDomains.ethRxCd.get, taps)
+      val rgmii = Rgmii1000(clockDomains.ethTxCd.get, clockDomains.ethRxCd.get, taps,
+        clockDomains.ethRxIoCd)
       rgmii.io.phy.tx << ethPhyIo.tx
       ethPhyIo.rx << rgmii.io.phy.rx
       ethPhyIo.colision := rgmii.io.phy.colision

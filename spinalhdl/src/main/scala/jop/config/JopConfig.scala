@@ -1901,8 +1901,11 @@ object JopConfig {
    * The B50612Ds run RGMII-ID, delaying TXC and RXC themselves (PhyRegs,
    * 2026-11-10), so TXC leaves aligned with its data and RXC arrives centred.
    * `rxDelayTaps` delays the RX data (IDELAYE2, 78 ps a tap) so that RXC is
-   * still centred at the capture cells after its own way through its clock
-   * buffer; the build's timing report decides the count.
+   * still centred at the IDDRs after its own way through its BUFIO. 9 is the
+   * centre of what Vivado passes against the PHY's 1.2 ns either side: a
+   * sweep of the routed design (rx_window.tcl, 2026-11-10) met setup and hold
+   * from 4 to 14 taps, 9 with +0.438 ns setup and +0.400 hold. Through a BUFG
+   * no count met both.
    *
    * The PLL adds the 125 MHz TX clock and IDELAYCTRL's 200 MHz reference to
    * the system clock and its SDRAM copy; 50, 125 and 200 MHz all divide a
@@ -1912,7 +1915,7 @@ object JopConfig {
     val base = colorlightDbI9PlusSdram(50)
     base.copy(systems = Seq(base.system.copy(devices = base.system.devices +
       ("eth" -> DeviceInstance(DeviceType.Ethernet,
-        params = Map("rgmii" -> true, "gigabit" -> true, "rxDelayTaps" -> 25,
+        params = Map("rgmii" -> true, "gigabit" -> true, "rxDelayTaps" -> 9,
           "phyAddr" -> 1, "noPhyReset" -> true),
         devicePart = Some("B50612D_U9"))),
       plls = Seq(xilinxSdrPll("CLK25M", 50, eth = Some(125), idelayRef = true)))))

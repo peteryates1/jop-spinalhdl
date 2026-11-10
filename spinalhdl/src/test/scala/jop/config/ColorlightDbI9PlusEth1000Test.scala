@@ -80,7 +80,7 @@ class ColorlightDbI9PlusEth1000Test extends AnyFunSuite {
     assert(s.contains("Eth clock:   125 MHz"), s)
   }
 
-  test("the top captures RX through IDELAYE2 at the preset's taps, sends TX from ODDRs, and has its IDELAYCTRL") {
+  test("the top captures RX through IDELAYE2 at the preset's taps on a BUFIO, sends TX from ODDRs, and has its IDELAYCTRL") {
     val rom = JopFileLoader.loadMicrocodeRom(MicrocodePaths.rom(BootMode.Serial))
     val ram = JopFileLoader.loadStackRam(MicrocodePaths.ram(BootMode.Serial))
     val dir = jop.generate.BuildLayout.default.standaloneDir("ColorlightDbI9PlusEth1000Test")
@@ -100,5 +100,14 @@ class ColorlightDbI9PlusEth1000Test extends AnyFunSuite {
     assert(count("IDELAYCTRL") == 1, s"IDELAYCTRL: ${count("IDELAYCTRL")}")
     val taps = cfg.system.effectiveDevices("eth").params("rxDelayTaps")
     assert(s"""\\.IDELAY_VALUE\\s*\\(\\s*$taps\\s*\\)""".r.findAllIn(v).size == 5, s"IDELAY_VALUE is not $taps")
+
+    // RXC from its clock-capable pin (L3, SRCC) through a BUFIO to the IDDRs
+    // and a BUFR to the receive logic. Through a BUFG it reached the IDDRs
+    // about 2 ns after the data: 28 taps to make up, and the taps' own
+    // uncertainty left setup + hold 0.2 to 0.7 ns short at every count
+    // (2026-11-10, the tap sweep of the first build).
+    assert(count("BUFIO") == 1, s"BUFIO: ${count("BUFIO")}")
+    assert(count("BUFR") == 1, s"BUFR: ${count("BUFR")}")
+    assert("""\.BUFR_DIVIDE\s*\(\s*"BYPASS"\s*\)""".r.findFirstIn(v).isDefined, "the BUFR must not divide RXC")
   }
 }
