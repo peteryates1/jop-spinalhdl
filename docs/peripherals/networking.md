@@ -475,6 +475,13 @@ board), preset `colorlightDbI9PlusEth`, 50 MHz:
   because RGMII samples TX_CTL on both edges. RX is sampled on RXC's falling
   edge. `Rgmii100Test` checks this at the pins, through the MAC's registers.
 - **PHY reset:** H2 is shared and not driven.
+- **PHY clock delays:** both B50612Ds (ID 0362:5E62, Broadcom's BCM54612E)
+  come up in RGMII-ID mode: the PHY delays RXC and TXC itself. Read
+  2026-11-10 with `java/apps/Small/src/test/PhyRegs.java`: misc control
+  (0x18 shadow 7) 0x71E7, RX skew bit 8 on; clock alignment (0x1C shadow 3)
+  0x0E00, GTXCLK delay bit 9 on. Gigabit RGMII therefore sends TXC aligned
+  with its data, and RXC arrives centred in the receive data. U9's link
+  partner, a gigabit switch, offers 1000BASE-T full duplex.
 - **Driver:** `EthDriver` takes the PHY at `Const.ETH_PHY_ADDR` (1). A scan
   would find U5 first, the PHY with no jack. With `Const.ETH_GIGABIT` false it
   does not advertise 1000BASE-T. It reads the speed from the standard registers.
