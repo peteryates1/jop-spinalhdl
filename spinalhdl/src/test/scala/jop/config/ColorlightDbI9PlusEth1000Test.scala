@@ -27,17 +27,20 @@ class ColorlightDbI9PlusEth1000Test extends AnyFunSuite {
   }
   private def ballOf(port: String): Option[String] = pins.find(_._1 == port).map(_._2)
 
-  /** The elaborated top: its port names and its Verilog. */
-  private lazy val top: (Set[String], String) = {
+  /** The elaborated top and its Verilog. */
+  private lazy val elaborated: (Component, String) = {
     val rom = JopFileLoader.loadMicrocodeRom(MicrocodePaths.rom(BootMode.Serial))
     val ram = JopFileLoader.loadStackRam(MicrocodePaths.ram(BootMode.Serial))
     val dir = jop.generate.BuildLayout.default.standaloneDir("ColorlightDbI9PlusEth1000Test")
     val report = JopSpinalConfig(cfg, dir)
       .generate(InOutWrapper(JopTop(config = cfg, romInit = rom, ramInit = ram,
         mainMemInit = None, mainMemSize = 64 * 1024)))
-    val ports = report.toplevel.getAllIo.map(_.getName()).toSet
-    (ports, new String(Files.readAllBytes(Paths.get(dir.toString, s"${report.toplevelName}.v")), "UTF-8"))
+    (report.toplevel, new String(Files.readAllBytes(Paths.get(dir.toString, s"${report.toplevelName}.v")), "UTF-8"))
   }
+
+  /** The elaborated top: its port names and its Verilog. */
+  private lazy val top: (Set[String], String) =
+    (elaborated._1.getAllIo.map(_.getName()).toSet, elaborated._2)
 
   test("the RGMII and MDIO ports land on U9's balls, as at 100 Mb/s") {
     val want = Map(
@@ -92,7 +95,7 @@ class ColorlightDbI9PlusEth1000Test extends AnyFunSuite {
     assert(s.contains("Eth clock:   125 MHz"), s)
   }
 
-  test("the top captures RX through IDELAYE2 at the preset's taps on a BUFIO, sends TX from ODDRs, and has its IDELAYCTRL") {
+  test("the top captures RX through IDELAYE2 at the preset's taps on a BUFR, sends TX from ODDRs, and has its IDELAYCTRL") {
     val (ports, v) = top
     val ethPorts = ports.filter(_.startsWith("e_"))
     assert(ethPorts == Set("e_txc", "e_txd", "e_txctl", "e_rxc", "e_rxd", "e_rxctl", "e_mdc", "e_mdio"),
@@ -106,14 +109,33 @@ class ColorlightDbI9PlusEth1000Test extends AnyFunSuite {
     val taps = cfg.system.effectiveDevices("eth").params("rxDelayTaps")
     assert(s"""\\.IDELAY_VALUE\\s*\\(\\s*$taps\\s*\\)""".r.findAllIn(v).size == 5, s"IDELAY_VALUE is not $taps")
 
-    // RXC from its clock-capable pin (L3, SRCC) through a BUFIO to the IDDRs
-    // and a BUFR to the receive logic. Through a BUFG it reached the IDDRs
-    // about 2 ns after the data: 28 taps to make up, and the taps' own
-    // uncertainty left setup + hold 0.2 to 0.7 ns short at every count
-    // (2026-11-10, the tap sweep of the first build).
-    assert(count("BUFIO") == 1, s"BUFIO: ${count("BUFIO")}")
+    // RXC from its clock-capable pin (L3, SRCC) through a BUFR, in its own
+    // clock region, to the IDDRs and the receive logic. Through a BUFG it
+    // reached the IDDRs about 2 ns after the data: 28 taps to make up, and the
+    // taps' own uncertainty left setup + hold 0.2 to 0.7 ns short at every
+    // count (2026-11-10, the tap sweep of the first build). A BUFIO passed
+    // 9 to 16 taps, 0.56 ns of setup + hold at best against the BUFR's 0.84:
+    // Vivado puts it 0.4 ns later than the BUFR, and spreads it more.
+    assert(count("BUFIO") == 0, s"BUFIO: ${count("BUFIO")}")
     assert(count("BUFR") == 1, s"BUFR: ${count("BUFR")}")
     assert("""\.BUFR_DIVIDE\s*\(\s*"BYPASS"\s*\)""".r.findFirstIn(v).isDefined, "the BUFR must not divide RXC")
+  }
+
+  test("every IDDR is clocked by the BUFR that clocks the receive logic") {
+    // A clock buffer in the top is not one that is used: the top once made a
+    // BUFIO for the IDDRs, and JopTop dropped its clock domain when it merged
+    // the devices', so it drove nothing and Vivado removed it (2026-11-10).
+    // Each IDDR's clock is followed back, assignment by assignment and
+    // through the hierarchy, to the cell that drives it.
+    def source(b: Bool): Bool = b.getSingleDriver.map(source).getOrElse(b)
+    def all(c: Component): Seq[Component] = c +: c.children.toSeq.flatMap(all)
+    val iddrs = all(elaborated._1).collect { case c: jop.io.XilinxIddr => c }
+    assert(iddrs.size == 5, s"IDDRs: ${iddrs.size}")
+    for (iddr <- iddrs) {
+      val src = source(iddr.io.C)
+      assert(src.component.isInstanceOf[jop.io.XilinxBufr],
+        s"${iddr.getName()} is clocked by ${src.getName()} of ${src.component.getClass.getSimpleName}")
+    }
   }
 
   test("the MAC holds 16 KB of frames as they arrive, not one") {

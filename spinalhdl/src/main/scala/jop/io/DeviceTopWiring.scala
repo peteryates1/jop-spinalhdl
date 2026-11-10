@@ -47,11 +47,18 @@ case class TopWiringContext(
 case class DeviceClockDomains(
   ethTxCd: Option[ClockDomain] = None,
   ethRxCd: Option[ClockDomain] = None,
-  vgaCd: Option[ClockDomain] = None,
-  /** RGMII at 1000 Mb/s: RXC through a BUFIO, for the IDDRs alone; ethRxCd
-    * is the same pin through a BUFR (jop.io.Rgmii1000). */
-  ethRxIoCd: Option[ClockDomain] = None
-)
+  vgaCd: Option[ClockDomain] = None
+) {
+  /** Each domain this has, else `that`'s: how JopTop merges the devices'.
+    * JopTop once merged them field by field and left out one added later,
+    * the domain of a BUFIO meant for Rgmii1000's IDDRs, so the BUFIO drove
+    * nothing (2026-11-10; the IDDRs run on the BUFR now, and that field is
+    * gone). DeviceClockDomainsTest covers every field. */
+  def orElse(that: DeviceClockDomains): DeviceClockDomains = DeviceClockDomains(
+    ethTxCd = ethTxCd.orElse(that.ethTxCd),
+    ethRxCd = ethRxCd.orElse(that.ethRxCd),
+    vgaCd = vgaCd.orElse(that.vgaCd))
+}
 
 /**
  * Encapsulates top-level wiring for one device type.
@@ -188,20 +195,18 @@ object EthernetTopWiring extends DeviceTopWiring {
       if (sys.ethRgmii && !sys.ethRgmii1000) Rgmii100.txDomain(raw) else raw
     }
 
-    // RGMII at 1000 Mb/s: RXC's pin drives a BUFIO for the IDDRs and a BUFR
-    // for the receive logic (jop.io.Rgmii1000 says why). Elsewhere the pin is
+    // RGMII at 1000 Mb/s: RXC's pin drives a BUFR, the clock of the IDDRs and
+    // of the receive logic (jop.io.Rgmii1000 says why). Elsewhere the pin is
     // the clock, and Vivado puts it on a BUFG.
     val rxPin = ioPins("e_rxc").asInstanceOf[Bool]
-    val (ethRxClk, ethRxIoCd) =
+    val ethRxClk =
       if (sys.ethRgmii1000) {
-        val bufio = new XilinxBufio
-        bufio.io.I := rxPin
         val bufr = new XilinxBufr
         bufr.io.I := rxPin
         bufr.io.CE := True
         bufr.io.CLR := False
-        (bufr.io.O, Some(ClockDomain(bufio.io.O)))
-      } else (rxPin, None)
+        bufr.io.O
+      } else rxPin
     val ethRxCd = {
       val rxBootCd = ClockDomain(ethRxClk, config = ClockDomainConfig(resetKind = BOOT))
       val rxReset = ResetCtrl.asyncAssertSyncDeassert(
@@ -217,7 +222,7 @@ object EthernetTopWiring extends DeviceTopWiring {
       )
     }
 
-    DeviceClockDomains(ethTxCd = Some(ethTxCd), ethRxCd = Some(ethRxCd), ethRxIoCd = ethRxIoCd)
+    DeviceClockDomains(ethTxCd = Some(ethTxCd), ethRxCd = Some(ethRxCd))
   }
 
   def wireDevice(
@@ -255,8 +260,7 @@ object EthernetTopWiring extends DeviceTopWiring {
     if (sys.ethRgmii1000) {
       val taps = sys.effectiveDevices.get(instanceName)
         .flatMap(_.params.get("rxDelayTaps")).map(_.asInstanceOf[Int]).getOrElse(0)
-      val rgmii = Rgmii1000(clockDomains.ethTxCd.get, clockDomains.ethRxCd.get, taps,
-        clockDomains.ethRxIoCd)
+      val rgmii = Rgmii1000(clockDomains.ethTxCd.get, clockDomains.ethRxCd.get, taps)
       rgmii.io.phy.tx << ethPhyIo.tx
       ethPhyIo.rx << rgmii.io.phy.rx
       ethPhyIo.colision := rgmii.io.phy.colision

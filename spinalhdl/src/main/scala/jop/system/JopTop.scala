@@ -482,13 +482,7 @@ case class JopTop(
       val ctx = TopWiringContext(config, simulation, systemReset, pllResult)
       sys.effectiveDevices.values.flatMap { inst =>
         DeviceTopWirings.forInstance(inst).map(_.createClockDomains(ctx, ioPinMap))
-      }.foldLeft(DeviceClockDomains()) { (acc, cd) =>
-        DeviceClockDomains(
-          ethTxCd = acc.ethTxCd.orElse(cd.ethTxCd),
-          ethRxCd = acc.ethRxCd.orElse(cd.ethRxCd),
-          vgaCd = acc.vgaCd.orElse(cd.vgaCd)
-        )
-      }
+      }.foldLeft(DeviceClockDomains())(_ orElse _)
     }
 
     // ==================================================================

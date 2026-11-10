@@ -1903,11 +1903,12 @@ object JopConfig {
    * The B50612Ds run RGMII-ID, delaying TXC and RXC themselves (PhyRegs,
    * 2026-11-10), so TXC leaves aligned with its data and RXC arrives centred.
    * `rxDelayTaps` delays the RX data (IDELAYE2, 78 ps a tap) so that RXC is
-   * still centred at the IDDRs after its own way through its BUFIO. 9 is the
+   * still centred at the IDDRs after its own way through its BUFR. 9 is the
    * centre of what Vivado passes against the PHY's 1.2 ns either side: a
-   * sweep of the routed design (rx_window.tcl, 2026-11-10) met setup and hold
-   * from 4 to 14 taps, 9 with +0.438 ns setup and +0.400 hold. Through a BUFG
-   * no count met both.
+   * sweep of the routed design (fpga/scripts/rx_window.tcl, 2026-11-10) met
+   * setup and hold from 4 to 14 taps, 9 with +0.438 ns setup and +0.400 hold.
+   * Through a BUFG no count met both; through a BUFIO, 9 to 16
+   * (jop.io.Rgmii1000 says why).
    *
    * The PLL adds the 125 MHz TX clock and IDELAYCTRL's 200 MHz reference to
    * the system clock and its SDRAM copy; 50, 125 and 200 MHz all divide a
