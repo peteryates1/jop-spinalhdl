@@ -57,3 +57,12 @@ and after `-r` the STAT register read DONE=1, no CRC error. The flash was left
 UNPROTECTED (BP=0). Its factory contents are backed up (two identical 16 MB reads,
 md5 29015ce7...) in `~/workspaces/colorlight-db-backup/i9plus-module-factory-flash.bin`;
 to restore, unprotect and write that file back raw at offset 0.
+
+**V6.0 modules take it too.** The modules above are v6.1. A v6.0 module (DNA
+0x00409c286b5a2854) was written on 2026-11-10 with `flash_idle.sh`, which passed. It has the
+same FPGA (IDCODE 0362C093) and the same flash (MX25L12833, factory status 0x3c, BP=0xF).
+Its factory flash holds the same two bitstreams as the v6.1 backup, byte for byte (at 0x30
+and 0x240030). Only the LED receiver's settings differ (25 KB in 0xA80000-0xA90A00). Colorlight ships one FPGA design for both
+versions, so the pinout this image uses, K4 and A18, should be the same. Its factory
+contents are backed up (two identical 16 MB reads, md5 8c2b9b10...) in
+`~/workspaces/colorlight-db-backup/i9plus-v6.0-dna00409c286b5a2854-factory-flash.bin`.
