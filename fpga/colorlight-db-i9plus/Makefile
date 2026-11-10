@@ -11,6 +11,7 @@
 #
 # With Ethernet (RJ1, RGMII at 100 Mb/s): CFG=colorlightDbI9PlusEth on each
 # of the above; docs/peripherals/networking.md has the steps and results.
+# At 1000 Mb/s (jop.io.Rgmii1000): CFG=colorlightDbI9PlusEth1000.
 #
 # The flow is the shared one (../vivado.mk, fpga/scripts/vivado_build_
 # nonproject.tcl). What is board-specific is only: the part and the
@@ -52,7 +53,7 @@ $(GEN_XDC): $(GEN_STAMP)
 
 # The PLL has the outputs the design uses and no others: the system clock,
 # the SDRAM's copy 3.0 ns early, and for CFG=colorlightDbI9PlusEth the 50 MHz
-# RGMII TX clock (status item 164: an unused 125 MHz output once forced
+# RGMII TX clock (CFG=colorlightDbI9PlusEth1000: 125 MHz, and IDELAYCTRL's 200) (status item 164: an unused 125 MHz output once forced
 # 80 MHz onto a VCO that split the system and SDRAM clocks). Its definition
 # refuses an IP whose outputs miss the design, so a split stops the build.
 # (The hand-made IPs' MMCM is kept: an MMCM's phase steps are VCO/8, and the

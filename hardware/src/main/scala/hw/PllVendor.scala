@@ -342,6 +342,7 @@ object XilinxClkWiz extends PllVendor {
     case PllRole.Vga    => "clk_vga"
     case PllRole.MigSys => "clk_mig_sys"
     case PllRole.MigRef => "clk_mig_ref"
+    case PllRole.IdelayRef => "clk_idelay_ref"
   }
 
   /** The phase clk_wiz is asked for, in degrees of `o`: it takes an angle,

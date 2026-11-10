@@ -195,6 +195,7 @@ object JopTopVerilog {
     case "colorlightDbI9PlusSdram" =>
       JopConfig.colorlightDbI9PlusSdram(args.drop(1).headOption.map(_.toInt).getOrElse(50))
     case "colorlightDbI9PlusEth" => JopConfig.colorlightDbI9PlusEth
+    case "colorlightDbI9PlusEth1000" => JopConfig.colorlightDbI9PlusEth1000
     case "colorlightDbI5Sdram" => JopConfig.colorlightDbI5Sdram
     case "colorlightDbI5Eth" => JopConfig.colorlightDbI5Eth
     case other =>
@@ -207,6 +208,7 @@ object JopTopVerilog {
         "wukongDualIndependent, wukongDualSmp, " +
         "xc7a100tDbSerial, xc7a100tDbFull, xc7a100tDbSmp, ae115fbDdr2, ae115fbDdr2Eth, " +
         "colorlightI5Bram, colorlightI5Sdram, colorlightDbI9PlusSdram, colorlightDbI9PlusEth, " +
+        "colorlightDbI9PlusEth1000, " +
         "colorlightDbI5Sdram, colorlightDbI5Eth, " +
         "minimum, max1000Sdram, ep4ce6Sdram")
   }
@@ -243,7 +245,9 @@ object JopTopVerilog {
       line(f"${p}Boot mode:   ${sys.bootMode}")
       // What the clock IP must make on its Ethernet output: check_clk_ip.py
       // reads this line and refuses an IP that does not.
-      if (sys.ethRgmii)
+      if (sys.ethRgmii1000)
+        line(f"${p}Eth clock:   ${jop.io.Rgmii1000.TxClockMhz} MHz")
+      else if (sys.ethRgmii)
         line(f"${p}Eth clock:   ${jop.io.Rgmii100.TxClockMhz} MHz")
       val devs = sys.effectiveDevices
       devs.values.find(_.deviceType.key == "uart").foreach { u =>

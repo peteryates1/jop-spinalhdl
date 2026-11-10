@@ -59,7 +59,7 @@ macs = ["02:4a:4f:50:00:01"]
 probe = "colorlight-db"
 console = "colorlight-db-0"
 loader-cable = "dirtyJtag"
-presets = ["colorlightDbI9PlusSdram", "colorlightDbI9PlusEth"]
+presets = ["colorlightDbI9PlusSdram", "colorlightDbI9PlusEth", "colorlightDbI9PlusEth1000"]
 
 # The Colorlight i5 on the second Atari-800 base board (assembled 2026-10-26).
 # Only the RP2040-STAMP, the reset button and the Ethernet jack are fitted

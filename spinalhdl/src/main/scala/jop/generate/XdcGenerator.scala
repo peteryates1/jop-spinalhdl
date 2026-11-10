@@ -126,7 +126,8 @@ object XdcGenerator {
     // -group makes it asynchronous to every other clock without naming the
     // PLL's, which differ per board.
     val rgmii = config.devices.values.exists(d =>
-      d.deviceType == DeviceType.Ethernet && d.params.getOrElse("rgmii", false) == true)
+      d.deviceType == DeviceType.Ethernet && d.params.getOrElse("rgmii", false) == true &&
+        d.params.getOrElse("gigabit", false) != true)
     if (rgmii) {
       sb.append("# Ethernet: RGMII at 100 Mb/s (jop.io.Rgmii100)\n")
       sb.append("# RXC is constrained at 8 ns, not 40: with no link, or before\n")
@@ -138,6 +139,42 @@ object XdcGenerator {
       sb.append("set_property IOB TRUE [get_ports {e_txctl}]\n")
       sb.append("set_property IOB TRUE [get_ports {e_rxd[*]}]\n")
       sb.append("set_property IOB TRUE [get_ports {e_rxctl}]\n\n")
+    }
+
+    // Ethernet over RGMII at 1000 Mb/s (jop.io.Rgmii1000). Unlike every other
+    // Ethernet mode here, the RX pins are TIMED, not false-pathed: at 1000 Mb/s
+    // a nibble lasts 4 ns, and the IDELAYE2 taps in front of the IDDRs
+    // (`rxDelayTaps`) are chosen from what this lets Vivado report.
+    //
+    // RXC comes from an RGMII-ID PHY (the i9+'s B50612Ds), centred in the data,
+    // which RGMII v2.0 holds valid at least 1.2 ns either side of each edge at
+    // the PHY's pins (TsetupT, TholdT). Centre-aligned DDR as Vivado's template
+    // writes it: -max is half the period less the setup, -min is the hold, once
+    // for each edge. TX: every pin, TXC too, leaves an ODDR on the PLL's 125 MHz
+    // output, one clock and one kind of cell, and the PHY delays TXC itself;
+    // Rgmii1000Test holds that structure, and the outputs are false-pathed as
+    // GMII's are. The MAC crosses both clocks with CC FIFOs, so each is
+    // asynchronous to everything else.
+    val rgmii1000 = config.devices.values.find(d => d.deviceType == DeviceType.Ethernet &&
+      d.params.getOrElse("rgmii", false) == true && d.params.getOrElse("gigabit", false) == true)
+    rgmii1000.foreach { _ =>
+      val period = BigDecimal(1000) / jop.io.Rgmii1000.TxClockMhz
+      val valid = BigDecimal("1.2")
+      def ns(x: BigDecimal) = x.setScale(3, BigDecimal.RoundingMode.HALF_UP).toString
+      val rx = "[get_ports {e_rxd[*] e_rxctl}]"
+      sb.append("# Ethernet: RGMII at 1000 Mb/s (jop.io.Rgmii1000); RXC from an RGMII-ID PHY,\n")
+      sb.append(s"# centred in data valid ${ns(valid)} ns either side of each edge\n")
+      sb.append(s"create_clock -period ${ns(period)} -name e_rxc [get_ports {e_rxc}]\n")
+      sb.append("set_clock_groups -asynchronous -group [get_clocks e_rxc]\n")
+      sb.append(s"set_input_delay -clock [get_clocks e_rxc] -max ${ns(period / 2 - valid)} $rx\n")
+      sb.append(s"set_input_delay -clock [get_clocks e_rxc] -min ${ns(valid)} $rx\n")
+      sb.append(s"set_input_delay -clock [get_clocks e_rxc] -clock_fall -max ${ns(period / 2 - valid)} -add_delay $rx\n")
+      sb.append(s"set_input_delay -clock [get_clocks e_rxc] -clock_fall -min ${ns(valid)} -add_delay $rx\n")
+      val ethPll = config.plls.find(_.outputs.exists(_.role == PllRole.Eth)).getOrElse(
+        throw new IllegalArgumentException(s"${config.designName} has RGMII at 1000 Mb/s, but none of " +
+          "its PLLs makes the transmit clock (PllRole.Eth)"))
+      sb.append(s"set_clock_groups -asynchronous -group [get_clocks ${XilinxClkWiz.port(PllRole.Eth)}_${ethPll.module}]\n")
+      sb.append("set_false_path -to [get_ports {e_txc e_txd[*] e_txctl}]\n\n")
     }
 
     // Ethernet over GMII (RTL8211EG: the Wukong, the DB_FPGA boards). These are

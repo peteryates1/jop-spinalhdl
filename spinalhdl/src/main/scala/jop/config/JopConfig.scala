@@ -151,11 +151,18 @@ case class JopSystem(
     effectiveDevices.values.find(_.deviceType == DeviceType.Ethernet)
       .flatMap(_.params.get("gmii"))
       .exists(_.asInstanceOf[Boolean])
-  def phyDataWidth: Int = if (ethGmii) 8 else 4
-  /** RGMII at 100 Mb/s through jop.io.Rgmii100 (the MAC in its 4-bit mode). */
+  def phyDataWidth: Int = if (ethGmii || ethRgmii1000) 8 else 4
+  /** RGMII pins: at 100 Mb/s through jop.io.Rgmii100 (the MAC in its 4-bit
+    * mode), or at 1000 with `gigabit` (ethRgmii1000). */
   def ethRgmii: Boolean =
     effectiveDevices.values.find(_.deviceType == DeviceType.Ethernet)
       .flatMap(_.params.get("rgmii"))
+      .exists(_.asInstanceOf[Boolean])
+  /** RGMII at 1000 Mb/s through jop.io.Rgmii1000 (the MAC in its 8-bit mode):
+    * an Ethernet device with both `rgmii` and `gigabit`. */
+  def ethRgmii1000: Boolean = ethRgmii &&
+    effectiveDevices.values.find(_.deviceType == DeviceType.Ethernet)
+      .flatMap(_.params.get("gigabit"))
       .exists(_.asInstanceOf[Boolean])
 }
 
@@ -755,7 +762,9 @@ object JopConfig {
    * The SDR PLL on the Artix-7 boards, the Wukong and the i9+ (status item
    * 173): the system clock and the SDRAM's copy 3.0 ns early, plus the
    * Ethernet transmit clock where the design has one -- GMII's 125 MHz, or
-   * RGMII's 50 (jop.io.Rgmii100.TxClockMhz). Built by clk_wiz (XilinxClkWiz).
+   * RGMII's 50 (jop.io.Rgmii100.TxClockMhz) -- and, with `idelayRef`, the
+   * 200 MHz IDELAYCTRL reference a design that delays its own input pads
+   * needs (RGMII at 1000, jop.io.Rgmii1000). Built by clk_wiz (XilinxClkWiz).
    *
    * -3000 ps as a DELAY: it is physical -- board trace plus the SDRAM's own
    * setup and hold -- and an angle would move it with the clock (-108 deg is
@@ -766,12 +775,17 @@ object JopConfig {
    * and SDRAM clocks (status item 164); the hand-made IPs carried it into
    * every SDR design and worked around it with `-eth_mhz`.
    */
-  def xilinxSdrPll(reference: String, mhz: Int, eth: Option[Int] = None,
+  def xilinxSdrPll(reference: String, mhz: Int, eth: Option[Int] = None, idelayRef: Boolean = false,
                    module: String = "sdr_clk", instance: String = "pll"): PllDefinition =
     PllDefinition(reference,
       Seq(PllOutput(PllRole.System, mhz), PllOutput(PllRole.Sdram, mhz, phasePs = -3000)) ++
-        eth.map(PllOutput(PllRole.Eth, _)),
+        eth.map(PllOutput(PllRole.Eth, _)) ++
+        (if (idelayRef) Seq(idelayRefOutput) else Nil),
       module = module, instance = instance)
+
+  /** IDELAYCTRL's reference: 200 MHz, which it takes within +-10 MHz (DS181),
+    * as MIG's (migPll). */
+  val idelayRefOutput: PllOutput = PllOutput(PllRole.IdelayRef, 200, tolerancePpm = 50000)
 
   /**
    * A MIG design's PLL (status item 173): MIG's input at what `mig` demands,
@@ -1876,6 +1890,32 @@ object JopConfig {
         params = Map("rgmii" -> true, "phyAddr" -> 1, "noPhyReset" -> true),
         devicePart = Some("B50612D_U9"))),
       plls = Seq(xilinxSdrPll("CLK25M", 50, eth = Some(jop.io.Rgmii100.TxClockMhz))))))
+  }
+
+  /**
+   * `colorlightDbI9PlusSdram` with Ethernet at 1000 Mb/s: the same B50612D U9
+   * (MDIO address 1, RJ1 on this base board) over RGMII at 1000 through
+   * jop.io.Rgmii1000, the MAC in its 8-bit mode. `colorlightDbI9PlusEth` is
+   * the 100 Mb/s one, and stays.
+   *
+   * The B50612Ds run RGMII-ID, delaying TXC and RXC themselves (PhyRegs,
+   * 2026-11-10), so TXC leaves aligned with its data and RXC arrives centred.
+   * `rxDelayTaps` delays the RX data (IDELAYE2, 78 ps a tap) so that RXC is
+   * still centred at the capture cells after its own way through its clock
+   * buffer; the build's timing report decides the count.
+   *
+   * The PLL adds the 125 MHz TX clock and IDELAYCTRL's 200 MHz reference to
+   * the system clock and its SDRAM copy; 50, 125 and 200 MHz all divide a
+   * 1000 MHz VCO. `ETH_GIGABIT` tells EthDriver to advertise 1000BASE-T.
+   */
+  def colorlightDbI9PlusEth1000 = {
+    val base = colorlightDbI9PlusSdram(50)
+    base.copy(systems = Seq(base.system.copy(devices = base.system.devices +
+      ("eth" -> DeviceInstance(DeviceType.Ethernet,
+        params = Map("rgmii" -> true, "gigabit" -> true, "rxDelayTaps" -> 25,
+          "phyAddr" -> 1, "noPhyReset" -> true),
+        devicePart = Some("B50612D_U9"))),
+      plls = Seq(xilinxSdrPll("CLK25M", 50, eth = Some(125), idelayRef = true)))))
   }
 
   /** Wukong BRAM with all compute units (DCU debug — simulation only) */

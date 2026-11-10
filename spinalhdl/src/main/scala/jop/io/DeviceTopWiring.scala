@@ -155,8 +155,9 @@ object EthernetTopWiring extends DeviceTopWiring {
 
     val sys = ctx.config.system
 
-    // TX clock source. RGMII: the PLL's Ethernet output at Rgmii100.TxClockMhz,
-    // which Rgmii100.txDomain below slows to the nibble rate.
+    // TX clock source. RGMII: the PLL's Ethernet output -- at 100 Mb/s at
+    // Rgmii100.TxClockMhz, which Rgmii100.txDomain below slows to the nibble
+    // rate; at 1000 at Rgmii1000.TxClockMhz, a byte every cycle.
     val ethTxClk =
       if (sys.ethRgmii) {
         require(ctx.pllResult != null && ctx.pllResult.ethClk.isDefined,
@@ -181,7 +182,7 @@ object EthernetTopWiring extends DeviceTopWiring {
         reset = txReset,
         config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = HIGH)
       )
-      if (sys.ethRgmii) Rgmii100.txDomain(raw) else raw
+      if (sys.ethRgmii && !sys.ethRgmii1000) Rgmii100.txDomain(raw) else raw
     }
 
     val ethRxClk = ioPins("e_rxc").asInstanceOf[Bool]
@@ -232,6 +233,41 @@ object EthernetTopWiring extends DeviceTopWiring {
 
     // PHY interface
     val ethPhyIo = cluster.devicePins(instanceName).elements.find(_._1 == "phy").get._2.asInstanceOf[PhyIo]
+
+    // RGMII at 1000 Mb/s: the whole pin side is Rgmii1000, and its RX delays
+    // need an IDELAYCTRL on the PLL's 200 MHz.
+    if (sys.ethRgmii1000) {
+      val taps = sys.effectiveDevices.get(instanceName)
+        .flatMap(_.params.get("rxDelayTaps")).map(_.asInstanceOf[Int]).getOrElse(0)
+      val rgmii = Rgmii1000(clockDomains.ethTxCd.get, clockDomains.ethRxCd.get, taps)
+      rgmii.io.phy.tx << ethPhyIo.tx
+      ethPhyIo.rx << rgmii.io.phy.rx
+      ethPhyIo.colision := rgmii.io.phy.colision
+      ethPhyIo.busy := rgmii.io.phy.busy
+      ioPins("e_txc").asInstanceOf[Bool] := rgmii.io.txc
+      ioPins("e_txd").asInstanceOf[Bits] := rgmii.io.txd
+      ioPins("e_txctl").asInstanceOf[Bool] := rgmii.io.txCtl
+      rgmii.io.rxd := ioPins("e_rxd").asInstanceOf[Bits]
+      rgmii.io.rxCtl := ioPins("e_rxctl").asInstanceOf[Bool]
+
+      // IDELAYCTRL must be reset once its reference is stable (UG471): held
+      // 32 reference cycles, 160 ns, past the PLL's lock, against a 52 ns
+      // minimum pulse.
+      val refClk = ctx.pllResult.idelayRefClk.getOrElse(throw new IllegalArgumentException(
+        "RGMII at 1000 Mb/s delays its RX pins, and IDELAYCTRL needs the PLL's 200 MHz " +
+          "reference (PllRole.IdelayRef): the design's PLL makes none"))
+      val refCd = ClockDomain(refClk, reset = !ctx.pllResult.locked,
+        config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = HIGH))
+      val idelayCtrlReset = new ClockingArea(refCd) {
+        val count = Reg(UInt(5 bits)) init(0)
+        val done = count.andR
+        when(!done) { count := count + 1 }
+      }
+      val idelayCtrl = new XilinxIdelayctrl
+      idelayCtrl.io.REFCLK := refClk
+      idelayCtrl.io.RST := !idelayCtrlReset.done
+      return
+    }
 
     // RGMII: the whole pin side is Rgmii100 (TX inter-frame gap, TXC, the RX
     // framing), clocked by the domains createClockDomains made.

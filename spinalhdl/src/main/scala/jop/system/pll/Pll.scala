@@ -17,9 +17,10 @@ import hw._
  * @param sdramClk      Phase-shifted SDRAM clock (SDR only)
  * @param migSysClk     100 MHz for MIG sys_clk_i (DDR3 only)
  * @param migRefClk     200 MHz for MIG clk_ref_i (DDR3 only)
- * @param ethClk        Ethernet TX: 125 MHz for GMII, 50 MHz for RGMII at 100 Mb/s
- *                      (jop.io.Rgmii100.TxClockMhz)
+ * @param ethClk        Ethernet TX: 125 MHz for GMII and RGMII at 1000 Mb/s, 50 MHz
+ *                      for RGMII at 100 (jop.io.Rgmii100.TxClockMhz)
  * @param vgaClk        25 MHz for VGA pixel clock (EP4CGX150 only)
+ * @param idelayRefClk  200 MHz for IDELAYCTRL, outside MIG (RGMII at 1000 Mb/s)
  */
 case class PllResult(
   systemClk: Option[Bool] = None,
@@ -28,7 +29,8 @@ case class PllResult(
   migSysClk: Option[Bool] = None,
   migRefClk: Option[Bool] = None,
   ethClk: Option[Bool] = None,
-  vgaClk: Option[Bool] = None
+  vgaClk: Option[Bool] = None,
+  idelayRefClk: Option[Bool] = None
 )
 
 /**
@@ -51,7 +53,7 @@ object Pll {
       Some(spec.outputs.indexWhere(_.role == r)).filter(_ >= 0).map(clocks.outputs)
     PllResult(systemClk = out(PllRole.System), locked = clocks.locked, sdramClk = out(PllRole.Sdram),
       migSysClk = out(PllRole.MigSys), migRefClk = out(PllRole.MigRef), ethClk = out(PllRole.Eth),
-      vgaClk = out(PllRole.Vga))
+      vgaClk = out(PllRole.Vga), idelayRefClk = out(PllRole.IdelayRef))
   }
 
   /** The PLLs `ds` define, each built by `family` from its reference clock on
@@ -75,7 +77,8 @@ object Pll {
       migSysClk = one("MIG system", _.migSysClk),
       migRefClk = one("MIG reference", _.migRefClk),
       ethClk    = one("Ethernet", _.ethClk),
-      vgaClk    = one("VGA", _.vgaClk))
+      vgaClk    = one("VGA", _.vgaClk),
+      idelayRefClk = one("IDELAYCTRL reference", _.idelayRefClk))
   }
 
   /** The PLL `d` defines, on `board`: built by the board's FPGA family, from

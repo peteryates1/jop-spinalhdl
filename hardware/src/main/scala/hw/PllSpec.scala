@@ -16,6 +16,10 @@ object PllRole {
     * output, which is why boards using them declare no System output. */
   case object MigSys extends PllRole
   case object MigRef extends PllRole
+  /** IDELAYCTRL's 200 MHz reference, for a design that delays its own input
+    * pads (IDELAYE2) without MIG -- RGMII at 1000 Mb/s (jop.io.Rgmii1000).
+    * A MIG design has MigRef for the same cell. */
+  case object IdelayRef extends PllRole
 }
 
 /**

@@ -63,13 +63,16 @@ class XilinxDesignPllTest extends AnyFunSuite {
   test("each design's PLL makes exactly the clocks it uses, from the board's clock") {
     // SDR: the system clock and its SDRAM copy; DDR3: MIG's two; BRAM: the
     // system clock. Plus the Ethernet transmit clock where the design has
-    // one -- GMII's 125 MHz, RGMII's 50 (jop.io.Rgmii100) -- and the 25 MHz
-    // pixel clock where it has VGA, and no unused output, which constrains
-    // the shared VCO for nothing (status item 164).
+    // one -- GMII's 125 MHz, RGMII's 50 (jop.io.Rgmii100), or RGMII at 1000's
+    // 125 with IDELAYCTRL's 200 MHz reference (jop.io.Rgmii1000) -- and the
+    // 25 MHz pixel clock where it has VGA, and no unused output, which
+    // constrains the shared VCO for nothing (status item 164).
     for ((name, cfg) <- presets ++ points; s <- cfg.systems) {
       val mem = cfg.resolveMemory(s).map(_.memType)
       val eth =
         if (s.ethGmii) Seq(PllOutput(PllRole.Eth, 125))
+        else if (s.ethRgmii1000)
+          Seq(PllOutput(PllRole.Eth, 125), PllOutput(PllRole.IdelayRef, 200, tolerancePpm = 50000))
         else if (s.ethRgmii) Seq(PllOutput(PllRole.Eth, jop.io.Rgmii100.TxClockMhz))
         else Nil
       val vga = if (s.hasDevice(DeviceType.VgaText)) Seq(PllOutput(PllRole.Vga, 25)) else Nil

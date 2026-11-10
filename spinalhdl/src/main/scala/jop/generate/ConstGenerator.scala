@@ -150,7 +150,9 @@ object ConstGenerator {
     val ethInst = config.systems.flatMap(_.effectiveDevices.values)
       .find(_.deviceType == DeviceType.Ethernet)
     val ethPhyAddr = ethInst.flatMap(_.params.get("phyAddr")).map(_.asInstanceOf[Int]).getOrElse(-1)
-    val ethGigabit = ethInst.exists(_.params.getOrElse("gmii", false).asInstanceOf[Boolean])
+    // GMII, or RGMII with `gigabit` (jop.io.Rgmii1000): a MAC that carries 1000 Mb/s.
+    def ethFlag(k: String) = ethInst.exists(_.params.getOrElse(k, false).asInstanceOf[Boolean])
+    val ethGigabit = ethFlag("gmii") || (ethFlag("rgmii") && ethFlag("gigabit"))
     val hasSdSpi = config.systems.exists(_.hasDevice(DeviceType.SdSpi))
     val hasSdNative = config.systems.exists(_.hasDevice(DeviceType.SdNative))
     val hasVgaDma = config.systems.exists(_.hasDevice(DeviceType.VgaDma))
@@ -561,7 +563,7 @@ object ConstGenerator {
          |	public static final boolean HAS_ETHERNET = $hasEth;
          |	/** MDIO address of the PHY EthDriver uses; -1 = the first that answers */
          |	public static final int ETH_PHY_ADDR = $ethPhyAddr;
-         |	/** The MAC runs 1000 Mb/s (GMII); when false, never advertise 1000BASE-T */
+         |	/** The MAC runs 1000 Mb/s (GMII, or RGMII at 1000); when false, never advertise 1000BASE-T */
          |	public static final boolean ETH_GIGABIT = $ethGigabit;
          |	/** This unit's MAC address, top 16 and low 32 bits: its board instance's
          |	 *  (status item 174), or 02:00:00:00:00:01, shared, where no instance

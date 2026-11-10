@@ -63,7 +63,8 @@ class InstanceTest extends AnyFunSuite {
   test("hw_verify's descriptor reaches each unit through its instance") {
     val expected = Seq(
       "colorlightDbI5Eth"     -> ("colorlight-db-i5", "colorlight-db-i5-0"),
-      "colorlightDbI9PlusEth" -> ("colorlight-db", "colorlight-db-0"))
+      "colorlightDbI9PlusEth" -> ("colorlight-db", "colorlight-db-0"),
+      "colorlightDbI9PlusEth1000" -> ("colorlight-db", "colorlight-db-0"))
     for ((preset, (probe, console)) <- expected) {
       val out = new java.io.ByteArrayOutputStream
       Console.withOut(out)(HwVerifyDescriptorMain.main(Array(preset)))
@@ -87,7 +88,8 @@ class InstanceTest extends AnyFunSuite {
   test("each unit's Const.java carries its own MAC and hostname") {
     val expected = Seq(
       "colorlightDbI5Eth"     -> ("0x024a", "0x4f500002", "jop-i5-1"),
-      "colorlightDbI9PlusEth" -> ("0x024a", "0x4f500001", "jop-i9plus-1"))
+      "colorlightDbI9PlusEth" -> ("0x024a", "0x4f500001", "jop-i9plus-1"),
+      "colorlightDbI9PlusEth1000" -> ("0x024a", "0x4f500001", "jop-i9plus-1"))
     for ((preset, (hi, lo, host)) <- expected) {
       val c = constFor(preset)
       for (line <- Seq(s"public static final int ETH_MAC_HI = $hi;",
@@ -163,6 +165,7 @@ class InstanceTest extends AnyFunSuite {
     "colorlightDbI5Eth" -> Reach("colorlight-db-i5", "colorlight-db-i5-0", Some("dirtyJtag"), "jop-i5-1"),
     "colorlightDbI5Sdram" -> Reach("colorlight-db-i5", "colorlight-db-i5-0", Some("dirtyJtag"), "jop-i5-1"),
     "colorlightDbI9PlusEth" -> Reach("colorlight-db", "colorlight-db-0", Some("dirtyJtag"), "jop-i9plus-1"),
+    "colorlightDbI9PlusEth1000" -> Reach("colorlight-db", "colorlight-db-0", Some("dirtyJtag"), "jop-i9plus-1"),
     "colorlightDbI9PlusSdram" -> Reach("colorlight-db", "colorlight-db-0", Some("dirtyJtag"), "jop-i9plus-1"),
     "max1000Sdram" -> Reach.none,
     "ep4ce6Sdram" -> Reach.none)

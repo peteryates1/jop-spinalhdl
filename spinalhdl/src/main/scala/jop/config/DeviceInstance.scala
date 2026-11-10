@@ -48,6 +48,8 @@ object DeviceType {
     val addrBits = 4
     val interruptCount = 1
     /** `rgmii` (jop.io.Rgmii100): RGMII at 100 Mb/s, TXC driven by the FPGA.
+      * With `gigabit` too (jop.io.Rgmii1000): RGMII at 1000, the MAC 8 bits
+      * wide, its RX delayed `rxDelayTaps` IDELAYE2 taps.
       * `noPhyReset`: the design leaves the PHY's reset alone, so there is no
       * e_resetn port to constrain (EthernetTopWiring.topPins drops it too).
       * `noErPins`: the board routes neither RX_ER nor TX_ER (the A-E115FB's
@@ -66,12 +68,18 @@ object DeviceType {
       if (p.getOrElse("noPhyReset", false).asInstanceOf[Boolean]) withEr - "e_resetn"
       else withEr + ("e_resetn" -> "RESET")
     }
+    /** The MAC's PHY width. RGMII's follows its speed -- a nibble at 100 Mb/s,
+      * a byte at 1000 -- so a preset cannot pair the wrong one with it. */
+    def macWidth(p: Map[String, Any]): Int =
+      if (p.getOrElse("rgmii", false).asInstanceOf[Boolean])
+        (if (p.getOrElse("gigabit", false).asInstanceOf[Boolean]) 8 else 4)
+      else p.getOrElse("phyDataWidth", 4).asInstanceOf[Int]
     def create(cfg: JopCoreConfig, p: Map[String, Any], ctx: DeviceContext) =
       Eth(
         txCd = ctx.ethTxCd.get,
         rxCd = ctx.ethRxCd.get,
-        phyTxDataWidth = p.getOrElse("phyDataWidth", 4).asInstanceOf[Int],
-        phyRxDataWidth = p.getOrElse("phyDataWidth", 4).asInstanceOf[Int],
+        phyTxDataWidth = macWidth(p),
+        phyRxDataWidth = macWidth(p),
         mdioClkDivider = p.getOrElse("mdioClkDivider", 40).asInstanceOf[Int],
         rxCapture = p.getOrElse("rxCapture", false).asInstanceOf[Boolean])
   }

@@ -58,6 +58,25 @@ class XilinxIdelaye2(taps: Int) extends BlackBox {
   setDefinitionName("IDELAYE2")
 }
 
+/** Xilinx 7-series IDELAYCTRL (UG471): calibrates the IDELAYE2 taps in its
+  * clock region against REFCLK, 200 MHz. RST must be pulsed once REFCLK is
+  * stable; RDY rises when the taps are calibrated. Vivado replicates one into
+  * every region that has IDELAYE2s. */
+class XilinxIdelayctrl extends BlackBox {
+  val io = new Bundle {
+    val REFCLK = in Bool()
+    val RST    = in Bool()
+    val RDY    = out Bool()
+  }
+  noIoPrefix()
+  setDefinitionName("IDELAYCTRL")
+}
+
+object Rgmii1000 {
+  /** The TX clock: one byte a cycle at 1000 Mb/s. */
+  val TxClockMhz = 125
+}
+
 /**
  * RGMII at 1000 Mb/s in front of a MAC in its 8-bit (GMII) mode -- the
  * B50612D PHYs on the Colorlight i9+ module. Rgmii100 is the 100 Mb/s one.
