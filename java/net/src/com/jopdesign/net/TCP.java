@@ -510,8 +510,27 @@ public class TCP {
 		int dataStart = getDataStart(pkt, off);
 		int seqNr = getSeqNr(pkt, off);
 
-		// Simple in-order delivery: only accept if seq matches rcvNext
-		if (seqNr != conn.rcvNext) return;
+		// A retransmission may start before what is already taken: skip that
+		// part and keep the rest
+		if (NumFunctions.seqBefore(seqNr, conn.rcvNext)) {
+			int skip = conn.rcvNext - seqNr;
+			if (skip >= dataLen) {
+				sendAck(conn);
+				return;
+			}
+			dataStart += skip;
+			dataLen -= skip;
+			seqNr = conn.rcvNext;
+		}
+
+		// In-order delivery only. A segment past a gap is dropped but answered
+		// at once with a duplicate ACK of what is expected (RFC 5681 4.2): the
+		// sender's fast retransmit counts them, where silence leaves the gap
+		// to its retransmit timer, 200 ms or more.
+		if (seqNr != conn.rcvNext) {
+			sendAck(conn);
+			return;
+		}
 
 		int bytesWritten = conn.iStream.write(pkt, dataStart, dataLen);
 		conn.rcvNext += bytesWritten;
@@ -561,6 +580,7 @@ public class TCP {
 		pkt.setInt(tcpOff + 8, conn.rcvNext);
 		// Data offset + flags set later
 		pkt.setShort(tcpOff + 14, conn.rcvWindow & 0xFFFF);
+		conn.rcvAdvertisedEdge = conn.rcvNext + (conn.rcvWindow & 0xFFFF);
 		pkt.setShort(tcpOff + 16, 0);  // checksum placeholder
 		pkt.setShort(tcpOff + 18, 0);  // urgent pointer
 
@@ -652,7 +672,7 @@ public class TCP {
 	/**
 	 * Send a bare ACK.
 	 */
-	private static void sendAck(TCPConnection conn) {
+	static void sendAck(TCPConnection conn) {
 		Packet pkt = Packet.alloc();
 		if (pkt == null) return;
 
@@ -666,6 +686,7 @@ public class TCP {
 		int offFlags = (5 << 12) | FLAG_ACK;
 		pkt.setShort(tcpOff + 12, offFlags);
 		pkt.setShort(tcpOff + 14, conn.rcvWindow & 0xFFFF);
+		conn.rcvAdvertisedEdge = conn.rcvNext + (conn.rcvWindow & 0xFFFF);
 		pkt.setShort(tcpOff + 16, 0);
 		pkt.setShort(tcpOff + 18, 0);
 

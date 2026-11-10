@@ -2,48 +2,22 @@ package jop.net
 
 import org.scalatest.funsuite.AnyFunSuite
 import java.lang.reflect.InvocationTargetException
-import java.net.URLClassLoader
-import java.nio.file.{Files, Path, Paths}
-import javax.tools.ToolProvider
 import scala.util.Random
 
 /**
- * The network stack's data paths, on the host: java/net's Packet and TCP
- * stream buffers, compiled here with the JDK's own compiler and checked
- * against byte-at-a-time references.
+ * The network stack's data paths, on the host (JavaNetStack): java/net's
+ * Packet and TCP stream buffers, checked against byte-at-a-time references.
  *
  * On JOP every call costs about a thousand cycles on a byte accessor --
  * the object and array caches are invalidated at each invoke and return --
  * so a 1460-byte segment that crossed getByte/write/read once per byte per
  * pass took about 100 ms to acknowledge (NetBench, 2026-11-10). The bulk
  * paths do each pass in one call; these tests hold them to what the per-byte
- * paths did. The rest of the stack reaches the hardware (Native, Const) and
- * is tested there: NetTest, net_echo_check.py.
+ * paths did. TcpHostTest drives the whole stack.
  */
 class NetStackTest extends AnyFunSuite {
 
-  private lazy val loader: ClassLoader = {
-    val root = Paths.get(sys.props("user.dir"))
-    val src = root.resolve("java/net/src/com/jopdesign/net")
-    val work = Files.createTempDirectory("netstack")
-    // NetConfig reads the unit's MAC and hostname from the generated Const.
-    val stub = work.resolve("stub/com/jopdesign/sys/Const.java")
-    Files.createDirectories(stub.getParent)
-    Files.write(stub, ("package com.jopdesign.sys;\npublic class Const {\n" +
-      "  public static final int ETH_MAC_HI = 0x024A;\n" +
-      "  public static final int ETH_MAC_LO = 0x4F500001;\n" +
-      "  public static final String ETH_HOSTNAME = \"\";\n}\n").getBytes("UTF-8"))
-    val out = Files.createDirectories(work.resolve("classes"))
-    val files = Seq("Packet", "NetConfig", "TCPInputStream", "TCPOutputStream")
-      .map(n => src.resolve(s"$n.java").toString) :+ stub.toString
-    val javac = ToolProvider.getSystemJavaCompiler
-    assert(javac != null, "no system Java compiler -- the tests need a JDK")
-    val err = new java.io.ByteArrayOutputStream
-    val rc = javac.run(null, null, err,
-      (Seq("--release", "8", "-nowarn", "-d", out.toString) ++ files): _*)
-    assert(rc == 0, s"javac failed:\n$err")
-    new URLClassLoader(Array(out.toUri.toURL), getClass.getClassLoader)
-  }
+  private lazy val loader: ClassLoader = JavaNetStack.load().loader
 
   private def cls(n: String) = loader.loadClass(s"com.jopdesign.net.$n")
 

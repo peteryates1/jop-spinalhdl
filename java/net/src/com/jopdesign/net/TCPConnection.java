@@ -54,6 +54,8 @@ public class TCPConnection {
 	/** Windows. */
 	public int sndWindow;
 	public int rcvWindow;
+	/** rcvNext + rcvWindow as last sent: the right edge the sender knows. */
+	public int rcvAdvertisedEdge;
 	public int sndWndLastUpdateSeq;
 	public int sndWndLastUpdateAck;
 
@@ -92,6 +94,7 @@ public class TCPConnection {
 		initialRemoteSeqNr = 0;
 		sndWindow = 0;
 		rcvWindow = NetConfig.TCP_WINDOW;
+		rcvAdvertisedEdge = 0;
 		sndWndLastUpdateSeq = 0;
 		sndWndLastUpdateAck = 0;
 		maxSndSegSize = 536;  // RFC 793 default
@@ -209,6 +212,7 @@ public class TCPConnection {
 		conn.initialRemoteSeqNr = 0;
 		conn.rcvNext = 0;
 		conn.rcvWindow = NetConfig.TCP_WINDOW;
+		conn.rcvAdvertisedEdge = 0;
 		conn.maxSndSegSize = 536;
 		conn.flushAndClose = false;
 		conn.synToSend = false;
@@ -331,15 +335,17 @@ public class TCPConnection {
 		rcvWindow = iStream.getFreeBufferSpace();
 		if (rcvWindow > 0xFFFF) rcvWindow = 0xFFFF;
 
-		// Reopen window when enough space for at least one full segment (SWS avoidance)
-		boolean sendSomething = false;
-		if (rcvWindow == 0) {
-			if (iStream.getFreeBufferSpace() >= NetConfig.TCP_MSS) {
-				rcvWindow = iStream.getFreeBufferSpace();
-				if (rcvWindow > 0xFFFF) rcvWindow = 0xFFFF;
-				sndUnackTime = now;
-				sendSomething = true;
-			}
+		// Window update (RFC 1122 4.2.3.3): room the application has made
+		// since the window was last advertised, once it is worth a full
+		// segment or half the buffer. Without it a sender held to a closed or
+		// sub-segment window waits for its persist timer, 200 ms or more. (It
+		// was meant to be sent when the window reopened from 0, but rcvWindow
+		// had just been set to the free space, so that never happened.)
+		boolean windowUpdate = false;
+		if (state == STATE_ESTABLISHED) {
+			int threshold = NetConfig.TCP_MSS;
+			if (threshold > RCV_BUF_SIZE / 2) threshold = RCV_BUF_SIZE / 2;
+			windowUpdate = (rcvNext + rcvWindow) - rcvAdvertisedEdge >= threshold;
 		}
 
 		// Check retransmission
@@ -377,12 +383,11 @@ public class TCPConnection {
 			return true;
 		}
 
-		// Check if anything to send
-		if (oStream.isNoMoreDataToRead() && !sendSomething
+		// Check if anything to send. A segment with data carries the window;
+		// without one, a window update goes as a bare ACK.
+		if (oStream.isNoMoreDataToRead()
 				&& !flushAndClose && !synToSend && !finToSend) {
-			// Check retransmit timer still active
-			if (sndNext == sndUnack) return true;
-			// There's unacked data but nothing new to send — let retransmit handle it
+			if (windowUpdate) TCP.sendAck(this);
 			return true;
 		}
 
