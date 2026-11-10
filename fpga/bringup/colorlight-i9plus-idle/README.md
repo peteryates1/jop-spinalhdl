@@ -64,8 +64,8 @@ which passed on both. They have the same FPGA (IDCODE 0362C093) and the same fla
 (MX25L12833, factory status 0x3c, BP=0xF). Their factory flash holds the same two bitstreams
 as the v6.1 backup, byte for byte (at 0x30 and 0x240030). Only the LED receiver's settings
 differ (25 KB in 0xA80000-0xAA005B), and the two v6.0s differ from each other in just 3 bytes
-there (0xA8F003-0xA8F007). Colorlight ships one FPGA design for both versions. On the first
-v6.0, D2 blinks, so K4 and A18 are the same on v6.0. It still blinked after a cold power
+there (0xA8F003-0xA8F007). Colorlight ships one FPGA design for both versions. D2 blinks on
+both v6.0s, so K4 and A18 are the same on v6.0. The first still blinked after a cold power
 cycle, and STAT then read DONE=1 with no CRC error. The base board's eight LEDs, which the
 factory image left partly lit, are dark. Both factory images are backed up (two identical
 16 MB reads each, md5 8c2b9b10... and c0c818b6...) in `~/workspaces/colorlight-db-backup/`,
