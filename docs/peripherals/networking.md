@@ -10,7 +10,7 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 | EP4CGX150 + DB_FPGA V4 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbFull` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content, DoAll 68/68 (2026-10-12, below); at 1 Gb/s, GMII, 3-5 % of received frames failed CRC, a hardware limit of this module (status item 166) |
 | EP4CGX150 + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbV5Mii` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content (2026-10-12, below) |
 | XC7A100T + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `xc7a100tDbMii` | ping, UDP and TCP echo at 100M, no receive errors on any content, DoAll 68/68 (2026-10-28); at 1 Gb/s (`xc7a100tDbEth`) frames whose data toggles are lost and TCP fails (status item 170) |
-| Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68 |
+| Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68; on a v6.0 module 2026-11-10 (no DNS run) |
 | A-E115FB (EP4CE115 + DDR2) | 88E1111, GMII 1 Gb/s | `ae115fbDdr2Eth` | ping, UDP and TCP echo, DHCP, DNS at 1000M, no receive errors on any content, DoAll 68/68 (2026-10-12, below) |
 | QMTECH Wukong V3 | RTL8211EG, GMII 1 Gb/s | `wukongFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12), DoAll 68/68; the same build with the re-latch restored: `Link UP 1000M` and nothing received (below) |
 
@@ -508,6 +508,13 @@ Re-run 2026-10-12 with the memory controller fix and the MAC's read hold
 removed (WNS +0.597 ns): ping 50/50 at 64 bytes and 5/5 at 1400, UDP and TCP
 echo identical (22 and 1400 bytes; 10 KB and 50 KB), DHCP BOUND, DNS resolved,
 DoAll 68/68.
+
+Re-run 2026-11-10 on a **v6.0** module, built at the current head (WNS +0.370 ns).
+The modules above are v6.1, and both versions carry the same factory bitstreams
+(`fpga/bringup/colorlight-i9plus-idle/README.md`). Results: `Link UP 100M`, DHCP
+BOUND, ping 50/50 at 64 bytes (8.1 ms) and 5/5 at 1400 (112.5 ms), UDP and TCP
+echo identical (22 and 1400 bytes; 10 KB and 50 KB), `net_echo_check.py` echo,
+reset and idle PASS, DoAll 68/68. DNS was not run.
 
 ## Colorlight i5 (RGMII at 100 Mb/s)
 
