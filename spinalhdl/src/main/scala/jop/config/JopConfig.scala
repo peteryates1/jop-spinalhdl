@@ -1895,8 +1895,10 @@ object JopConfig {
   /**
    * `colorlightDbI9PlusSdram` with Ethernet at 1000 Mb/s: the same B50612D U9
    * (MDIO address 1, RJ1 on this base board) over RGMII at 1000 through
-   * jop.io.Rgmii1000, the MAC in its 8-bit mode. `colorlightDbI9PlusEth` is
-   * the 100 Mb/s one, and stays.
+   * jop.io.Rgmii1000, the MAC in its 8-bit mode. It shows that the module and
+   * the base board carry 1000 Mb/s; JOP itself uses `colorlightDbI9PlusEth`,
+   * the 100 Mb/s one (decided 2026-11-10): at 50 MHz its TCP echo runs at
+   * 63 kB/s at either speed.
    *
    * The B50612Ds run RGMII-ID, delaying TXC and RXC themselves (PhyRegs,
    * 2026-11-10), so TXC leaves aligned with its data and RXC arrives centred.

@@ -11,7 +11,8 @@
 #
 # With Ethernet (RJ1, RGMII at 100 Mb/s): CFG=colorlightDbI9PlusEth on each
 # of the above; docs/peripherals/networking.md has the steps and results.
-# At 1000 Mb/s (jop.io.Rgmii1000): CFG=colorlightDbI9PlusEth1000.
+# At 1000 Mb/s (jop.io.Rgmii1000): CFG=colorlightDbI9PlusEth1000, which shows
+# the link works; JOP at 50 MHz is no faster on it and stays at 100.
 #
 # The flow is the shared one (../vivado.mk, fpga/scripts/vivado_build_
 # nonproject.tcl). What is board-specific is only: the part and the

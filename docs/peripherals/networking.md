@@ -13,7 +13,7 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 | XC7A100T + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `xc7a100tDbMii` | ping, UDP and TCP echo at 100M, no receive errors on any content, DoAll 68/68 (2026-10-28); at 1 Gb/s (`xc7a100tDbEth`) frames whose data toggles are lost and TCP fails (status item 170); 2026-11-10 with the 16 KB receive buffer: TCP echo 114 kB/s each way, DoAll 68/68 ([receive buffer](#receive-buffer)) |
 | Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68; on a v6.0 module 2026-11-10 (no DNS run); the same day with the 16 KB receive buffer: TCP echo 63 kB/s each way, DoAll 68/68 ([receive buffer](#receive-buffer)) |
 | Colorlight i5 on the second fpga-db-colorlight-i5 | B50612D U28, RGMII 100 Mb/s | `colorlightDbI5Eth` | ping, UDP and TCP echo, DHCP, DoAll 68/68 (2026-10-27, [below](#colorlight-i5-rgmii-at-100-mbs)); 2026-11-10 with the 16 KB receive buffer: TCP echo 50 kB/s each way, DoAll 68/68 ([receive buffer](#receive-buffer)) |
-| Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 1000 Mb/s | `colorlightDbI9PlusEth1000` | ping, UDP and TCP echo, DHCP at 1000M, no receive errors, DoAll 68/68 (2026-11-10, v6.0 module, below); TCP echo 63 kB/s each way; the link at line rate through the hardware UDP echo, 989.9 Mb/s, about 2.9 GB each way with no FCS error |
+| Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 1000 Mb/s | `colorlightDbI9PlusEth1000` | ping, UDP and TCP echo, DHCP at 1000M, no receive errors, DoAll 68/68 (2026-11-10, v6.0 module, below); TCP echo 63 kB/s each way; the link at line rate through the hardware UDP echo, 989.9 Mb/s, about 2.9 GB each way with no FCS error; JOP itself stays at 100 Mb/s ([below](#colorlight-i9-rgmii-at-1000-mbs)) |
 | A-E115FB (EP4CE115 + DDR2) | 88E1111, GMII 1 Gb/s | `ae115fbDdr2Eth` | ping, UDP and TCP echo, DHCP, DNS at 1000M, no receive errors on any content, DoAll 68/68 (2026-10-12, below); 2026-11-10 with the 16 KB receive buffer: TCP echo 87 kB/s each way, DoAll 68/68 ([receive buffer](#receive-buffer)) |
 | QMTECH Wukong V3 | RTL8211EG, GMII 1 Gb/s | `wukongFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12), DoAll 68/68; the same build with the re-latch restored: `Link UP 1000M` and nothing received (below); 2026-11-10 with the 16 KB receive buffer: TCP echo 134 kB/s each way, DoAll 68/68 ([receive buffer](#receive-buffer)) |
 
@@ -586,7 +586,12 @@ reset and idle PASS, DoAll 68/68. DNS was not run.
 ## Colorlight i9+ (RGMII at 1000 Mb/s)
 
 The same B50612D U9 (MDIO address 1, RJ1), preset `colorlightDbI9PlusEth1000`,
-50 MHz, with the MAC in its 8-bit mode. The 100 Mb/s preset above stays.
+50 MHz, with the MAC in its 8-bit mode. It shows that the module and the base
+board carry 1000 Mb/s. JOP itself stays on the 100 Mb/s preset above (decided
+2026-11-10): at 50 MHz its TCP echo runs at 63 kB/s each way at either speed,
+about 0.5 Mb/s, and only the [hardware UDP echo](#hardware-udp-echo), which
+bypasses the CPU, uses the faster link. Using it from JOP would take hardware
+of its own, a network processor or DMA to memory: a later step.
 
 - **RGMII:** `jop.io.Rgmii1000`. A byte a clock on four wires: bits 3:0 on
   the rising edge, 7:4 on the falling one. CTL carries the enable on the
