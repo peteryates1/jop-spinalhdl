@@ -153,6 +153,7 @@ object ConstGenerator {
     // GMII, or RGMII with `gigabit` (jop.io.Rgmii1000): a MAC that carries 1000 Mb/s.
     def ethFlag(k: String) = ethInst.exists(_.params.getOrElse(k, false).asInstanceOf[Boolean])
     val ethGigabit = ethFlag("gmii") || (ethFlag("rgmii") && ethFlag("gigabit"))
+    val ethUdpEcho = ethFlag("udpEcho")
     val hasSdSpi = config.systems.exists(_.hasDevice(DeviceType.SdSpi))
     val hasSdNative = config.systems.exists(_.hasDevice(DeviceType.SdNative))
     val hasVgaDma = config.systems.exists(_.hasDevice(DeviceType.VgaDma))
@@ -565,6 +566,8 @@ object ConstGenerator {
          |	public static final int ETH_PHY_ADDR = $ethPhyAddr;
          |	/** The MAC runs 1000 Mb/s (GMII, or RGMII at 1000); when false, never advertise 1000BASE-T */
          |	public static final boolean ETH_GIGABIT = $ethGigabit;
+         |	/** The MAC has the hardware UDP echo (jop.io.UdpEcho): EthDriver.udpEcho turns it on */
+         |	public static final boolean ETH_UDP_ECHO = $ethUdpEcho;
          |	/** This unit's MAC address, top 16 and low 32 bits: its board instance's
          |	 *  (status item 174), or 02:00:00:00:00:01, shared, where no instance
          |	 *  covers the board. NetConfig takes its defaults from these. */

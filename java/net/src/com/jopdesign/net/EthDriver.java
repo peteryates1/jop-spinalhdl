@@ -277,6 +277,35 @@ public class EthDriver {
 		return Native.rd(Const.IO_ETH + 4);
 	}
 
+	// --- The MAC's hardware UDP echo (Const.ETH_UDP_ECHO, jop.io.UdpEcho) ---
+
+	/**
+	 * Turn on the hardware UDP echo: datagrams to this unit's MAC on port
+	 * go straight back out, addresses and ports exchanged, at line rate and
+	 * without the CPU. They no longer reach the stack. Only where
+	 * Const.ETH_UDP_ECHO says the MAC has one.
+	 */
+	public static void udpEcho(int port) {
+		Native.wr(NetConfig.macLo, Const.IO_ETH + 5);
+		Native.wr(NetConfig.macHi & 0xFFFF, Const.IO_ETH + 6);
+		Native.wr((1 << 16) | (port & 0xFFFF), Const.IO_ETH + 7);
+	}
+
+	/** Frames the hardware echo has taken, each with a good FCS. */
+	public static int udpEchoReceived() {
+		return Native.rd(Const.IO_ETH + 5);
+	}
+
+	/** Frames the hardware echo has sent back. */
+	public static int udpEchoSent() {
+		return Native.rd(Const.IO_ETH + 6);
+	}
+
+	/** Frames it lost: bits 15:0 to an FCS error, 31:16 for want of room. */
+	public static int udpEchoLost() {
+		return Native.rd(Const.IO_ETH + 7);
+	}
+
 	/**
 	 * Get source MAC low 32 bits from a received packet.
 	 */

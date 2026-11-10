@@ -26,6 +26,13 @@ import spinal.lib.com.eth._
  *   0x6 read  — index of the first entry; 0x6 write — read pointer
  *   0x7 read  — the entry at the read pointer, which then advances
  *
+ * With `udpEcho` (jop.io.UdpEcho, an 8-bit PHY; not with rxCapture):
+ *   0x5 write — the board's MAC, bytes 2..5 (NetConfig.macLo)
+ *   0x6 write — the board's MAC, bytes 0..1 in bits 15:0 (NetConfig.macHi)
+ *   0x7 write — bits 15:0 the UDP port, bit 16 echo on
+ *   0x5 read  — frames taken for echo; 0x6 read — frames echoed;
+ *   0x7 read  — bits 15:0 frames lost to an FCS error, 31:16 for want of room
+ *
  * TX protocol: Write frame length in bits to addr 2, then write ceil(length/32)
  * data words. MacTxBuffer auto-commits after the correct number of words.
  *
@@ -40,6 +47,7 @@ import spinal.lib.com.eth._
  * @param rxBufferByteSize RX buffer size in bytes
  * @param txBufferByteSize TX buffer size in bytes
  * @param rxCapture add the RX capture (2048 entries, four M9K/BRAM blocks)
+ * @param udpEcho add the hardware UDP echo (jop.io.UdpEcho)
  */
 case class Mac(
   txCd: ClockDomain,
@@ -48,8 +56,12 @@ case class Mac(
   phyRxDataWidth: Int = 4,
   rxBufferByteSize: Int = 2048,
   txBufferByteSize: Int = 2048,
-  rxCapture: Boolean = false
+  rxCapture: Boolean = false,
+  udpEcho: Boolean = false
 ) extends Component with HasBusIo {
+  require(!(rxCapture && udpEcho), "rxCapture and udpEcho both use registers 5 to 7")
+  require(!udpEcho || (phyTxDataWidth == 8 && phyRxDataWidth == 8),
+    "the UDP echo works a byte a clock: an 8-bit PHY")
 
   val macParam = MacEthParameter(
     phy = PhyParameter(
@@ -85,8 +97,26 @@ case class Mac(
 
   val mac = MacEth(macParam, txCd, rxCd)
 
-  // Connect PHY interface
-  io.phy <> mac.io.phy
+  // Connect PHY interface, through the UDP echo where there is one
+  val echo = udpEcho generate UdpEcho(txCd, rxCd)
+  if (udpEcho) {
+    mac.io.phy <> echo.io.mac
+    io.phy <> echo.io.phy
+  } else {
+    io.phy <> mac.io.phy
+  }
+
+  /** What EthDriver.udpEcho writes: the board's MAC, the port, on. */
+  class EchoConfig extends Area {
+    val macLo = Reg(Bits(32 bits)) init(0)
+    val macHi = Reg(Bits(16 bits)) init(0)
+    val port = Reg(UInt(16 bits)) init(0)
+    val enable = RegInit(False)
+    echo.io.config.mac := macHi ## macLo
+    echo.io.config.port := port
+    echo.io.config.enable := enable
+  }
+  val echoConfig = udpEcho generate new EchoConfig
 
   // ========================================================================
   // Control Registers
@@ -280,6 +310,11 @@ case class Mac(
         mac.io.ctrl.rx.stats.clear := True
       }
     }
+    if (udpEcho) {
+      is(5) { bus.rdData := echo.io.stats.received.asBits }
+      is(6) { bus.rdData := echo.io.stats.echoed.asBits }
+      is(7) { bus.rdData := echo.io.stats.drops.asBits ## echo.io.stats.crcErrors.asBits }
+    }
     if (rxCapture) {
       is(5) {
         bus.rdData(0) := capture.done
@@ -315,6 +350,14 @@ case class Mac(
         // TX data push — register valid and payload
         txPushValid := True
         txPushPayload := bus.wrData
+      }
+      if (udpEcho) {
+        is(5) { echoConfig.macLo := bus.wrData }
+        is(6) { echoConfig.macHi := bus.wrData(15 downto 0) }
+        is(7) {
+          echoConfig.port := bus.wrData(15 downto 0).asUInt
+          echoConfig.enable := bus.wrData(16)
+        }
       }
       if (rxCapture) {
         is(5) {

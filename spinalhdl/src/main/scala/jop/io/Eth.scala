@@ -24,6 +24,7 @@ import jop.config.JopCoreConfig
  * @param rxBufferByteSize RX buffer size in bytes
  * @param txBufferByteSize TX buffer size in bytes
  * @param rxCapture        add the MAC's RX capture (a diagnostic; see Mac)
+ * @param udpEcho          add the MAC's hardware UDP echo (jop.io.UdpEcho)
  */
 case class Eth(
   txCd: ClockDomain,
@@ -33,7 +34,8 @@ case class Eth(
   mdioClkDivider: Int = 40,
   rxBufferByteSize: Int = 2048,
   txBufferByteSize: Int = 2048,
-  rxCapture: Boolean = false
+  rxCapture: Boolean = false,
+  udpEcho: Boolean = false
 ) extends Component with HasBusIo {
 
   val bus = new Bundle {
@@ -65,7 +67,7 @@ case class Eth(
   // ========================================================================
 
   val mac = Mac(txCd, rxCd, phyTxDataWidth, phyRxDataWidth,
-    rxBufferByteSize, txBufferByteSize, rxCapture)
+    rxBufferByteSize, txBufferByteSize, rxCapture, udpEcho)
   val mdio = Mdio(mdioClkDivider)
 
   // ========================================================================

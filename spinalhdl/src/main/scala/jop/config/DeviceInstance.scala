@@ -57,7 +57,9 @@ object DeviceType {
       * receive errors and transmits none.
       * `rxCapture`: the MAC's RX capture, a diagnostic (jop.io.Mac).
       * `rxBufferBytes`: the MAC's receive buffer, a power of two (default 2048,
-      * one full-size frame: the second of two back to back is dropped). */
+      * one full-size frame: the second of two back to back is dropped).
+      * `udpEcho`: the MAC's hardware UDP echo, at line rate (jop.io.UdpEcho;
+      * an 8-bit MAC). JOP turns it on: EthDriver.udpEcho. */
     override def verilogPins(p: Map[String, Any]) = {
       val gmii = p.getOrElse("gmii", false).asInstanceOf[Boolean]
       val rgmii = p.getOrElse("rgmii", false).asInstanceOf[Boolean]
@@ -84,7 +86,8 @@ object DeviceType {
         phyRxDataWidth = macWidth(p),
         mdioClkDivider = p.getOrElse("mdioClkDivider", 40).asInstanceOf[Int],
         rxBufferByteSize = p.getOrElse("rxBufferBytes", 2048).asInstanceOf[Int],
-        rxCapture = p.getOrElse("rxCapture", false).asInstanceOf[Boolean])
+        rxCapture = p.getOrElse("rxCapture", false).asInstanceOf[Boolean],
+        udpEcho = p.getOrElse("udpEcho", false).asInstanceOf[Boolean])
   }
 
   case object SdSpi extends DeviceType {

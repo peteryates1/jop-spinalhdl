@@ -128,4 +128,13 @@ class ColorlightDbI9PlusEth1000Test extends AnyFunSuite {
     val words = """reg \[31:0\] ram \[0:(\d+)\]""".r.findFirstMatchIn(rx).map(_.group(1).toInt + 1)
     assert(words.contains(16384 / 4), s"the RX buffer has ${words.map(_ * 4)} bytes")
   }
+
+  test("the MAC carries the hardware UDP echo, and the driver is told it is there") {
+    // JOP cannot touch a gigabit link's worth of frames; jop.io.UdpEcho sends
+    // them back itself, so the link can be run at line rate (UdpEchoTest).
+    val (_, v) = top
+    assert("""(?m)^module UdpEcho \(""".r.findFirstIn(v).isDefined, "no UdpEcho in the top")
+    val c = ConstGenerator.generate(cfg)
+    assert(c.contains("public static final boolean ETH_UDP_ECHO = true;"), "ETH_UDP_ECHO")
+  }
 }

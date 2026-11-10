@@ -21,6 +21,10 @@ import com.jopdesign.net.*;
  *   echo "hello" | nc -u -w1 jop-xc7a100t-1.lan 7
  *   echo "hello" | nc -w1 jop-xc7a100t-1.lan 7
  *   fpga/scripts/net_echo_check.py jop-xc7a100t-1.lan  (RST, idle, dead clients)
+ *
+ * Where the MAC has the hardware UDP echo (Const.ETH_UDP_ECHO), it is turned
+ * on for port HW_ECHO_PORT: the link at line rate, without the CPU
+ * (fpga/scripts/udp_echo_flood.c). Its counts are printed as they change.
  */
 public class NetTest {
 
@@ -34,6 +38,9 @@ public class NetTest {
 	 * a peer that vanished without FIN or RST would otherwise hold its pool
 	 * slot for the rest of the boot. */
 	static final int TCP_IDLE_MS = 30000;
+
+	/** The hardware UDP echo's port, where the MAC has one. */
+	static final int HW_ECHO_PORT = 7007;
 
 	/** TCP echo clients, one per pool slot. */
 	static TCPConnection[] tcpClients = new TCPConnection[NetConfig.MAX_TCP_CONN];
@@ -186,6 +193,16 @@ public class NetTest {
 			JVMHelp.wr("TCP:7\n");
 		}
 
+		// The MAC's hardware UDP echo, where it has one
+		if (Const.ETH_UDP_ECHO) {
+			EthDriver.udpEcho(HW_ECHO_PORT);
+			JVMHelp.wr("HWECHO:");
+			wrInt(HW_ECHO_PORT);
+			JVMHelp.wr('\n');
+		}
+		int hwSeen = 0;
+		int hwCheck = NumFunctions.now();
+
 		byte[] udpBuf = new byte[1472];
 		int rxErrors = 0;
 		int rxDrops = 0;
@@ -246,6 +263,26 @@ public class NetTest {
 			for (int i = 0; i < tcpClients.length; i++) {
 				if (tcpClients[i] != null && !echo(i)) {
 					tcpClients[i] = null;
+				}
+			}
+
+			// The hardware echo's counts, once a second while they change
+			if (Const.ETH_UDP_ECHO && NumFunctions.now() - hwCheck >= 1000) {
+				hwCheck = NumFunctions.now();
+				int r = EthDriver.udpEchoReceived();
+				int sent = EthDriver.udpEchoSent();
+				int lost = EthDriver.udpEchoLost();
+				if (r + sent + lost != hwSeen) {
+					hwSeen = r + sent + lost;
+					JVMHelp.wr("HW r=");
+					wrInt(r);
+					JVMHelp.wr(" s=");
+					wrInt(sent);
+					JVMHelp.wr(" crc=");
+					wrInt(lost & 0xFFFF);
+					JVMHelp.wr(" full=");
+					wrInt(lost >>> 16);
+					JVMHelp.wr('\n');
 				}
 			}
 
