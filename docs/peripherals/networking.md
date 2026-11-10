@@ -603,15 +603,25 @@ of its own, a network processor or DMA to memory: a later step.
   TXC's ODDR is (1, 0), so its edges come with the data's, and the PHY adds
   its own delay. Routed, the six pins leave within 12 ps of each other
   (`report_datasheet`).
-- **RX:** RXC's pin, L3, is clock-capable. It drives a BUFIO for the IDDRs
-  and a BUFR for the receive logic. Each RX pin goes through an IDELAYE2 (9
-  taps) into an IDDR. The XDC times these pins against the PHY's window, data
-  valid 1.2 ns either side of each RXC edge, rather than false-pathing them.
-  A sweep of the routed design over the tap count met setup and hold from 4
-  to 14 taps, and 9 gives +0.438 ns setup and +0.400 ns hold. Through a BUFG
-  instead, no tap count met both: RXC reached the IDDRs about 2 ns after the
-  data, and the 28 taps that made that up brought 0.5 ns of uncertainty of
-  their own.
+- **RX:** RXC's pin, L3, is clock-capable. It drives a BUFR, which clocks the
+  IDDRs and the receive logic; every RX pin is in its clock region. Each RX
+  pin goes through an IDELAYE2 (9 taps) into an IDDR. The XDC times these
+  pins against the PHY's window, data valid 1.2 ns either side of each RXC
+  edge, rather than false-pathing them. A sweep of the routed design over the
+  tap count met setup and hold from 4 to 14 taps, and 9 gives +0.438 ns setup
+  and +0.400 ns hold. Through a BUFG instead, no tap count met both: RXC
+  reached the IDDRs about 2 ns after the data, and the 28 taps that made that
+  up brought 0.5 ns of uncertainty of their own. A BUFIO did worse than the
+  BUFR: Vivado puts its own delay at 1.53 ns against the BUFR's 0.51, and
+  only 9 to 16 taps passed, 0.56 ns of setup and hold at the best count
+  against the BUFR's 0.84.
+- **Correction, 2026-11-10:** this page first said the IDDRs ran on a BUFIO.
+  The top made one, but JopTop dropped its clock domain when it merged the
+  devices', so the BUFIO drove nothing and Vivado removed it. Every result
+  here before the correction was the BUFR's. Rebuilt without the BUFIO the
+  same day: DoAll 68/68, 200,000 of 200,000 datagrams back from the hardware
+  echo at 900 and at 990 Mb/s, TCP echo 63 kB/s, `net_echo_check.py` echo,
+  reset and idle PASS, `Er=0 Dr=0`.
 - **Clocks:** the design's PLL makes the 50 MHz system clock, its SDRAM copy,
   125 MHz for TX and IDELAYCTRL's 200 MHz, all from one 1000 MHz VCO.
   IDELAYCTRL is reset for 32 reference cycles after the PLL locks.
