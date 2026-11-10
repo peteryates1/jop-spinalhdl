@@ -12,7 +12,7 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 | EP4CGX150 + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbV5Mii` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content (2026-10-12, below) |
 | XC7A100T + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `xc7a100tDbMii` | ping, UDP and TCP echo at 100M, no receive errors on any content, DoAll 68/68 (2026-10-28); at 1 Gb/s (`xc7a100tDbEth`) frames whose data toggles are lost and TCP fails (status item 170) |
 | Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68; on a v6.0 module 2026-11-10 (no DNS run) |
-| Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 1000 Mb/s | `colorlightDbI9PlusEth1000` | ping, UDP and TCP echo, DHCP at 1000M, no receive errors, DoAll 68/68 (2026-11-10, v6.0 module, below) |
+| Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 1000 Mb/s | `colorlightDbI9PlusEth1000` | ping, UDP and TCP echo, DHCP at 1000M, no receive errors, DoAll 68/68 (2026-11-10, v6.0 module, below); TCP echo 63 kB/s each way; the link at line rate through the hardware UDP echo, 989.9 Mb/s, about 2.9 GB each way with no FCS error |
 | A-E115FB (EP4CE115 + DDR2) | 88E1111, GMII 1 Gb/s | `ae115fbDdr2Eth` | ping, UDP and TCP echo, DHCP, DNS at 1000M, no receive errors on any content, DoAll 68/68 (2026-10-12, below) |
 | QMTECH Wukong V3 | RTL8211EG, GMII 1 Gb/s | `wukongFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12), DoAll 68/68; the same build with the re-latch restored: `Link UP 1000M` and nothing received (below) |
 
@@ -24,8 +24,8 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 | ARP | Working | 8-entry cache, snooping, gratuitous ARP |
 | IPv4 | Working | No fragmentation (MTU 1500 sufficient) |
 | ICMP echo (ping) | Working | No loss; the EP4CGX150's 3-5 % at 1 Gb/s was its RX clock (status item 166) |
-| UDP | Working | Echo tested on port 7 |
-| TCP | Working | Echo verified on port 7; large payload (10KB+) with backpressure |
+| UDP | Working | Echo tested on port 7; a hardware echo at line rate on the i9+'s gigabit build (port 7007) |
+| TCP | Working | Echo verified on port 7; large payload (10KB+) with backpressure; 63 kB/s each way on the i9+ at 1000M, the CPU the limit |
 | DHCP | Working | Client state machine, lease renewal, optional (NetConfig.useDhcp) |
 | DNS | Working | Blocking A record resolver, 4-entry cache, 5-min TTL cap |
 | java.net API | Written | Socket, ServerSocket, DatagramSocket stubs |
@@ -112,8 +112,10 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 | File | Purpose |
 |------|---------|
 | `Eth.scala` | The Ethernet I/O device: `Mac` and `Mdio` behind one address range |
-| `Mac.scala` | The MAC registers around SpinalHDL's `MacEth` (TX/RX buffers, control, stats); optional receive-stream capture (`rxCapture`) |
+| `Mac.scala` | The MAC registers around SpinalHDL's `MacEth` (TX/RX buffers, control, stats); optional receive-stream capture (`rxCapture`) or hardware UDP echo (`udpEcho`) |
+| `UdpEcho.scala` | The hardware UDP echo: one port's datagrams sent back at line rate without the CPU ([below](#hardware-udp-echo)) |
 | `Rgmii100.scala` | RGMII at 100 Mb/s in front of the MAC's 4-bit mode (Colorlight i9+) |
+| `Rgmii1000.scala` | RGMII at 1000 Mb/s in front of the MAC's 8-bit mode (Colorlight i9+) |
 | `Mdio.scala` | MDIO master for PHY register access |
 
 ### FPGA
@@ -127,7 +129,10 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 
 | File | Purpose |
 |------|---------|
-| `java/apps/Small/src/test/NetTest.java` | UDP+TCP echo on port 7, ICMP ping, diagnostics |
+| `java/apps/Small/src/test/NetTest.java` | UDP+TCP echo on port 7, ICMP ping, diagnostics; turns on the hardware UDP echo (port 7007) where the MAC has one |
+| `java/apps/Small/src/test/NetBench.java` | Cycles per byte of the stack's per-byte primitives and the bulk paths that replaced them |
+| `fpga/scripts/udp_echo_flood.c` | Host tool: floods a UDP echo with numbered, patterned datagrams, checks every echo, reports rates and losses |
+| `spinalhdl/src/test/scala/jop/net/` | Host tests of the stack: `JavaNetStack` compiles `com.jopdesign.net` with javac on a shim of `Native`, `Const` and `JVMHelp`; `TcpHostTest` drives its TCP through a fake MAC; `NetStackTest` holds the bulk paths to the per-byte ones; `EthDriverTest` the register writes |
 | `java/apps/Small/src/test/DhcpTest.java` | DHCP+DNS test, then UDP+TCP echo on port 7 |
 | `java/apps/Small/src/test/HttpServer.java` | HTTP/1.0 file server on port 80, serves files from FAT32 SD card |
 
@@ -168,7 +173,8 @@ the networking stack.
 ### Eth Register Map
 
 The EthMac hardware object (`com.jopdesign.hw.EthMac`) maps to I/O address
-`Const.IO_ETH`. Five 32-bit registers:
+`Const.IO_ETH`. Five 32-bit registers, and three more with `udpEcho` or
+`rxCapture`:
 
 | Offset | Read | Write |
 |--------|------|-------|
@@ -177,6 +183,11 @@ The EthMac hardware object (`com.jopdesign.hw.EthMac`) maps to I/O address
 | +2 | — | TX data push |
 | +3 | RX data pop (auto-pop) | — |
 | +4 | RX stats: errors[7:0], drops[15:8] (auto-clear) | — |
+| +5 | `udpEcho`: frames taken for echo | `udpEcho`: the board's MAC, bytes 2..5 |
+| +6 | `udpEcho`: frames echoed | `udpEcho`: the board's MAC, bytes 0..1 in [15:0] |
+| +7 | `udpEcho`: lost to an FCS error [15:0], for want of room [31:16] | `udpEcho`: the port [15:0], on [16] |
+
+`rxCapture`, a diagnostic, uses +5..+7 too; a MAC has one or the other.
 
 ### TX Protocol
 
@@ -424,6 +435,15 @@ CLOSED → SYN_SENT → ESTABLISHED → FIN_WAIT_1 → FIN_WAIT_2 → TIME_WAIT 
                                   FIN_WAIT_1 → CLOSING → TIME_WAIT → CLOSED
 ```
 
+**Receiving** (2026-11-10, `TcpHostTest`):
+- Data is taken in order only. A segment past a missing one is dropped but
+  answered at once with a duplicate ACK of what is expected (RFC 5681 4.2).
+- A retransmission that starts before `rcvNext` gives up the part already
+  taken and keeps the rest.
+- Room the application makes is advertised with a bare ACK once the window's
+  right edge can move a full segment or half the buffer (RFC 1122 4.2.3.3),
+  unless a data segment would carry it anyway.
+
 **Key parameters**:
 - MSS: 1460 bytes (default), negotiated via SYN option
 - Window: 4096 bytes (TCPConnection.RCV_BUF_SIZE)
@@ -581,12 +601,107 @@ gigabit switch, tested from a VM on the same LAN:
 | DoAll | 68/68 |
 
 The round trips equal the 100 Mb/s build's: the 50 MHz CPU sets them, not the
-wire. The MAC's receive buffer is 2 KB, one full frame, and a burst of
-back-to-back segments at 1000 Mb/s overflows it: 30 drops over the tests
-above (NetTest's `Dr`), which TCP retransmitted. TCP echo runs at about 7 kB/s
-each way at either speed: 200 KB took about 30 s on this build and on the
-100 Mb/s one. That is about 210 ms a segment, the pattern of a delayed ACK,
-and a matter for the stack, not the link; it was not investigated.
+wire. Those are the first results; the stack and the MAC have changed since.
+
+### Throughput
+
+TCP echo ran at about 7 kB/s each way at either speed: 200 KB took about 30 s.
+It looked like a delayed ACK and was not one. The host's socket state
+(`ss -tin` during a 30 KB echo) showed two causes:
+
+- **CPU time.** A full segment took about 100 ms to be acknowledged. NetBench
+  timed the stack's byte accessors at about 1000 cycles a byte. Each call
+  invalidates JOP's object and array caches, so a small accessor pays a
+  main-memory access for every field and element. A segment went through them
+  about six times on its way in and out. Each pass is now one call with the
+  accessors written inline. The checksum went from 983 to 18.5 cycles a byte;
+  the receive, echo and send copies from 1331, 876 and 1402 to 223, 169
+  and 128.
+- **Lost frames.** A third of the bytes were retransmitted, each after a
+  timeout of 200 ms or more. The MAC's 2 KB receive buffer held one full
+  frame, so the second of two that arrived back to back was dropped, and the
+  stack sent no duplicate ACK for the segment after the gap. The gigabit
+  preset's MAC now buffers 16 KB (`rxBufferBytes`). The stack now:
+  - ACKs a segment past a gap at once;
+  - keeps the new part of an overlapping retransmission;
+  - advertises room the application makes ([TCP](#tcp)).
+
+| | First results | 2026-11-10 |
+|---|---|---|
+| TCP echo, each way | 6.8 kB/s | 63 kB/s, 2 x 500 KB identical |
+| Bytes retransmitted (100 KB echo) | 34 % | 0 |
+| ping, 64 bytes | 8.0 ms | 2.5 ms |
+| ping, 1400 bytes | 112.2 ms | 7.4 ms |
+| UDP echo, 1472 bytes (port 7) | | 17 ms |
+| NetTest's `Er` / `Dr` | 0 / 30 | 0 / 0 |
+
+98 % of the time the host now waits on JOP's 4 KB receive window. Behind that
+is the CPU: an echoed segment costs about 16 ms of it.
+
+### Hardware UDP echo
+
+JOP cannot drive the link at line rate, 81,274 full-size frames a second, but
+`jop.io.UdpEcho` can. It sits between Rgmii1000 and MacEth. A UDP datagram to
+the board's MAC address on port 7007 goes straight back out with the MAC
+addresses, IP addresses and ports exchanged and a new FCS. The exchange
+leaves the IP and UDP checksums valid: each is a sum, and the UDP
+pseudo-header holds both addresses. Everything else, port 7 included, reaches
+JOP as before.
+
+- **RX:** every frame is delayed 64 clocks. A classifier reads the undelayed
+  bytes and checks the destination MAC, IPv4 with a 20-byte header, no
+  fragment, UDP, and the port. It decides before the frame's first byte
+  leaves the delay, and the whole frame goes either to the echo or to MacEth.
+  The echo checks the FCS and stores the frame in a 16 KB buffer that crosses
+  to the TX clock and drops a bad or unfitting frame whole.
+- **TX:** the first 40 bytes go out from registers with the fields exchanged,
+  and the rest is streamed without the old FCS. MacTxCrc and MacTxHeader add
+  the new FCS and the preamble. An arbiter takes whole frames from the echo
+  and from MacEth in turn.
+- **Software:** NetTest turns the echo on (`EthDriver.udpEcho`, with the
+  board's MAC and the port) when `Const.ETH_UDP_ECHO` says the MAC has it. It
+  prints the counts while they change: `HW r=` taken, `s=` sent, and `crc=`
+  and `full=` lost.
+- **Tests:** `UdpEchoTest` covers:
+  - the swap and the new FCS;
+  - everything else passing to JOP unchanged;
+  - frames back to back at the minimum gap;
+  - a bad FCS;
+  - JOP's own frames going out between echoes;
+  - a stalled line filling the buffer.
+
+`fpga/scripts/udp_echo_flood.c` sends numbered, patterned datagrams and checks
+every echo byte for byte:
+
+```bash
+cc -O2 -pthread -o udp_echo_flood fpga/scripts/udp_echo_flood.c
+./udp_echo_flood 192.168.0.227 7007 1472 200000 990   # 200,000 at 990 Mb/s on the wire
+```
+
+Hardware, 2026-11-10, timing met (WNS +0.438 ns), 7795 LUTs and 19.5 block
+RAM tiles. Sent from the VM as 1472-byte datagrams, 1538 bytes on the wire:
+
+| Rate | Datagrams | Echoed, all identical | Echo rate on the wire |
+|---|---|---|---|
+| unpaced | 1,000 | 1,000 | 993.5 Mb/s |
+| 990 Mb/s | 200,000, twice | 199,819 and 199,955 | 989.2 and 989.9 Mb/s |
+| 950 Mb/s | 1,000,000 | 999,967 | 950.0 Mb/s |
+| 900 Mb/s | 200,000 | 200,000 | 900.1 Mb/s |
+| 500 Mb/s | 200,000 | 200,000 | 500.0 Mb/s |
+
+The board's counts over all of it: 1,867,345 frames taken and 1,867,345 sent,
+none lost to an FCS error and none for want of room, about 2.9 GB each way.
+Every frame the host missed was lost outside the board:
+
+- At 990 Mb/s, the board took and sent every frame, and those lost never
+  reached the VM's NIC. That is congestion on the way back, and it is gone at
+  900.
+- At 950 Mb/s, the host's own socket buffer dropped the 33
+  (`RcvbufErrors`).
+- Unpaced, the VM queues 3 Gb/s, and two thirds are lost before the board.
+
+With the echo in place: TCP echo 63 kB/s, `net_echo_check.py` PASS,
+DoAll 68/68.
 
 ## Colorlight i5 (RGMII at 100 Mb/s)
 
