@@ -1910,13 +1910,19 @@ object JopConfig {
    * The PLL adds the 125 MHz TX clock and IDELAYCTRL's 200 MHz reference to
    * the system clock and its SDRAM copy; 50, 125 and 200 MHz all divide a
    * 1000 MHz VCO. `ETH_GIGABIT` tells EthDriver to advertise 1000BASE-T.
+   *
+   * The MAC buffers 16 KB of received frames. With the default 2 KB, one
+   * full-size frame, the second of a pair that arrived back to back -- 12 us
+   * apart at 1000 Mb/s, while the CPU takes milliseconds to read one -- was
+   * dropped, and each loss cost a TCP sender a retransmit timeout of 200 ms
+   * or more (2026-11-10).
    */
   def colorlightDbI9PlusEth1000 = {
     val base = colorlightDbI9PlusSdram(50)
     base.copy(systems = Seq(base.system.copy(devices = base.system.devices +
       ("eth" -> DeviceInstance(DeviceType.Ethernet,
         params = Map("rgmii" -> true, "gigabit" -> true, "rxDelayTaps" -> 9,
-          "phyAddr" -> 1, "noPhyReset" -> true),
+          "phyAddr" -> 1, "noPhyReset" -> true, "rxBufferBytes" -> 16384),
         devicePart = Some("B50612D_U9"))),
       plls = Seq(xilinxSdrPll("CLK25M", 50, eth = Some(125), idelayRef = true)))))
   }

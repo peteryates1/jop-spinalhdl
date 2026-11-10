@@ -27,6 +27,18 @@ class ColorlightDbI9PlusEth1000Test extends AnyFunSuite {
   }
   private def ballOf(port: String): Option[String] = pins.find(_._1 == port).map(_._2)
 
+  /** The elaborated top: its port names and its Verilog. */
+  private lazy val top: (Set[String], String) = {
+    val rom = JopFileLoader.loadMicrocodeRom(MicrocodePaths.rom(BootMode.Serial))
+    val ram = JopFileLoader.loadStackRam(MicrocodePaths.ram(BootMode.Serial))
+    val dir = jop.generate.BuildLayout.default.standaloneDir("ColorlightDbI9PlusEth1000Test")
+    val report = JopSpinalConfig(cfg, dir)
+      .generate(InOutWrapper(JopTop(config = cfg, romInit = rom, ramInit = ram,
+        mainMemInit = None, mainMemSize = 64 * 1024)))
+    val ports = report.toplevel.getAllIo.map(_.getName()).toSet
+    (ports, new String(Files.readAllBytes(Paths.get(dir.toString, s"${report.toplevelName}.v")), "UTF-8"))
+  }
+
   test("the RGMII and MDIO ports land on U9's balls, as at 100 Mb/s") {
     val want = Map(
       "e_txc" -> "M6", "e_txctl" -> "N5",
@@ -81,18 +93,11 @@ class ColorlightDbI9PlusEth1000Test extends AnyFunSuite {
   }
 
   test("the top captures RX through IDELAYE2 at the preset's taps on a BUFIO, sends TX from ODDRs, and has its IDELAYCTRL") {
-    val rom = JopFileLoader.loadMicrocodeRom(MicrocodePaths.rom(BootMode.Serial))
-    val ram = JopFileLoader.loadStackRam(MicrocodePaths.ram(BootMode.Serial))
-    val dir = jop.generate.BuildLayout.default.standaloneDir("ColorlightDbI9PlusEth1000Test")
-    val report = JopSpinalConfig(cfg, dir)
-      .generate(InOutWrapper(JopTop(config = cfg, romInit = rom, ramInit = ram,
-        mainMemInit = None, mainMemSize = 64 * 1024)))
-    val ports = report.toplevel.getAllIo.map(_.getName()).toSet
+    val (ports, v) = top
     val ethPorts = ports.filter(_.startsWith("e_"))
     assert(ethPorts == Set("e_txc", "e_txd", "e_txctl", "e_rxc", "e_rxd", "e_rxctl", "e_mdc", "e_mdio"),
       s"Ethernet ports: $ethPorts")
 
-    val v = new String(Files.readAllBytes(Paths.get(dir.toString, s"${report.toplevelName}.v")), "UTF-8")
     def count(cell: String) = s"(?m)^\\s*$cell\\b".r.findAllIn(v).size
     assert(count("IDDR") == 5, s"IDDR: ${count("IDDR")}")
     assert(count("IDELAYE2") == 5, s"IDELAYE2: ${count("IDELAYE2")}")
@@ -109,5 +114,18 @@ class ColorlightDbI9PlusEth1000Test extends AnyFunSuite {
     assert(count("BUFIO") == 1, s"BUFIO: ${count("BUFIO")}")
     assert(count("BUFR") == 1, s"BUFR: ${count("BUFR")}")
     assert("""\.BUFR_DIVIDE\s*\(\s*"BYPASS"\s*\)""".r.findFirstIn(v).isDefined, "the BUFR must not divide RXC")
+  }
+
+  test("the MAC holds 16 KB of frames as they arrive, not one") {
+    // A 1518-byte frame lasts 12 us at 1000 Mb/s; the CPU takes milliseconds
+    // to read one out. With the default 2 KB -- one full-size frame -- the
+    // second of two that arrive back to back was dropped: the host's TCP sends
+    // segments in pairs, and lost ones come back only after a retransmit
+    // timeout of 200 ms or more (2026-11-10: 25 of 96 segments of a 100 KB
+    // echo retransmitted, nearly all of its 4.9 s).
+    val (_, v) = top
+    val rx = """(?s)module MacRxBuffer \(.*?endmodule""".r.findFirstIn(v).getOrElse(fail("no MacRxBuffer"))
+    val words = """reg \[31:0\] ram \[0:(\d+)\]""".r.findFirstMatchIn(rx).map(_.group(1).toInt + 1)
+    assert(words.contains(16384 / 4), s"the RX buffer has ${words.map(_ * 4)} bytes")
   }
 }

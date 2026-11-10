@@ -55,7 +55,9 @@ object DeviceType {
       * `noErPins`: the board routes neither RX_ER nor TX_ER (the A-E115FB's
       * connector), so there is no e_rxer or e_txer port; the MAC sees no
       * receive errors and transmits none.
-      * `rxCapture`: the MAC's RX capture, a diagnostic (jop.io.Mac). */
+      * `rxCapture`: the MAC's RX capture, a diagnostic (jop.io.Mac).
+      * `rxBufferBytes`: the MAC's receive buffer, a power of two (default 2048,
+      * one full-size frame: the second of two back to back is dropped). */
     override def verilogPins(p: Map[String, Any]) = {
       val gmii = p.getOrElse("gmii", false).asInstanceOf[Boolean]
       val rgmii = p.getOrElse("rgmii", false).asInstanceOf[Boolean]
@@ -81,6 +83,7 @@ object DeviceType {
         phyTxDataWidth = macWidth(p),
         phyRxDataWidth = macWidth(p),
         mdioClkDivider = p.getOrElse("mdioClkDivider", 40).asInstanceOf[Int],
+        rxBufferByteSize = p.getOrElse("rxBufferBytes", 2048).asInstanceOf[Int],
         rxCapture = p.getOrElse("rxCapture", false).asInstanceOf[Boolean])
   }
 
