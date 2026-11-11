@@ -60,3 +60,21 @@ half is bit-identical, the SDR half moves under 0.1 %.
 Repeat runs need a REPROGRAM, not a UART reset: `hasRuntimeReset` is
 `!isMultiSystem`, so the dual preset is the one config the runtime reset does
 not cover.
+
+## `2026-11-11-wukong-{sdr,ddr3}-recheck`
+
+The `-matched-` setup again, both halves at once from one `wukongDualIndependent`
+bitstream, rebuilt at de2dfe4 with a `DoAppPerf.jop` built at the same commit.
+Taken to check item 37 against today's tree: three months of memory-controller
+and runtime changes lay between it and the `2026-08-20-*-mcache8k` captures.
+
+- **DDR3:** the same cycles per iteration as August's, to 0.3 %.
+- **SDR:** the same on Kfl and Lift, to 0.1 %. UdpIp is 1.2 % slower; not
+  investigated.
+- **Bytecode fill:** 2.7-5.6 % of stall on both memories, so item 37 closed.
+- **Timing:** the build fails by 0.364 ns on the same 16 `sdram_DQ`
+  output-enable endpoints as before; every core path meets.
+
+The files are the downloader's output as it arrived, progress bar included.
+
+    ./fpga/scripts/perfcnt_report.py --compare 2026-08-20-wukong-sdr-mcache8k.txt 100 2026-11-11-wukong-sdr-recheck.txt 100

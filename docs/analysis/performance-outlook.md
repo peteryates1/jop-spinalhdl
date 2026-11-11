@@ -195,6 +195,11 @@ Three sources, combined:
 | Bytecodes that only move stack data (loads, stores, constants) | 690 (57 %) | 1,323 (56 %) | 695 (55 %) |
 | Hardware cycles (Wukong SDR, 100 MHz) | 6,128 | 14,296 | 5,545 |
 
+The hardware cycles are the 2026-08-20 capture's. Re-measured at de2dfe4 on
+2026-11-11 they were 6,134, 14,465 and 5,539
+([`2026-11-11-wukong-sdr-recheck.txt`](../measurements/perfcnt/2026-11-11-wukong-sdr-recheck.txt)),
+so nothing below changes.
+
 JOPizer's static profile of the Kfl image counts 864 methods. The median is 9
 bytes of bytecode and the 90th percentile 94 bytes, so a call usually costs more
 than the method it calls.
@@ -455,9 +460,13 @@ cycle.
 
    Repeat the second command for `LoopUdpIp` and `LoopLift`.
 2. Make two changes to JopSim, in a scratch copy rather than the repo:
-   - **Raise `MAX_MEM` from 1 MB to 8 MB.** The runtime sizes its heap to the
-     preset's 8 MB and writes past 1 MB, where the stock JopSim stops with
-     "writeMem: wrong address".
+   - **Let the runtime find JopSim's memory.** Stock JopSim answers 0 for
+     `IO_MEM_SIZE`, so the runtime falls back to a heap 1 MB past the end of
+     the image. JopSim's memory is 1 MB, so it stops with "writeMem: wrong
+     address" on every image ([item 154](../current-status.md#item-154)). The
+     counts here came from a copy with `MAX_MEM` raised to 8 MB. Answering
+     `IO_MEM_SIZE` with `MAX_MEM` in `IOSimMin` instead runs `LoopKfl` to the
+     same instruction count.
    - **Print `bcStat` after `runSimulation()`.** It holds the per-opcode
      execution counts JopSim keeps but does not print.
 3. For the statics, add a hook in `getstatic()` and `putstatic()` that records each

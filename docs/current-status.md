@@ -57,10 +57,10 @@ nothing depends on ranks below a measurement that could mislead someone.
 16. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
 17. **[#168](#item-168)** — `xc7a100tDbEth` closes timing by luck: -0.058 ns on 10-12, +0.007 ns on the 10-28 rebuild, the same core fetch path with the same directives, so any rebuild can miss again
 18. **[#170](#item-170)** — The XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s whenever the data toggles -- 28 of 400 random frames, 0 of 400 alternating -- and each loss blacks the receiver out for seconds; TCP fails there. MII at 100 Mb/s (`xc7a100tDbMii`) passes every check, DoAll 68/68. Open: bounding a frame in the MAC so one glitch costs one frame, and a changed TCP echo at 1 Gb/s that passed the stack's checksum
-19. **[#179](#item-179)** — A method call and its return cost ~130 cycles — about half of Kfl's cycles, a third of UdpIp's, over a quarter of Lift's — and `idle/direct` is mostly their memory reads. The largest performance lever, and it keeps predictability: on-chip method tables, a hardware call sequencer, inlining at link time ([analysis](analysis/performance-outlook.md))
-20. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Counted 2026-11-11: the whole region is 1.6-2.3 KB in every image, so one block RAM holds it, worth about 16 % of Kfl's cycles; the SMP design is what is left
-21. **[#55](#item-55)** — The core stalls on writes whose result it never uses — about 3.5-5 % of cycles, not the `idle/direct` share first blamed on it, which is reads ([179](#item-179)). Needs read-after-write forwarding and an SMP story
-22. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
+19. **[#154](#item-154)** — JopSim cannot run any image: it answers 0 for `IO_MEM_SIZE`, so the runtime falls back to a heap 1 MB past the application, which overruns JopSim's 1 MB memory (`make -C java sim-smallest`, reproduced 2026-11-11). Ranked above the performance items because their bytecode counts come from JopSim and needed a patched copy. One `case` in `IOSimMin` fixes it in a scratch copy; nothing runs JopSim in CI
+20. **[#179](#item-179)** — A method call and its return cost ~130 cycles — about half of Kfl's cycles, a third of UdpIp's, over a quarter of Lift's — and `idle/direct` is mostly their memory reads. The largest performance lever, and it keeps predictability: on-chip method tables, a hardware call sequencer, inlining at link time ([analysis](analysis/performance-outlook.md))
+21. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Counted 2026-11-11: the whole region is 1.6-2.3 KB in every image, so one block RAM holds it, worth about 16 % of Kfl's cycles; the SMP design is what is left
+22. **[#55](#item-55)** — The core stalls on writes whose result it never uses — about 3.5-5 % of cycles, not the `idle/direct` share first blamed on it, which is reads ([179](#item-179)). Needs read-after-write forwarding and an SMP story
 23. **[#64](#item-64)** — `GcStressTest`'s free memory falls **~0.40 bytes/round** on all seven boards measured and never recovers at a minor collection. Since 2026-09-11 the lead is the METRIC, not a leak: `GC.freeMemory()` measures the current semispace gap, which only a flip restores, and the one board that visibly collects shows a flat high-water mark. Two leak candidates are already ruled out: [item 131](#item-131)'s dropped card marks and [item 141](#item-141)'s stray barrier writes
 24. **[#167](#item-167)** — REGRESSION: the A-E115FB's minor-GC copy phase is **13.5 % slower** than in August (12.825 ms against 11.300; worst pause 14.96 ms, still inside the 20 ms target). Cause not isolated: settle it with a control build at the August commit, not by reasoning
 25. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
@@ -105,9 +105,8 @@ nothing depends on ranks below a measurement that could mislead someone.
 64. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
 65. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
 66. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
-67. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-68. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
-69. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
+67. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
+68. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
 
 ## 2. All items — summary
 
@@ -163,7 +162,6 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[27](#item-27)** — The `aastore` type check's cost was never measured
 - **[31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
-- **[37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
 - **[39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
 - **[40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
 - **[41](#item-41)** — No 8-core DRAM build closes timing, MSHRs or not; on DDR2 the 4-core misses too (2026-10-12)
@@ -206,7 +204,7 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[149](#item-149)** — Nine Vivado targets still read TRACKED constraints; item 57 claimed otherwise and the guard's board list hid it
 - **[150](#item-150)** — Four test apps and `JopIhluGcBramSim` are referenced by nothing, and four closed items rest on them
 - **[153](#item-153)** — The Alchitry Au's tracked XDC has NO `create_clock`; its top-level clock may be unconstrained
-- **[154](#item-154)** — Item 137 is closed over a blocker it names: `sim-smallest` and `sim-small` still cannot run
+- **[154](#item-154)** — JopSim cannot run any image: it answers 0 for `IO_MEM_SIZE`, and the runtime's fallback heap overruns its 1 MB; item 137 was closed over this
 - **[155](#item-155)** — Item 116's split decayed — past 11,000 lines by 2026-10-13 — and nothing guards section size
 - **[159](#item-159)** — No asynchronous clock groups in the generated SDR XDC; a 2:1 clock ratio was hiding it
 - **[163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions for timing margin
@@ -241,6 +239,7 @@ Marked closed in the heading or here, sorted by ID.
 - ~~**[34](#item-34)**~~ — 4-CORE STATUS after the fetch-stall fixes — the SDRAM row is
 - ~~**[35](#item-35)**~~ — `AlteraSdramAdapter` has NO simulation coverage — DONE
 - ~~**[36](#item-36)**~~ — The `stall freezes jpc, jinstr and the dispatch address` formal
+- ~~**[37](#item-37)**~~ — The method cache dominates real memory traffic — CLOSED 2026-11-11: since [51](#item-51)'s 8 KB default, bytecode fill is 3-6 % of stall, re-measured at HEAD
 - ~~**[38](#item-38)**~~ — ANSWERED: stall share is 34-55 % — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31. Where that 34-55 % GOES was then measured on hardware in [50](#item-50)
 - ~~**[43](#item-43)**~~ — Colorlight i5 SDRAM "regression" — FALSE ALARM, my own documented trap
 - ~~**[46](#item-46)**~~ — ~~`formal-verification` fails intermittently~~ — **ALREADY FIXED** 2026-08-15 (`6bce639b`, formal timeout 300→900 s)
@@ -1630,7 +1629,39 @@ heap — which is why the i5 has to run its benchmarks over SDRAM.
 
 <a id="item-37"></a>
 
-### Item 37 — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
+### Item 37 — ~~The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions~~ — CLOSED 2026-11-11: since item 51's 8 KB default, bytecode fill is 3-6 % of stall
+
+**CLOSED 2026-11-11: the method cache stopped dominating when
+[item 51](#item-51) made 8 KB/64 blocks the default (2026-08-20), and a
+re-measurement at HEAD finds it still doesn't.** `DoAppPerf` on the Wukong's
+dual build (`wukongDualIndependent`, de2dfe4), both halves at once:
+
+| bytecode fill | Kfl | UdpIp | Lift |
+|---|---|---|---|
+| share of stall, SDR 100 MHz | 5.0 % | 3.0 % | 2.7 % |
+| share of stall, DDR3 100 MHz | 5.6 % | 3.6 % | 3.0 % |
+| share of all cycles, SDR / DDR3 | 1.5 / 1.6 % | 1.1 / 1.2 % | 0.9 / 0.9 % |
+| cycles per iteration, both memories | 92 | 157 | 48 |
+
+- **Before:** with the 2 KB cache, bytecode fill was 47-63 % of Kfl's and UdpIp's
+  stall on three boards ([item 50](#item-50)).
+- **Unchanged since August.** The fills cost the same cycles per iteration as on
+  2026-08-20 to within 0.1 %, and so do Kfl and Lift in total, on both memories.
+  UdpIp is 1.2 % slower on SDR (indirection +14 %, `idle/direct` −6 %) and 0.3 %
+  slower on DDR3. Not investigated. One difference: the image is 63 KB against
+  August's 65 KB, so code and data sit at different addresses.
+- **Where stall goes now:**
+  - `idle/direct`, 30-41 % of stall, which is mostly the calls' reads
+    ([item 179](#item-179));
+  - statics, 40-42 % of Kfl's ([item 54](#item-54));
+  - handle and array indirection, 57-61 % of Lift's.
+
+Captures: `docs/measurements/perfcnt/2026-11-11-wukong-{sdr,ddr3}-recheck.txt`.
+Timing on that build fails by 0.364 ns on the SDR controller's `sdram_DQ` output
+enables, the same 16 endpoints as the August builds; every core path meets.
+
+**No guard.** This is a measurement, and the check is to re-run `DoAppPerf` on a
+board.
 
 **The method cache dominates real memory traffic.** `DoAppAcacheSweepSim`
 attributes every BMB transaction to the memory-controller state that issued
@@ -3010,7 +3041,42 @@ the durable form of this item.
 
 <a id="item-154"></a>
 
-### Item 154 — item 137 was closed over a blocker it names
+### Item 154 — JopSim cannot run any image: it answers 0 for `IO_MEM_SIZE`, and the runtime's fallback heap overruns its 1 MB — item 137 was closed over this blocker
+
+**Reproduced 2026-11-11, and it is every image, not two targets.**
+`make -C java sim-smallest` at HEAD stops at the collector's first allocation:
+
+    writeMem: wrong address: 274667
+
+The same recipes, run on the i9+ SDRAM preset's images, stop at 274665
+(Smallest) and 274775 (Small). Each is the last word of a heap that reaches
+262,144 words past the image's end.
+
+- **Why.**
+  - `IOSimMin.read` has no case for `IO_MEM_SIZE` (`IO_BASE + 126`, address −2).
+    It prints `Default read -2` and returns 0.
+  - `Startup.java:92-96` then falls back to `appEnd + 262144`. That fallback was
+    `appEnd + 16384` until ffa1982 (2026-03-01) raised it to 1 MB for the
+    network stack.
+  - JopSim's whole memory is 1 MB (`MAX_MEM`, unchanged since 9e10839), so every
+    image since then asks for more than JopSim has.
+- **What it cost.** The bytecode counts behind items [179](#item-179),
+  [54](#item-54) and [55](#item-55) came from a scratch copy of JopSim with
+  `MAX_MEM` raised to 8 MB ([performance outlook](analysis/performance-outlook.md),
+  "Reproducing the numbers"). The tree cannot reproduce them as it stands.
+  Ranked above those items for that reason: re-counting after any change to the
+  call path needs JopSim.
+- **The fix, tried in a scratch copy.**
+  - Answer `IO_MEM_SIZE` in `IOSimMin` with JopSim's memory end. That is what
+    the hardware does: `Sys.scala` register 14 returns the usable memory end in
+    words.
+  - The runtime then sizes its heap to the simulator, as it does to a board, and
+    `MAX_MEM` can stay at 1 MB.
+  - With that one `case`, both HelloWorlds boot and print, and `LoopKfl` runs to
+    `JVM exit!` with the same 12,051,089 instructions as the 8 MB copy.
+- **Guard to write.** Nothing runs JopSim: `java/Makefile` notes that no CI job
+  runs either target. A JopSim run of `Smallest` that expects `Hello World!`
+  would be red today.
 
 [Item 137](#item-137) lists, in its own text, *"**Also blocking:**
 `make -C java sim-smallest` and `sim-small` cannot run at all"* — and both cited
@@ -3028,6 +3094,7 @@ which corrected the record — and then **left the work untracked until
 
 **No guard.** The honest first step is to run `make -C java sim-smallest` and
 see what it does now, rather than trusting either the item or this one.
+*(Done 2026-11-11, at the top of this item.)*
 
 <a id="item-155"></a>
 

@@ -1,0 +1,31 @@
+Waiting for FPGA ready  ready!
+ [###                                               ] 1024/16383 [######                                            ] 2048/16383 [#########                                         ] 3072/16383 [############                                      ] 4096/16383 [###############                                   ] 5120/16383 [##################                                ] 6144/16383 [#####################                             ] 7168/16383 [#########################                         ] 8192/16383 [############################                      ] 9216/16383 [###############################                   ] 10240/16383 [##################################                ] 11264/16383 [#####################################             ] 12288/16383 [########################################          ] 13312/16383 [###########################################       ] 14336/16383 [##############################################    ] 15360/16383 [##################################################] 16383/16383 [##################################################] 16383/16383
+
+SmalParsed build/wukongDualIndependent/java/apps/JbeBench/DoAppPerf.jop: 16383 words (63 KB)
+  * 10415 words of Java bytecode (40 KB)
+  * 16383 words external RAM (63 KB)
+Opened /dev/serial/by-id/usb-Jean_THOMAS_Pico_Dirty_JTAG_0B383D0435D957EC-if01 at 2000000 baud
+Streaming 65532 bytes...
+Sent in 0.3s (195 KB/s). Verifying checksum...
+Download OK (checksum 0x05a5d492)
+Monitoring UART output (Ctrl+C to exit)...
+l boot
+GC init...
+GC: generational, 32-word cards
+GC done
+CI
+OK
+M0
+DoApp memory-stall profile (IO_PERFCNT) 
+Kfl 16302 1/s 
+==  Kfl 
+cycles 194850056 stall 58835567 stall/1000 301 idle/direct 24130129   of stall/1000 410 bytecode fill 2921571   of stall/1000 49 statics 23718366   of stall/1000 403 bounds check 2045474   of stall/1000 34 handle deref 3030891   of stall/1000 51 element 2988433   of stall/1000 50 A$ fill 933   of stall/1000 0 
+UdpIp 6913 1/s 
+==  UdpIp 
+cycles 222303978 stall 80047127 stall/1000 360 idle/direct 29722419   of stall/1000 371 bytecode fill 2406803   of stall/1000 30 statics 13569126   of stall/1000 169 bounds check 5729930   of stall/1000 71 handle deref 12765485   of stall/1000 159 element 10898991   of stall/1000 136 A$ fill 4954585   of stall/1000 61 
+Lift 18053 1/s 
+==  Lift 
+cycles 357357551 stall 114352866 stall/1000 319 idle/direct 37106239   of stall/1000 324 bytecode fill 3100429   of stall/1000 27 statics 9060545   of stall/1000 79 bounds check 16383184   of stall/1000 143 handle deref 24813175   of stall/1000 216 element 23888478   of stall/1000 208 A$ fill 1040   of stall/1000 0 
+profile done 
+
+JVM exit!
