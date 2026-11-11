@@ -57,56 +57,55 @@ nothing depends on ranks below a measurement that could mislead someone.
 16. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
 17. **[#168](#item-168)** — `xc7a100tDbEth` closes timing by luck: -0.058 ns on 10-12, +0.007 ns on the 10-28 rebuild, the same core fetch path with the same directives, so any rebuild can miss again
 18. **[#170](#item-170)** — The XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s whenever the data toggles -- 28 of 400 random frames, 0 of 400 alternating -- and each loss blacks the receiver out for seconds; TCP fails there. MII at 100 Mb/s (`xc7a100tDbMii`) passes every check, DoAll 68/68. Open: bounding a frame in the MAC so one glitch costs one frame, and a changed TCP echo at 1 Gb/s that passed the stack's checksum
-19. **[#154](#item-154)** — JopSim cannot run any image: it answers 0 for `IO_MEM_SIZE`, so the runtime falls back to a heap 1 MB past the application, which overruns JopSim's 1 MB memory (`make -C java sim-smallest`, reproduced 2026-11-11). Ranked above the performance items because their bytecode counts come from JopSim and needed a patched copy. One `case` in `IOSimMin` fixes it in a scratch copy; nothing runs JopSim in CI
-20. **[#179](#item-179)** — A method call and its return cost ~130 cycles — about half of Kfl's cycles, a third of UdpIp's, over a quarter of Lift's — and `idle/direct` is mostly their memory reads. The largest performance lever, and it keeps predictability: on-chip method tables, a hardware call sequencer, inlining at link time ([analysis](analysis/performance-outlook.md))
-21. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Counted 2026-11-11: the whole region is 1.6-2.3 KB in every image, so one block RAM holds it, worth about 16 % of Kfl's cycles; the SMP design is what is left
-22. **[#55](#item-55)** — The core stalls on writes whose result it never uses — about 3.5-5 % of cycles, not the `idle/direct` share first blamed on it, which is reads ([179](#item-179)). Needs read-after-write forwarding and an SMP story
-23. **[#64](#item-64)** — `GcStressTest`'s free memory falls **~0.40 bytes/round** on all seven boards measured and never recovers at a minor collection. Since 2026-09-11 the lead is the METRIC, not a leak: `GC.freeMemory()` measures the current semispace gap, which only a flip restores, and the one board that visibly collects shows a flat high-water mark. Two leak candidates are already ruled out: [item 131](#item-131)'s dropped card marks and [item 141](#item-141)'s stray barrier writes
-24. **[#167](#item-167)** — REGRESSION: the A-E115FB's minor-GC copy phase is **13.5 % slower** than in August (12.825 ms against 11.300; worst pause 14.96 ms, still inside the 20 ms target). Cause not isolated: settle it with a control build at the August commit, not by reasoning
-25. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-26. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
-27. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
-28. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
-29. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
-30. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
-31. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
-32. **[#41](#item-41)** — No 8-core DRAM build closes timing, MSHRs or not, and on DDR2 the 4-core misses too: -3.231 / -5.189 ns at 4 / 8 cores, about 2 ns worse than in August
-33. **[#70](#item-70)** — The UART baud is stated three times; console.mk now refuses an unknown one, but the i5 still hardcodes its own
-34. **[#67](#item-67)** — `ep4cgx150DbFull` has `useStackCache` off. Its gate, item 14, closed 2026-10-13 — the stack cache is hardware-validated ([item 133](#item-133)) — so turning it on is now a measurement to make
-35. **[#75](#item-75)** — `ep4cgx150HwMath` is a byte-identical duplicate of `ep4cgx150Serial`
-36. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
-37. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
-38. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-39. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
-40. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
-41. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-42. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
-43. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
-44. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-45. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-46. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-47. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-48. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-49. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-50. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-51. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-52. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-53. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-54. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-55. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-56. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
-57. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
-58. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
-59. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
-60. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
-61. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
-62. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
-63. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
-64. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
-65. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
-66. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
-67. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
-68. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
+19. **[#179](#item-179)** — A method call and its return cost ~130 cycles — about half of Kfl's cycles, a third of UdpIp's, over a quarter of Lift's — and `idle/direct` is mostly their memory reads. The largest performance lever, and it keeps predictability: on-chip method tables, a hardware call sequencer, inlining at link time ([analysis](analysis/performance-outlook.md))
+20. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Counted 2026-11-11: the whole region is 1.6-2.3 KB in every image, so one block RAM holds it, worth about 16 % of Kfl's cycles; the SMP design is what is left
+21. **[#55](#item-55)** — The core stalls on writes whose result it never uses — about 3.5-5 % of cycles, not the `idle/direct` share first blamed on it, which is reads ([179](#item-179)). Needs read-after-write forwarding and an SMP story
+22. **[#64](#item-64)** — `GcStressTest`'s free memory falls **~0.40 bytes/round** on all seven boards measured and never recovers at a minor collection. Since 2026-09-11 the lead is the METRIC, not a leak: `GC.freeMemory()` measures the current semispace gap, which only a flip restores, and the one board that visibly collects shows a flat high-water mark. Two leak candidates are already ruled out: [item 131](#item-131)'s dropped card marks and [item 141](#item-141)'s stray barrier writes
+23. **[#167](#item-167)** — REGRESSION: the A-E115FB's minor-GC copy phase is **13.5 % slower** than in August (12.825 ms against 11.300; worst pause 14.96 ms, still inside the 20 ms target). Cause not isolated: settle it with a control build at the August commit, not by reasoning
+24. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+25. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
+26. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+27. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
+28. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
+29. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+30. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+31. **[#41](#item-41)** — No 8-core DRAM build closes timing, MSHRs or not, and on DDR2 the 4-core misses too: -3.231 / -5.189 ns at 4 / 8 cores, about 2 ns worse than in August
+32. **[#70](#item-70)** — The UART baud is stated three times; console.mk now refuses an unknown one, but the i5 still hardcodes its own
+33. **[#67](#item-67)** — `ep4cgx150DbFull` has `useStackCache` off. Its gate, item 14, closed 2026-10-13 — the stack cache is hardware-validated ([item 133](#item-133)) — so turning it on is now a measurement to make
+34. **[#75](#item-75)** — `ep4cgx150HwMath` is a byte-identical duplicate of `ep4cgx150Serial`
+35. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
+36. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
+37. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
+38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
+39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
+40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+41. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
+42. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
+43. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+44. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+45. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+46. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+47. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+48. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+49. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+50. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+51. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+52. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+53. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+54. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+55. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+56. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
+57. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
+58. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
+59. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
+60. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
+61. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
+62. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
+63. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
+64. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
+65. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
+66. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
+67. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
 
 ## 2. All items — summary
 
@@ -204,7 +203,6 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[149](#item-149)** — Nine Vivado targets still read TRACKED constraints; item 57 claimed otherwise and the guard's board list hid it
 - **[150](#item-150)** — Four test apps and `JopIhluGcBramSim` are referenced by nothing, and four closed items rest on them
 - **[153](#item-153)** — The Alchitry Au's tracked XDC has NO `create_clock`; its top-level clock may be unconstrained
-- **[154](#item-154)** — JopSim cannot run any image: it answers 0 for `IO_MEM_SIZE`, and the runtime's fallback heap overruns its 1 MB; item 137 was closed over this
 - **[155](#item-155)** — Item 116's split decayed — past 11,000 lines by 2026-10-13 — and nothing guards section size
 - **[159](#item-159)** — No asynchronous clock groups in the generated SDR XDC; a 2:1 clock ratio was hiding it
 - **[163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions for timing margin
@@ -295,6 +293,7 @@ Marked closed in the heading or here, sorted by ID.
 - **[147](#item-147)** — ~~The nightly GC sim ends when the heap exhausts, so making the program SMALLER made it slower until it blew CI's 90-minute wall~~ — **FIXED**
 - **[148](#item-148)** — ~~The A-E115FB's Pico blaster failed and the board is powered off, so DDR2 has no hardware coverage~~ — **BACK** 2026-10-12 on the Terasic: DoAll 68/68 and Ethernet at 1 Gb/s.
 - **[151](#item-151)** — ~~`XdcGenerator` produces WRONG constraints for the DB V5: console TX/RX crossed and `resetn` missing~~ — **FIXED**
+- **[154](#item-154)** — ~~JopSim cannot run any image~~ — CLOSED 2026-11-11: it answers `IO_MEM_SIZE` and counts microseconds from its own start, and CI runs HelloWorld in it (`make -C java jopsim-hello`, README step 3b)
 - **[156](#item-156)** — ~~two attached boards could not be programmed, and nothing noticed~~ — FIXED 2026-09-11
 - **[157](#item-157)** — ~~The stop-the-world leak detector is never incremented~~ — FIXED 2026-09-14: `IO_GC_MUTATOR` counts it in hardware
 - **[158](#item-158)** — ~~Stop-the-world has no acknowledgement~~ — FIXED 2026-09-14: `IO_GC_HALTED` + a grant rule; haltLeak 5213 → 0
@@ -3041,7 +3040,41 @@ the durable form of this item.
 
 <a id="item-154"></a>
 
-### Item 154 — JopSim cannot run any image: it answers 0 for `IO_MEM_SIZE`, and the runtime's fallback heap overruns its 1 MB — item 137 was closed over this blocker
+### Item 154 — ~~JopSim cannot run any image: it answers 0 for `IO_MEM_SIZE`, and the runtime's fallback heap overruns its 1 MB — item 137 was closed over this blocker~~ — CLOSED 2026-11-11: two faults in `IOSimMin` fixed, and CI runs JopSim
+
+**CLOSED 2026-11-11. Two faults, both in `IOSimMin`, and CI now runs JopSim.**
+
+- **`IO_MEM_SIZE` is answered** with `MAX_MEM`, the end of JopSim's memory in
+  words, as `Sys` register 14 answers it on a board. `Startup` sizes the heap
+  to it and never takes the `appEnd + 262144` fallback, so `MAX_MEM` stays at
+  1 MB.
+- **The microsecond counter counts from the simulation's start**, as `Sys`
+  counts from reset. It was `((int) System.currentTimeMillis()) * 1000`, the
+  wall clock cut to 32 bits, which is negative for 36 minutes in every 72.
+  HelloWorld starts with `n = 0` and prints when `n <= c`, so for those 36
+  minutes it printed nothing, and JopSim ran on and exited 0. Writing the guard
+  found it: with the first fix alone, the run reached `M0` and printed nothing,
+  the counter reading −1,064,622,024.
+- **Proved red twice on the guard below.** At HEAD it failed with
+  `writeMem: wrong address: 274667`, JopSim exiting 1. With only the
+  `IO_MEM_SIZE` fix, JopSim ran out its 3M bytecodes and exited 0 with no line
+  printed. With both fixes it passes, and the first `Hello World!` comes about
+  540,000 bytecodes in. That pass came while the old counter still read
+  negative, so the counter fix made it, not the clock wrapping round.
+- **Stock JopSim now reproduces the performance counts.** `LoopKfl` on the i9+
+  SDRAM image runs to `JVM exit!` in 12,051,089 instructions, the count the
+  8 MB scratch copy gave for items [179](#item-179), [54](#item-54) and
+  [55](#item-55). Small's HelloWorld boots and prints too.
+
+**Guard:** `make -C java jopsim-hello` (`java/Makefile`) runs Smallest's
+HelloWorld for 3M bytecodes and needs its `Hello World!` line; an exit status
+alone never passes it. README step 3b runs it on every push through
+`.github/scripts/run-readme-walkthrough.sh`, which now needs a `PASS:` line from
+it, as it does from the HDL simulations. Proved with a masked exit status
+(`|| true` on a starved budget): the runner failed it with that change and
+passed it without.
+
+*The rest of this item is the record as it stood while open.*
 
 **Reproduced 2026-11-11, and it is every image, not two targets.**
 `make -C java sim-smallest` at HEAD stops at the collector's first allocation:
@@ -3092,9 +3125,9 @@ heading then covered a blocker nobody closed. Found by the 2026-09-10 audit,
 which corrected the record — and then **left the work untracked until
 2026-09-11**, which is the same defect one level up.
 
-**No guard.** The honest first step is to run `make -C java sim-smallest` and
-see what it does now, rather than trusting either the item or this one.
-*(Done 2026-11-11, at the top of this item.)*
+**No guard when filed.** The honest first step was to run
+`make -C java sim-smallest` and see what it did then, rather than trusting
+either the item or this one. *(Done 2026-11-11; the reproduction is above.)*
 
 <a id="item-155"></a>
 
@@ -12080,6 +12113,10 @@ cases above, with the heap-String control, added to `DoAll`.
 > is still `static final int MAX_MEM = 1024*1024/4;` and `Startup.java:95` is
 > still `mem_size = appEnd + 262144;`. The 2026-09-04 fix addressed the
 > interpreter only.
+>
+> **The blocker was fixed 2026-11-11 as [item 154](#item-154).** JopSim now
+> answers `IO_MEM_SIZE`, so `Startup` never takes that fallback in it, and CI
+> runs HelloWorld in JopSim on every push.
 
 **Found 2026-09-02** by boundary review B8, reproduced.
 

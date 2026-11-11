@@ -141,7 +141,9 @@ memWords  └──────────────────┘  Top of p
 ```
 
 The Java runtime reads `IO_MEM_SIZE` (Sys register 14) to determine `memEnd`.
-When `IO_MEM_SIZE` returns 0, the legacy heap size (`appEnd + 16384`) is used.
+When `IO_MEM_SIZE` returns 0, `Startup` falls back to `appEnd + 262144`, 1 MB of
+heap past the image. JopSim answers the register too, with the end of its own
+memory, since 2026-11-11 ([item 154](../current-status.md#item-154)).
 
 ### Stack Cache Spill Addressing
 

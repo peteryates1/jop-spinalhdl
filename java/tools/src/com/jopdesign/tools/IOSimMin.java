@@ -107,6 +107,12 @@ public class IOSimMin {
 			case Const.IO_CPUCNT:
 				val = cpuCnt;
 				break;
+			// The end of usable memory in words, as Sys answers it on a board.
+			// Unanswered, it read 0, Startup put the heap 1 MB past the image,
+			// and every image overran MAX_MEM in GC.init (item 154).
+			case Const.IO_MEM_SIZE:
+				val = JopSim.MAX_MEM;
+				break;
 			case SIM_CACHE_COST:
 				val = js.cacheCost;
 				break;
@@ -241,8 +247,14 @@ public class IOSimMin {
 		return false;
 	}
 
+	// Microseconds since the simulation started, as Sys counts them from reset.
+	// This was ((int) System.currentTimeMillis()) * 1000, the wall clock cut to
+	// 32 bits: negative for 36 minutes in every 72, and for all of them
+	// HelloWorld (n = 0; if (n <= c)) printed nothing (item 154).
+	protected static final long startNanos = System.nanoTime();
+
 	public int usCnt() {
-		return ((int) System.currentTimeMillis()) * 1000;
+		return (int) ((System.nanoTime() - startNanos) / 1000);
 	}
 
 }

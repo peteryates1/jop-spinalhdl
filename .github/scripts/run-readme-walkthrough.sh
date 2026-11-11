@@ -68,14 +68,16 @@ while IFS= read -r line; do
     # step 3 and printed step 4 before reporting failure, which is exactly the
     # confusing log a CI job must not produce.
     script+="echo '>>> [step $step] $line'"$'\n'
-    if [[ "$line" == *"runMain jop.system."* ]]; then
+    if [[ "$line" == *"runMain jop.system."* || "$line" == *"jopsim-"* ]]; then
       # A SIMULATION IS JUDGED BY ITS VERDICT, not only its exit status. The
       # sims are Apps, and three of the six exited 0 whatever the UART said,
       # so this job was green while step 4b never got past GC.init (item 176).
       # Each now prints `PASS: ...`, or `FAIL: ...` and exits 1; one that exits
       # 0 with no PASS line fails here, which is what a sim with no verdict at
       # all does. The pipe runs the line in a subshell, so a `cd` in it would
-      # not last into the next step; no simulation line has one.
+      # not last into the next step; no simulation line has one. JopSim's run
+      # (step 3b, `make -C java jopsim-hello`) is judged the same way: it once
+      # ran to its budget and exited 0 having printed nothing (item 154).
       script+="if ! { $line ; } 2>&1 | tee '$simlog'; then echo \"!!! step $step FAILED: $line\"; exit 1; fi"$'\n'
       script+="if ! grep -q 'PASS: ' '$simlog'; then echo \"!!! step $step FAILED, no PASS line: $line\"; exit 1; fi"$'\n'
     else

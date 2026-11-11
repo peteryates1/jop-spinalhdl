@@ -218,6 +218,11 @@ cd .. && sbt compile
 #    `test-apps` builds all of them, and is what the steps below assume.
 cd java && make test-apps && cd ..
 
+# 3b. Run the same HelloWorld in JopSim, the bytecode-level simulator: no HDL,
+#     under a second. It stops after 3M bytecodes and needs HelloWorld's line.
+#     Prints "PASS: JopSim ran Smallest/HelloWorld to its first line"
+make -C java jopsim-hello
+
 # 4. Run BRAM simulation (prints "Hello World!" in a loop)
 sbt "Test / runMain jop.system.JopCoreBramSim"
 

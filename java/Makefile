@@ -31,7 +31,7 @@ export TOOLS_OUT COMMON_TOOLS_OUT JOPIZER_JAR JOPSIM_JAR JOPA_JAR LINKER_PROPS L
 # leaves A's Const.java correct and up to date, and the stamp would force a
 # needless regeneration of it.
 
-.PHONY: all tools runtime apps test-apps clean sim-smallest sim-small generate-const
+.PHONY: all tools runtime apps test-apps clean sim-smallest sim-small jopsim-hello generate-const
 
 all: tools runtime apps
 
@@ -101,7 +101,9 @@ test-apps: apps
 # The image and its link map are build products, so they come from JAVA_OUT --
 # these two recipes still named apps/<X>/HelloWorld.jop in the source tree
 # after everything else had moved, and nothing noticed because no CI job runs
-# either target.
+# either target. Both print a method trace (-Dtrace=2) and run until
+# interrupted; `jopsim-hello` below runs the same Smallest image to a verdict,
+# and CI runs that.
 sim-smallest: all
 	java -cp $(JOPSIM_JAR) -Dtrace=2 com.jopdesign.tools.JopSim \
 		-link $(JAVA_OUT)/apps/Smallest/HelloWorld.jop.link.txt \
@@ -111,6 +113,39 @@ sim-small: all
 	java -cp $(JOPSIM_JAR) -Dtrace=2 com.jopdesign.tools.JopSim \
 		-link $(JAVA_OUT)/apps/Small/HelloWorld.jop.link.txt \
 		$(JAVA_OUT)/apps/Small/HelloWorld.jop
+
+# JOPSIM RUNS AN IMAGE, AND CI WATCHES IT DO SO (status item 154). The README
+# walk-through runs this as step 3b on every push.
+#
+# JopSim stopped in GC.init on every image from 2026-03-01 to 2026-11-11, and
+# nothing ran it, so nobody saw. It answered 0 for
+# IO_MEM_SIZE, so Startup put the heap 1 MB past the image, beyond JopSim's own
+# 1 MB. And its microsecond counter was the wall clock cut to 32 bits, negative
+# for 36 minutes in every 72, so HelloWorld (`n = 0; if (n <= c)`) could still
+# print nothing.
+#
+# HelloWorld never exits, so JopSim stops it after JOPSIM_BUDGET bytecodes.
+# Its first line comes about 540,000 bytecodes in (2026-11-11); 3M is 5.5x
+# that and runs in under a second.
+# The verdict is HelloWorld's own line in JopSim's output, never JopSim's exit
+# status alone: the counter fault let JopSim run to its budget and exit 0
+# having printed nothing.
+JOPSIM_BUDGET ?= 3000000
+JOPSIM_LOG    := $(JAVA_OUT)/apps/Smallest/HelloWorld.jopsim.log
+
+jopsim-hello: all
+	@java -cp $(JOPSIM_JAR) com.jopdesign.tools.JopSim \
+		$(JAVA_OUT)/apps/Smallest/HelloWorld.jop $(JOPSIM_BUDGET) \
+		> $(JOPSIM_LOG) 2>&1; \
+	rc=$$?; n=$$(grep -cx 'Hello World!' $(JOPSIM_LOG)); \
+	if [ $$rc -eq 0 ] && [ $$n -gt 0 ]; then \
+		sed -n '1,/^Hello World!$$/p' $(JOPSIM_LOG); \
+		echo "PASS: JopSim ran Smallest/HelloWorld to its first line"; \
+	else \
+		head -n 30 $(JOPSIM_LOG); \
+		echo "FAIL: JopSim exited $$rc, and Smallest/HelloWorld printed $$n lines in $(JOPSIM_BUDGET) bytecodes; see $(JOPSIM_LOG)"; \
+		exit 1; \
+	fi
 
 clean:
 	$(MAKE) -C tools clean

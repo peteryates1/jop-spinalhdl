@@ -459,16 +459,16 @@ cycle.
    ```
 
    Repeat the second command for `LoopUdpIp` and `LoopLift`.
-2. Make two changes to JopSim, in a scratch copy rather than the repo:
-   - **Let the runtime find JopSim's memory.** Stock JopSim answers 0 for
-     `IO_MEM_SIZE`, so the runtime falls back to a heap 1 MB past the end of
-     the image. JopSim's memory is 1 MB, so it stops with "writeMem: wrong
-     address" on every image ([item 154](../current-status.md#item-154)). The
-     counts here came from a copy with `MAX_MEM` raised to 8 MB. Answering
-     `IO_MEM_SIZE` with `MAX_MEM` in `IOSimMin` instead runs `LoopKfl` to the
-     same instruction count.
-   - **Print `bcStat` after `runSimulation()`.** It holds the per-opcode
-     execution counts JopSim keeps but does not print.
+2. Make one change to JopSim, in a scratch copy rather than the repo: **print
+   `bcStat` after `runSimulation()`.** It holds the per-opcode execution counts
+   JopSim keeps but does not print.
+
+   The counts here came from a copy that also raised `MAX_MEM` to 8 MB, because
+   until 2026-11-11 stock JopSim stopped with "writeMem: wrong address" on every
+   image: it answered 0 for `IO_MEM_SIZE`, so the runtime put the heap 1 MB
+   past the end of the image, beyond JopSim's 1 MB
+   ([item 154](../current-status.md#item-154)). JopSim answers it now, and runs
+   `LoopKfl` to `JVM exit!` in the same 12,051,089 instructions as that copy.
 3. For the statics, add a hook in `getstatic()` and `putstatic()` that records each
    address. The hook sees about 5 more static accesses per iteration than the
    opcode counts do, for a reason not found. Section 2 uses the opcode counts, and
