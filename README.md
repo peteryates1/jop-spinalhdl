@@ -609,6 +609,7 @@ Design notes and investigation logs in `docs/`:
 - [Jopa Tool](docs/architecture/JOPA_TOOL.md) — microcode assembler usage and output formats
 - [Programmer's Guide](docs/programmers-guide.md) — I/O register maps and Java API for all devices (Sys, Uart, Eth, Mdio, SdNative, SdSpi, VgaText)
 - [Tuning Guide](docs/architecture/tuning-guide.md) — **what each configuration lever buys and costs**: `blockBits` vs `jpcWidth`, `l2SetCount`, `l2MshrCount`, core count; which resource actually binds (LUTs, not BRAM); how to measure each; and the plausible-sounding conclusions that measurement disproved
+- [Performance Outlook](docs/analysis/performance-outlook.md) — **JOP on a custom chip and how to make it faster**: the clock it could reach (0.5-1 GHz, estimated), work per clock against ARM, RISC-V and x86 with a JIT, where its cycles go (calls are half of Kfl's), and the improvements that keep timing predictability versus those that give it up
 - [Troubleshooting](TROUBLESHOOTING.md) — symptom-first checklist for a board that builds but misbehaves (no UART, watchdog stopped, I/O address mismatch). Work through this before deep-diving
 - [Build Structure](docs/build-structure.md) — **how a build is put together and what to type**: the `build/<config>/` layout, the shared per-toolchain flow, what a board Makefile declares versus inherits, and troubleshooting
 - [System Configuration](docs/architecture/system-configuration.md) — configuration reference: memory layout, JopCoreConfig, JopMemoryConfig, board configs, I/O register map

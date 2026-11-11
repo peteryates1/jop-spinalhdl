@@ -57,56 +57,57 @@ nothing depends on ranks below a measurement that could mislead someone.
 16. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
 17. **[#168](#item-168)** — `xc7a100tDbEth` closes timing by luck: -0.058 ns on 10-12, +0.007 ns on the 10-28 rebuild, the same core fetch path with the same directives, so any rebuild can miss again
 18. **[#170](#item-170)** — The XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s whenever the data toggles -- 28 of 400 random frames, 0 of 400 alternating -- and each loss blacks the receiver out for seconds; TCP fails there. MII at 100 Mb/s (`xc7a100tDbMii`) passes every check, DoAll 68/68. Open: bounding a frame in the MAC so one glitch costs one frame, and a changed TCP echo at 1 Gb/s that passed the stack's checksum
-19. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
-20. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
-21. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
-22. **[#64](#item-64)** — `GcStressTest`'s free memory falls **~0.40 bytes/round** on all seven boards measured and never recovers at a minor collection. Since 2026-09-11 the lead is the METRIC, not a leak: `GC.freeMemory()` measures the current semispace gap, which only a flip restores, and the one board that visibly collects shows a flat high-water mark. Two leak candidates are already ruled out: [item 131](#item-131)'s dropped card marks and [item 141](#item-141)'s stray barrier writes
-23. **[#167](#item-167)** — REGRESSION: the A-E115FB's minor-GC copy phase is **13.5 % slower** than in August (12.825 ms against 11.300; worst pause 14.96 ms, still inside the 20 ms target). Cause not isolated: settle it with a control build at the August commit, not by reasoning
-24. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-25. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
-26. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
-27. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
-28. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
-29. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
-30. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
-31. **[#41](#item-41)** — No 8-core DRAM build closes timing, MSHRs or not, and on DDR2 the 4-core misses too: -3.231 / -5.189 ns at 4 / 8 cores, about 2 ns worse than in August
-32. **[#70](#item-70)** — The UART baud is stated three times; console.mk now refuses an unknown one, but the i5 still hardcodes its own
-33. **[#67](#item-67)** — `ep4cgx150DbFull` has `useStackCache` off. Its gate, item 14, closed 2026-10-13 — the stack cache is hardware-validated ([item 133](#item-133)) — so turning it on is now a measurement to make
-34. **[#75](#item-75)** — `ep4cgx150HwMath` is a byte-identical duplicate of `ep4cgx150Serial`
-35. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
-36. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
-37. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
-39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
-40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-41. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
-42. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
-43. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-44. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-45. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-46. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-47. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-48. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-49. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-50. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-51. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-52. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-53. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-54. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-55. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
-56. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
-57. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
-58. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
-59. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
-60. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
-61. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
-62. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
-63. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
-64. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
-65. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
-66. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-67. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
-68. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
+19. **[#179](#item-179)** — A method call and its return cost ~130 cycles — about half of Kfl's cycles, a third of UdpIp's, over a quarter of Lift's — and `idle/direct` is mostly their memory reads. The largest performance lever, and it keeps predictability: on-chip method tables, a hardware call sequencer, inlining at link time ([analysis](analysis/performance-outlook.md))
+20. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Counted 2026-11-11: the whole region is 1.6-2.3 KB in every image, so one block RAM holds it, worth about 16 % of Kfl's cycles; the SMP design is what is left
+21. **[#55](#item-55)** — The core stalls on writes whose result it never uses — about 3.5-5 % of cycles, not the `idle/direct` share first blamed on it, which is reads ([179](#item-179)). Needs read-after-write forwarding and an SMP story
+22. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
+23. **[#64](#item-64)** — `GcStressTest`'s free memory falls **~0.40 bytes/round** on all seven boards measured and never recovers at a minor collection. Since 2026-09-11 the lead is the METRIC, not a leak: `GC.freeMemory()` measures the current semispace gap, which only a flip restores, and the one board that visibly collects shows a flat high-water mark. Two leak candidates are already ruled out: [item 131](#item-131)'s dropped card marks and [item 141](#item-141)'s stray barrier writes
+24. **[#167](#item-167)** — REGRESSION: the A-E115FB's minor-GC copy phase is **13.5 % slower** than in August (12.825 ms against 11.300; worst pause 14.96 ms, still inside the 20 ms target). Cause not isolated: settle it with a control build at the August commit, not by reasoning
+25. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+26. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
+27. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+28. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
+29. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
+30. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+31. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+32. **[#41](#item-41)** — No 8-core DRAM build closes timing, MSHRs or not, and on DDR2 the 4-core misses too: -3.231 / -5.189 ns at 4 / 8 cores, about 2 ns worse than in August
+33. **[#70](#item-70)** — The UART baud is stated three times; console.mk now refuses an unknown one, but the i5 still hardcodes its own
+34. **[#67](#item-67)** — `ep4cgx150DbFull` has `useStackCache` off. Its gate, item 14, closed 2026-10-13 — the stack cache is hardware-validated ([item 133](#item-133)) — so turning it on is now a measurement to make
+35. **[#75](#item-75)** — `ep4cgx150HwMath` is a byte-identical duplicate of `ep4cgx150Serial`
+36. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
+37. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
+38. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
+39. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
+40. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
+41. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+42. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
+43. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
+44. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+45. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+46. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+47. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+48. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+49. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+50. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+51. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+52. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+53. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+54. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+55. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+56. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+57. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
+58. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
+59. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
+60. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
+61. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
+62. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
+63. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
+64. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
+65. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
+66. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
+67. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
+68. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
+69. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
 
 ## 2. All items — summary
 
@@ -172,7 +173,7 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[52](#item-52)** — The Java tools duplicate the hardware config by hand — three stale copies found while documenting item 51
 - **[53](#item-53)** — The 8 KB method cache default broke 4-core Wukong SMP fit — resolved to `15/6` + `double:java` (hardware-validated); the preset itself is still unfixed
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
-- **[55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall
+- **[55](#item-55)** — The core stalls on writes whose result it never uses — about 3.5-5 % of cycles, not the `idle/direct` share first blamed on it
 - **[56](#item-56)** — WBNI: derive the hardware config from the application. JOPizer static profile done; the measurement framework is the bulk
 - **[63](#item-63)** — One Wukong SDR startup crash in six runs, not reproduced — recorded so a second sighting is not treated as the first
 - **[64](#item-64)** — `GcStressTest`'s free memory declines ~0.40 B/round on all seven boards measured; since 2026-09-11 the suspect is the metric, not a leak
@@ -214,6 +215,7 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[168](#item-168)** — `xc7a100tDbEth` misses timing by 0.058 ns, on a core path
 - **[170](#item-170)** — the XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s when the data toggles, and each loss blacks the receiver out
 - **[178](#item-178)** — The JOP cluster carrier's mesh builds clean as one bitstream for all four sockets, and its PCB netlist matches the plan; questions stay open before it is made
+- **[179](#item-179)** — A method call and its return cost ~130 cycles, about half of Kfl's; `idle/direct` is mostly their memory reads
 
 ### Closed
 
@@ -2074,9 +2076,60 @@ addresses per benchmark, from a simulation trace. That distinguishes the three
 cases above and is the same discipline that made item 51 tractable — the sweep
 before the design.
 
+**Counted 2026-11-11** ([performance outlook](analysis/performance-outlook.md),
+section 2.4). Two of the three questions are answered, and the third stands.
+
+- **Size: small.** Each image's link map gives the whole static region. It is
+  1.6-2.3 KB everywhere checked: DoAll 2.3 KB, DeepAll 1.6, NetTest 2.0,
+  SmpGcTest 1.7, and the JbeBench loops 1.7-2.3. One RAMB36 holds any of them,
+  with no tags.
+- **Cost: latency.** From JopSim, run over 10,000 iterations of each benchmark
+  loop:
+  - Kfl makes 75.3 static accesses per iteration, UdpIp 79.1 and Lift 12.1.
+  - They touch only 85, 61 and 43 distinct statics. 90 % of the accesses go to
+    27, 15 and 4 of them.
+  - 11-22 % of the accesses are writes.
+  - Against the 2026-08-20 Wukong SDR capture, each access stalls 10-12 cycles.
+    A `getstatic` is five microinstructions plus that stall, and JOPizer
+    already puts the address in the operand.
+  - An on-chip RAM at about two cycles an access would save about 16 % of Kfl's
+    cycles, 8 % of UdpIp's and 3 % of Lift's (estimated).
+- **SMP: unchanged.** The shared-state argument above still decides the design.
+  A single shared RAM with fixed time-slot arbitration would keep it
+  predictable.
+
+Since this count, statics are the second performance lever, not the first:
+calls, [item 179](#item-179), cost about three times as much on Kfl.
+
 <a id="item-55"></a>
 
-### Item 55 — The core stalls on writes whose result it never uses (`idle/direct`, 39 % of Kfl stall)
+### Item 55 — The core stalls on writes whose result it never uses — about 3.5-5 % of cycles, not the `idle/direct` share first blamed on it
+
+**Corrected 2026-11-11: `idle/direct` is reads, not these writes.** The mechanism
+below is real, but the share it was given was not its own.
+
+- **What the counter counts.** `catOf` in `Sys.scala` puts the memory
+  controller's states 0-2 in the `idle/direct` category: `IDLE`, which is never
+  busy, `READ_WAIT` and `WRITE_WAIT`. Those are the microcode's simple reads and
+  writes (`stmra`, `stmrac`, `stmraf`, `stmwd`).
+- **Where these writes wait instead.** `putfield` and `iastore` wait in
+  `HANDLE_DATA_WAIT`, which is counted as `element`. `putstatic` waits in
+  `LAST`, which is counted as `statics`. Their waits were never in
+  `idle/direct`.
+- **What `idle/direct` is.** The microcode issues a fixed number of simple reads
+  per bytecode: three for `invokestatic`, one for each return, and so on.
+  Counting them in JopSim and dividing `idle/direct` by them gives the same cost
+  on all three benchmarks: 8.1, 8.6 and 8.5 cycles per read for Kfl, UdpIp and
+  Lift. Of those reads, 98 %, 69 % and 78 % are a call's. The rest are mostly
+  `ldc` on UdpIp and `arraylength` on Lift. See [item 179](#item-179).
+- **What these writes are worth.** Kfl makes 22.9 writes per iteration, UdpIp
+  56.0 and Lift 34.0, each stalling 8-10 cycles. That is 3.5 %, 4.0 % and
+  5.0 % of the cycles, and it is the ceiling for a write buffer.
+
+Section 2.3 of the
+[performance outlook](analysis/performance-outlook.md) has the tables. The text
+below is as written on 2026-08-23. Read its 39 % as `idle/direct`'s share, not
+these writes'.
 
 **Promoted out of [item 51](#item-51) on 2026-08-23.** Kfl's second-largest
 category after statics: `idle/direct` is **38.8 %** of stall, 652 cycles per
@@ -2109,6 +2162,76 @@ cycles, and nothing has separated them. **Do that first** — it sets the ceilin
 on the whole exercise, and item 51's history is that the category names in this
 profile do not always mean what they sound like.
 
+*(Settled 2026-11-11, at the top of this item: almost none of it is.)*
+
+<a id="item-179"></a>
+
+### Item 179 — A method call and its return cost ~130 cycles, about half of Kfl's; `idle/direct` is mostly their memory reads
+
+**Raised 2026-11-11**, from the cycle accounting in the
+[performance outlook](analysis/performance-outlook.md), section 2. This is the
+largest performance lever found so far, and it can be fixed without giving up
+predictability.
+
+**What a call costs (from the microcode, `asm/src/jvm_call.inc`).**
+
+- `invokestatic` runs about 73 microinstructions (`invokestatic`,
+  `invoke_main`, `invoke`, `invoke_vpsave`). `return` runs about 21.
+- Between them they make four simple memory reads and two method-cache lookups.
+  The reads are the constant-pool entry, two words of the method structure, and
+  on return the caller's structure.
+- At the ~8 stall cycles a read measured below, that is about 130 cycles.
+  NetBench measured 129 for an empty static call on the i9+ (2026-11-10).
+- Other invokes cost more: `invokevirtual` and `invokespecial` make four reads,
+  `invokesuper` five and `invokeinterface` six.
+
+**How much it costs (JopSim counts, 10,000 iterations of each loop).**
+
+| Per iteration | Calls | Cycles in calls (estimated) | Measured cycles |
+|---|---|---|---|
+| Kfl | 22.9 | ~2,980 (~49 %) | 6,128 |
+| UdpIp | 38.0 | ~4,940 (~35 %) | 14,296 |
+| Lift | 12.0 | ~1,560 (~28 %) | 5,545 |
+
+Measured cycles are from the Wukong SDR at 100 MHz, the 2026-08-20 perf-counter
+capture. For Kfl, the same per-operation accounting sums to within 1 % of the
+measured total: statics 18 %, branches 13 %, stack-only bytecodes 11 %.
+
+**`idle/direct` is the calls' reads.** Every simple read lands in `READ_WAIT`,
+which the counter files under `idle/direct`. Dividing the category by the reads
+the microcode issues gives the same cost on all three workloads:
+
+| Per iteration | Simple reads | Share from calls | `idle/direct` cycles | Cycles per read |
+|---|---|---|---|---|
+| Kfl | 93.2 | 98 % | 758 | 8.1 |
+| UdpIp | 240.1 | 69 % | 2,060 | 8.6 |
+| Lift | 68.1 | 78 % | 578 | 8.5 |
+
+This corrects [item 55](#item-55), which took the category for write waits.
+
+**What would fix it, keeping predictability.**
+
+- **Method structures and the constant pool in on-chip memory.** They are
+  read-only and fixed at link time, so they are as analysable as the method
+  cache. This removes the four reads, which are all of `idle/direct` that calls
+  account for, and speeds `ldc` too.
+- **A hardware call/return sequencer.** The microcode saves and restores sp, pc,
+  vp, cp and mp one register per microinstruction; hardware can do it in
+  parallel.
+- **Inlining small static, private and final methods in JOPizer.** The Kfl
+  image's median method is 9 bytes of bytecode, so the call costs more than the
+  callee. The method cache's block count has to absorb the larger code.
+
+If a call and return came down from ~130 cycles to ~30, Kfl would run about
+1.6x faster, UdpIp 1.36x and Lift 1.28x (estimated).
+
+**Not yet established.**
+
+- A cycle-accurate measurement of one call and return at 100 MHz. The ~130 rests
+  on the i9+'s 129 at 50 MHz and on the read cost above.
+- How the cost splits among the remedies.
+
+Measure both in simulation before choosing a remedy.
 
 <a id="item-56"></a>
 
