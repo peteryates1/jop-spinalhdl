@@ -36,6 +36,7 @@ class IhluFormal extends SpinalFormalFunSuite {
       dut.io.syncIn(i).s_in := False
       dut.io.syncIn(i).gcHalt := False
       dut.io.syncIn(i).stackFlushed := True
+      dut.io.syncIn(i).stopped := True
     }
   }
 
@@ -55,6 +56,7 @@ class IhluFormal extends SpinalFormalFunSuite {
           dut.io.syncIn(i).req := False
           dut.io.syncIn(i).gcHalt := False
           dut.io.syncIn(i).stackFlushed := True
+          dut.io.syncIn(i).stopped := True
         }
 
         when(pastValidAfterReset()) {
@@ -80,6 +82,7 @@ class IhluFormal extends SpinalFormalFunSuite {
           dut.io.syncIn(i).req := False
           dut.io.syncIn(i).s_in := False
           dut.io.syncIn(i).stackFlushed := True
+          dut.io.syncIn(i).stopped := True
         }
 
         // Core 0 asserts gcHalt, core 1 does not
@@ -165,6 +168,7 @@ class IhluFormal extends SpinalFormalFunSuite {
         dut.io.syncIn(0).s_in := False
         dut.io.syncIn(0).gcHalt := False
         dut.io.syncIn(0).stackFlushed := True
+        dut.io.syncIn(0).stopped := True
 
         dut.io.syncIn(1).reqPulse := False
         dut.io.syncIn(1).data := 0
@@ -173,6 +177,7 @@ class IhluFormal extends SpinalFormalFunSuite {
         dut.io.syncIn(1).s_in := False
         dut.io.syncIn(1).gcHalt := False
         dut.io.syncIn(1).stackFlushed := True
+        dut.io.syncIn(1).stopped := True
 
         when(pastValidAfterReset()) {
           // Since only core 0 sends lock requests, any allocated slot must be owned by core 0
@@ -213,6 +218,56 @@ class IhluFormal extends SpinalFormalFunSuite {
               assert(dut.queueTail(s) <= testConfig.cpuCnt)
             }
           }
+        }
+      })
+  }
+
+  // ==========================================================================
+  // THE ACKNOWLEDGEMENT — items 158, 133 and 165. `halted` says only that the
+  // core WILL freeze at its next microcode wait; a loop that touches no memory
+  // never reaches one. So the collector may be told the world has stopped only
+  // when every other core is halted AND flushed AND stopped. The control proves
+  // the property is not satisfied by an acknowledgement that never comes.
+  // ==========================================================================
+  def haltScenario(dut: Ihlu): Unit = {
+    for (i <- 0 until testConfig.cpuCnt) {
+      dut.io.syncIn(i).reqPulse := False    // no locks, so nobody is exempt
+      dut.io.syncIn(i).data := 0
+      dut.io.syncIn(i).op := False
+      dut.io.syncIn(i).req := False
+      dut.io.syncIn(i).s_in := False
+      dut.io.syncIn(i).gcHalt := Bool(i == 0)  // core 0 collects
+      dut.io.syncIn(i).stackFlushed := True
+    }
+    dut.io.syncIn(0).stopped := True
+  }
+
+  test("othersHalted is FALSE while a halted core has not stopped") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(Ihlu(testConfig))
+        assumeInitial(ClockDomain.current.isResetActive)
+        haltScenario(dut)
+        anyseq(dut.io.syncIn(1).stopped)
+
+        when(pastValidAfterReset() && !past(dut.io.syncIn(1).stopped)) {
+          assert(!dut.io.syncOut(0).othersHalted)
+        }
+      })
+  }
+
+  test("othersHalted is TRUE once every other core has stopped") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(Ihlu(testConfig))
+        assumeInitial(ClockDomain.current.isResetActive)
+        haltScenario(dut)
+        dut.io.syncIn(1).stopped := True
+
+        when(pastValidAfterReset()) {
+          assert(dut.io.syncOut(0).othersHalted)
         }
       })
   }

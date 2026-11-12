@@ -404,6 +404,7 @@ public class Jopa {
 			int noim_address = 0;
 			int int_address = 0;
 			int exc_address = 0;
+			int gcstop_address = 0;
 
 			while (in.nextToken() != StreamTokenizer.TT_EOF) {
 				in.pushBack();
@@ -418,6 +419,8 @@ public class Jopa {
 							exc_address = pc;
 					} else if (JopInstr.name(l.jinstr).equals("sys_noim")) {
 						noim_address = pc;
+					} else if (JopInstr.name(l.jinstr).equals("sys_gcstop")) {
+						gcstop_address = pc;
 					}
 				}
 
@@ -502,7 +505,8 @@ public class Jopa {
 //
 //	Write Scala jump table using data collected in pass1()
 //
-			writeScalaJumpTable(jinstrMap, altJinstrMap, dspAltJinstrMap, noim_address, int_address, exc_address);
+			writeScalaJumpTable(jinstrMap, altJinstrMap, dspAltJinstrMap, noim_address, int_address, exc_address,
+					gcstop_address);
 
 			PrintStream rom_mem = new PrintStream(new FileOutputStream(dstDir + "mem_rom.dat"));
 			for (int i=0; i<ROM_LEN; ++i) {
@@ -622,7 +626,8 @@ public class Jopa {
 									  Map<Integer, Integer> dspAltBcToAddr,
 									  int noim_addr,
 									  int int_addr,
-									  int exc_addr) throws IOException {
+									  int exc_addr,
+									  int gcstop_addr) throws IOException {
 
 		FileWriter scala = new FileWriter(dstDir + objectName + ".scala");
 
@@ -690,6 +695,8 @@ public class Jopa {
 				  "  // sys_int (interrupt handler)\n");
 		sb.append("  val sysExcAddr  = 0x" + String.format("%03X", exc_addr) +
 				  "  // sys_exc (exception handler)\n");
+		sb.append("  val sysGcStopAddr = 0x" + String.format("%03X", gcstop_addr) +
+				  "  // sys_gcstop (GC stop-the-world safepoint)\n");
 		sb.append("\n");
 
 		// Alternate handler addresses (e.g., imul_sw for software multiply)

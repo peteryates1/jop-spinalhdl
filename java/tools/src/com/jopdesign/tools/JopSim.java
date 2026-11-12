@@ -1501,7 +1501,7 @@ public class JopSim {
 					--pc;
 					invoke(jjhp+6);
 					break;
-				case 242 :		// resF2
+				case 242 :		// sys_gcstop: dispatched by the RTL, never in a class file
 					noim(242);
 					break;
 				case 243 :		// resF3

@@ -3,7 +3,7 @@ package jop.formal
 import spinal.core._
 import spinal.core.formal._
 
-import jop.pipeline.{BytecodeFetchStage, BytecodeFetchConfig}
+import jop.pipeline.{BytecodeFetchStage, BytecodeFetchConfig, JumpTableInitData}
 
 /**
  * Formal verification for the BytecodeFetchStage component.
@@ -50,6 +50,7 @@ class BytecodeFetchStageFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.irq)
     anyseq(dut.io.exc)
     anyseq(dut.io.ena)
+    anyseq(dut.io.gcStop)
   }
 
   /**
@@ -103,6 +104,10 @@ class BytecodeFetchStageFormal extends SpinalFormalFunSuite {
         // are registers), hence excluding the inputs from reset suffices.
         assume(!dut.io.exc)
         assume(!dut.io.irq)
+        // A GC stop (item 165) redirects the dispatch the same way, and it is a
+        // LEVEL from another core's halt, so it can rise mid-stall. Excluded
+        // like the traps; its own property below.
+        assume(!dut.io.gcStop)
 
         // jpaddr needs ONE cycle to settle, and the formal engine found it.
         // Entering a stall from a jfetch cycle, jbcAddr moves from jpc+1 back to
@@ -211,6 +216,7 @@ class BytecodeFetchStageFormal extends SpinalFormalFunSuite {
         dut.io.jbcWrData := B(0)
         dut.io.jbcWrEn := False
         dut.io.stall := False
+        dut.io.gcStop := False
 
         // Scenario: IRQ arrives while ena=0, then ena goes high with jfetch
         dut.io.ena := False
@@ -233,6 +239,39 @@ class BytecodeFetchStageFormal extends SpinalFormalFunSuite {
         // By cycle 4, the latched interrupt should fire ack_irq
         when(cycle === 4) {
           assert(dut.io.ack_irq)
+        }
+      })
+  }
+
+  /**
+   * THE GC STOP (item 165). While another core's GC halt holds this one, every
+   * dispatch goes to `sys_gcstop`, which waits until the release and then ends
+   * in `nxt` -- so the bytecode it stood in for must still be at jpc. And an
+   * interrupt must not be acknowledged on a dispatch the stop took: its handler
+   * address was never selected, so the acknowledgement would lose it.
+   */
+  test("a GC stop dispatches sys_gcstop, leaves jpc on the bytecode, takes no interrupt") {
+    formalConfig
+      .withBMC(4)
+      .doVerify(new Component {
+        val dut = FormalDut(BytecodeFetchStage())
+        assumeInitial(ClockDomain.current.isResetActive)
+        setupAllInputs(dut)
+        // An exception outranks the stop (JumpTable). excPend is a register set
+        // only by `exc`, so excluding the input from reset keeps it clear.
+        assume(!dut.io.exc)
+        // A taken branch or a jpc write REDIRECTS jpc whatever the dispatch.
+        assume(!dut.io.jbr)
+        assume(!dut.io.jpc_wr)
+
+        when(pastValidAfterReset()) {
+          when(dut.io.gcStop) {
+            assert(dut.io.jpaddr === U(JumpTableInitData.simulation.sysGcStopAddr, dut.io.jpaddr.getWidth bits))
+            assert(!dut.io.ack_irq)
+          }
+          when(past(dut.io.gcStop && dut.io.jfetch && !dut.io.stall)) {
+            assert(stable(dut.io.jpc_out))
+          }
         }
       })
   }

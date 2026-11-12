@@ -96,6 +96,10 @@ case class FetchStage(
     // HELD during a freeze, so downstream must be told to hold rather than
     // treating those as per-cycle events.
     val frozen = out Bool()
+    /** The wait hold is armed: the last ROM word was a `wait`, so while bsy is
+      * high this stage sits on it. With a GC halt in bsy, that is a core
+      * STOPPED -- what the collector's acknowledgement needs (item 165). */
+    val atWait = out Bool()
     val nxt    = out Bool()                         // jfetch signal (fetch Java bytecode)
     val opd    = out Bool()                         // jopdfetch signal (fetch Java operand)
     val dout   = out Bits(config.iWidth bits)       // Instruction output
@@ -271,6 +275,7 @@ case class FetchStage(
   // Exactly the condition of the freeze `when` below — the same expression, so
   // the two cannot drift apart.
   io.frozen := (pcwait && io.bsy) || io.extStall
+  io.atWait := pcwait
   io.nxt    := jfetch
   io.opd    := jopdfetch
   io.dout   := ir

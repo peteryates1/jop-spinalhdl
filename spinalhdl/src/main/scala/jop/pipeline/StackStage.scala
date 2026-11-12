@@ -210,6 +210,12 @@ case class StackStage(
       * cache is idle or clean, so a core with nothing to flush does not delay
       * the collector. */
     val gcFlushDone = out Bool()
+    /** No stack write in flight: the instruction the decode stage has handed
+      * over writes nothing, and no delayed write is pending. A write lands a
+      * cycle after decode, and the bank it dirties shows a cycle after that,
+      * so a core whose fetch has just frozen can still mark a bank dirty --
+      * after `gcFlushDone` already read true (item 165). */
+    val writesQuiet = out Bool()
     val zf      = out Bool()
     val nf      = out Bool()
     val eq      = out Bool()
@@ -389,6 +395,7 @@ case class StackStage(
     wrEnaDly := io.wrEna
     wrAddrDly := wraddr
   }
+  io.writesQuiet := !io.wrEna && !wrEnaDly
 
   // ==========================================================================
   // Stack RAM Subsystem (conditional: single-RAM or multi-bank)
@@ -1055,7 +1062,13 @@ case class StackStage(
           //
           // Lowest dirty bank first; one per pass, re-entering IDLE between
           // each so a rotation would still win if one were somehow needed.
-          // Nothing can dirty a bank meanwhile -- the core is halted.
+          //
+          // A halted core CAN dirty a bank meanwhile -- status item 165.
+          // `halted` stops it only at its next microcode wait or bytecode
+          // boundary (`sys_gcstop`), so it may push on the way there, and then
+          // the next pass writes that bank too. The collector is not told the
+          // stack is readable until the core is STOPPED as well as flushed
+          // (CmpSync/Ihlu `othersHalted`), and a stopped core writes nothing.
           //
           // Unlike a rotation spill this does NOT rebase or evict: the bank
           // stays exactly where it is and stays resident. Only `dirty` clears,

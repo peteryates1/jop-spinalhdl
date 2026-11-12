@@ -111,6 +111,7 @@ class MicrocodeParkLoopFreezeTest extends AnyFunSuite {
     pipeline.io.memRdData  := io.memRdData
     pipeline.io.memBusy    := io.memBusy
     pipeline.io.gcFlushReq := io.gcFlushReq
+    pipeline.io.gcStop     := RegNext(io.gcFlushReq) init (False)   // as JopCore (item 165)
     pipeline.io.dmaBusy.get := io.dmaBusy
     pipeline.io.dmaDone.get := io.dmaDone
 

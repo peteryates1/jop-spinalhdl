@@ -15,9 +15,15 @@ case class JumpTableInitData(
   sysNoimAddr: Int,
   sysIntAddr:  Int,
   sysExcAddr:  Int,
+  sysGcStopAddr: Int,
   altEntries:  Map[Int, Int] = Map.empty,
   dspAltEntries: Map[Int, Int] = Map.empty
 ) {
+  // Jopa writes 0 for a special address whose label the microcode lacks, and a
+  // GC stop dispatched to microcode address 0 would restart the core from boot.
+  require(sysGcStopAddr != 0,
+    "this microcode has no sys_gcstop handler (asm/src/jvm.asm); rebuild it with `make -C asm`")
+
   /** Patch specific bytecodes to sys_noim, making their HW handlers unreachable (dead code in ROM). */
   def disable(bytecodes: Int*): JumpTableInitData =
     copy(entries = entries.zipWithIndex.map { case (addr, i) =>
@@ -83,7 +89,8 @@ case class JumpTableInitData(
 object JumpTableInitData {
   /** Create from any Jopa-generated jump table object */
   private def from(src: JumpTableSource): JumpTableInitData =
-    JumpTableInitData(src.entries, src.sysNoimAddr, src.sysIntAddr, src.sysExcAddr, src.altEntries, src.dspAltEntries)
+    JumpTableInitData(src.entries, src.sysNoimAddr, src.sysIntAddr, src.sysExcAddr, src.sysGcStopAddr,
+      src.altEntries, src.dspAltEntries)
 
   /** SIMULATION superset ROM (all HW handlers: IntegerCU + FloatCU) */
   def simulation: JumpTableInitData = from(JumpTableData)
@@ -134,6 +141,9 @@ case class JumpTable(
     // Interrupt/exception priority muxing (Phase E)
     val intPend = in Bool()                     // Interrupt pending
     val excPend = in Bool()                     // Exception pending
+    /** A GC halt holds this core: dispatch `sys_gcstop` in place of the
+      * bytecode, which waits there until the halt is released (item 165). */
+    val gcStopPend = in Bool()
   }
 
   // ROM stores microcode addresses (256 entries, one per bytecode)
@@ -145,9 +155,16 @@ case class JumpTable(
   // Asynchronous ROM read (combinational, 0-cycle latency)
   val normalAddr = rom.readAsync(io.bytecode.asUInt, writeFirst)
 
-  // Priority muxing: Exception > Interrupt > Normal bytecode
+  // Priority muxing: Exception > GC stop > Interrupt > Normal bytecode.
+  //
+  // The exception first, because it is taken mid-bytecode and its handler is
+  // ordinary microcode with waits of its own, where the halt stops the core
+  // anyway. The GC stop before an interrupt: an interrupt stays pending in
+  // BytecodeFetchStage and is taken at the first dispatch after the release.
   when(io.excPend) {
     io.jpaddr := U(config.initData.sysExcAddr, config.pcWidth bits)
+  }.elsewhen(io.gcStopPend) {
+    io.jpaddr := U(config.initData.sysGcStopAddr, config.pcWidth bits)
   }.elsewhen(io.intPend) {
     io.jpaddr := U(config.initData.sysIntAddr, config.pcWidth bits)
   }.otherwise {

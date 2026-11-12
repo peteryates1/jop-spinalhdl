@@ -104,6 +104,7 @@ case class InterruptTestTb(
     bcf.io.irq := io.irq
     bcf.io.exc := io.exc
     bcf.io.ena := io.ena
+    bcf.io.gcStop := False  // single core: no other core's GC halts this one
 
     // Connect outputs
     io.jpaddr := bcf.io.jpaddr

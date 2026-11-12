@@ -457,9 +457,15 @@ case class Ihlu(config: IhluConfig) extends Component {
     // it must also be readable. ANDing stackFlushed here means the collector's
     // existing spin on IO_GC_HALTED covers the flush for free -- no second
     // handshake, no new wait in GC.java.
+    //
+    // AND STOPPED -- status item 165. `halted` only means the core will freeze
+    // at its next microcode wait, and until it reaches one it is executing:
+    // a loop that touches no memory never reached one at all. `stopped` is that
+    // wait reached with nothing in flight, which a halted core cannot leave, so
+    // once this goes true it stays true until the halt is released.
     io.syncOut(i).othersHalted := RegNext(
       (0 until cpuCnt).filter(_ != i)
-        .map(j => io.syncOut(j).halted && io.syncIn(j).stackFlushed)
+        .map(j => io.syncOut(j).halted && io.syncIn(j).stackFlushed && io.syncIn(j).stopped)
         .fold(True)(_ && _)
     ) init (False)
   }

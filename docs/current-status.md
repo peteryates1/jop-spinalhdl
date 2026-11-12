@@ -39,73 +39,74 @@ answer about the evidence costs confidence in every result built on it — then
 correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
-1. **[#165](#item-165)** — A GC halt stops a core only at its next memory access, and the collector's acknowledgement does not wait for it. Measured 2026-11-12: a core summing in locals ran ~20,900 cycles into each collection, and on SMP builds without a stack cache (all but the SDR Wukong and i9+) the collector's stack scan corrupted its locals -- 8 of its 9 passes wrong. With a stack cache the acknowledgement was withdrawn 189 of 190 times. A fix needs a truthful acknowledgement AND a bounded stop
-2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
-3. **[#178](#item-178)** — The JOP cluster carrier (four i9+ on one board, linked by a mesh) is not made yet: one bitstream serves all four sockets, taking its straps and its UART pins from the PCB's tables, and builds clean in Vivado; the PCB netlist matches pin plan v2, and in the layout each link's lines match in length to 1.1 mm. XDC fixes go back to its designer, and bank VCCO, the speed grade, the ETH1 LED pins, the Ethernet pairs' impedance and what the modules' flash holds stay open. Ranked here because the plan has to settle before the board is made
-4. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
-5. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
-6. **[#138](#item-138)** — The class-struct layout is restated in four languages and header word 1 has no name: `JVMHelp.java:313,322` read it as `rdMem(p+1)`, and nothing ties `CLS_HEAD` to what JOPizer emits. Nothing is broken today; a header reorder would leave a board with no output at all
-7. **[#121](#item-121)** — Absent devices all resolve to 0x80 and the `HAS_*` flags meant to guard them are read by nothing
-8. **[#122](#item-122)** — `JopCore` and `ConstGenerator` run the I/O allocator over different device sets
-9. **[#124](#item-124)** — On Altera the microcode comes from the `.mif`, one call site decides which variant, and the summary omits it
-10. **[#125](#item-125)** — `run_bench` hardcodes the baud per board, uses port paths, and can drive the wrong board
-11. **[#126](#item-126)** — The baud derivation is never exercised by its own guard: `check-console-baud.sh` passes `BAUD=` explicitly, so `console.mk`'s grep/awk never runs against a real summary
-12. **[#113](#item-113)** — `cold-check` covers 3 boards of 12, and the primary board is not one of them
-13. **[#112](#item-112)** — `ConstraintDriftTest` covers 2 presets of 46 — the strongest check in the tree, at 4 % coverage
-14. **[#82](#item-82)** — Flash boot has been unbuildable since 2026-03-13; a hardware-verified capability deleted as collateral
-15. **[#84](#item-84)** — No MAX1000 configuration fits the 10M08 — single-core overflows it by a third
-16. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
-17. **[#168](#item-168)** — `xc7a100tDbEth` closes timing by luck: -0.058 ns on 10-12, +0.007 ns on the 10-28 rebuild, the same core fetch path with the same directives, so any rebuild can miss again
-18. **[#170](#item-170)** — The XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s whenever the data toggles -- 28 of 400 random frames, 0 of 400 alternating -- and each loss blacks the receiver out for seconds; TCP fails there. MII at 100 Mb/s (`xc7a100tDbMii`) passes every check, DoAll 68/68. Open: bounding a frame in the MAC so one glitch costs one frame, and a changed TCP echo at 1 Gb/s that passed the stack's checksum
-19. **[#179](#item-179)** — A method call and its return cost ~130 cycles — about half of Kfl's cycles, a third of UdpIp's, over a quarter of Lift's — and `idle/direct` is mostly their memory reads. The largest performance lever, and it keeps predictability: on-chip method tables, a hardware call sequencer, inlining at link time ([analysis](analysis/performance-outlook.md))
-20. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Counted 2026-11-11: the whole region is 1.6-2.3 KB in every image, so one block RAM holds it, worth about 16 % of Kfl's cycles; the SMP design is what is left
-21. **[#55](#item-55)** — The core stalls on writes whose result it never uses — about 3.5-5 % of cycles, not the `idle/direct` share first blamed on it, which is reads ([179](#item-179)). Needs read-after-write forwarding and an SMP story
-22. **[#64](#item-64)** — `GcStressTest`'s free memory falls **~0.40 bytes/round** on all seven boards measured and never recovers at a minor collection. Since 2026-09-11 the lead is the METRIC, not a leak: `GC.freeMemory()` measures the current semispace gap, which only a flip restores, and the one board that visibly collects shows a flat high-water mark. Two leak candidates are already ruled out: [item 131](#item-131)'s dropped card marks and [item 141](#item-141)'s stray barrier writes
-23. **[#167](#item-167)** — REGRESSION: the A-E115FB's minor-GC copy phase is **13.5 % slower** than in August (12.825 ms against 11.300; worst pause 14.96 ms, still inside the 20 ms target). Cause not isolated: settle it with a control build at the August commit, not by reasoning
-24. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-25. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
-26. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
-27. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
-28. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
-29. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
-30. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
-31. **[#41](#item-41)** — No 8-core DRAM build closes timing, MSHRs or not, and on DDR2 the 4-core misses too: -3.231 / -5.189 ns at 4 / 8 cores, about 2 ns worse than in August
-32. **[#70](#item-70)** — The UART baud is stated three times; console.mk now refuses an unknown one, but the i5 still hardcodes its own
-33. **[#67](#item-67)** — `ep4cgx150DbFull` has `useStackCache` off. Its gate, item 14, closed 2026-10-13 — the stack cache is hardware-validated ([item 133](#item-133)) — so turning it on is now a measurement to make
-34. **[#75](#item-75)** — `ep4cgx150HwMath` is a byte-identical duplicate of `ep4cgx150Serial`
-35. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
-36. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
-37. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
-39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
-40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-41. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
-42. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
-43. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-44. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-45. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-46. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-47. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-48. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-49. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-50. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-51. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-52. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-53. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-54. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-55. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
-56. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
-57. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
-58. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
-59. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
-60. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
-61. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
-62. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
-63. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
-64. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
-65. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
-66. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
-67. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
+1. **[#165](#item-165)** — FIXED IN RTL 2026-11-12, NOT YET ON HARDWARE. A GC halt stopped a core only at its next memory access, and the collector's acknowledgement did not wait for it: a core summing in locals ran ~20,900 cycles into each collection, and on SMP builds without a stack cache (all but the SDR Wukong and i9+) the collector's stack scan corrupted its locals. Now a halted core stops at its next bytecode boundary (`sys_gcstop`) and is acknowledged only once stopped; the three probe sims are green. Open until an SMP build meets timing and runs them on a board
+2. **[#180](#item-180)** — Fifteen formal properties have never checked anything: an assertion under `pastValidAfterReset()` is first reached at BMC depth 4 (calibrated 2026-11-12: a guarded `assert(False)` passes at 2 and 3), and they run at depth 2 or 3. The jump table's four are fixed with [item 165](#item-165); `ShiftFormal`'s four, six in `StackStageFormal` and one in `Crc8MaximFormal` remain, and the formal job's pass count includes them
+3. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
+4. **[#178](#item-178)** — The JOP cluster carrier (four i9+ on one board, linked by a mesh) is not made yet: one bitstream serves all four sockets, taking its straps and its UART pins from the PCB's tables, and builds clean in Vivado; the PCB netlist matches pin plan v2, and in the layout each link's lines match in length to 1.1 mm. XDC fixes go back to its designer, and bank VCCO, the speed grade, the ETH1 LED pins, the Ethernet pairs' impedance and what the modules' flash holds stay open. Ranked here because the plan has to settle before the board is made
+5. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
+6. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
+7. **[#138](#item-138)** — The class-struct layout is restated in four languages and header word 1 has no name: `JVMHelp.java:313,322` read it as `rdMem(p+1)`, and nothing ties `CLS_HEAD` to what JOPizer emits. Nothing is broken today; a header reorder would leave a board with no output at all
+8. **[#121](#item-121)** — Absent devices all resolve to 0x80 and the `HAS_*` flags meant to guard them are read by nothing
+9. **[#122](#item-122)** — `JopCore` and `ConstGenerator` run the I/O allocator over different device sets
+10. **[#124](#item-124)** — On Altera the microcode comes from the `.mif`, one call site decides which variant, and the summary omits it
+11. **[#125](#item-125)** — `run_bench` hardcodes the baud per board, uses port paths, and can drive the wrong board
+12. **[#126](#item-126)** — The baud derivation is never exercised by its own guard: `check-console-baud.sh` passes `BAUD=` explicitly, so `console.mk`'s grep/awk never runs against a real summary
+13. **[#113](#item-113)** — `cold-check` covers 3 boards of 12, and the primary board is not one of them
+14. **[#112](#item-112)** — `ConstraintDriftTest` covers 2 presets of 46 — the strongest check in the tree, at 4 % coverage
+15. **[#82](#item-82)** — Flash boot has been unbuildable since 2026-03-13; a hardware-verified capability deleted as collateral
+16. **[#84](#item-84)** — No MAX1000 configuration fits the 10M08 — single-core overflows it by a third
+17. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
+18. **[#168](#item-168)** — `xc7a100tDbEth` closes timing by luck: -0.058 ns on 10-12, +0.007 ns on the 10-28 rebuild, the same core fetch path with the same directives, so any rebuild can miss again
+19. **[#170](#item-170)** — The XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s whenever the data toggles -- 28 of 400 random frames, 0 of 400 alternating -- and each loss blacks the receiver out for seconds; TCP fails there. MII at 100 Mb/s (`xc7a100tDbMii`) passes every check, DoAll 68/68. Open: bounding a frame in the MAC so one glitch costs one frame, and a changed TCP echo at 1 Gb/s that passed the stack's checksum
+20. **[#179](#item-179)** — A method call and its return cost ~130 cycles — about half of Kfl's cycles, a third of UdpIp's, over a quarter of Lift's — and `idle/direct` is mostly their memory reads. The largest performance lever, and it keeps predictability: on-chip method tables, a hardware call sequencer, inlining at link time ([analysis](analysis/performance-outlook.md))
+21. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Counted 2026-11-11: the whole region is 1.6-2.3 KB in every image, so one block RAM holds it, worth about 16 % of Kfl's cycles; the SMP design is what is left
+22. **[#55](#item-55)** — The core stalls on writes whose result it never uses — about 3.5-5 % of cycles, not the `idle/direct` share first blamed on it, which is reads ([179](#item-179)). Needs read-after-write forwarding and an SMP story
+23. **[#64](#item-64)** — `GcStressTest`'s free memory falls **~0.40 bytes/round** on all seven boards measured and never recovers at a minor collection. Since 2026-09-11 the lead is the METRIC, not a leak: `GC.freeMemory()` measures the current semispace gap, which only a flip restores, and the one board that visibly collects shows a flat high-water mark. Two leak candidates are already ruled out: [item 131](#item-131)'s dropped card marks and [item 141](#item-141)'s stray barrier writes
+24. **[#167](#item-167)** — REGRESSION: the A-E115FB's minor-GC copy phase is **13.5 % slower** than in August (12.825 ms against 11.300; worst pause 14.96 ms, still inside the 20 ms target). Cause not isolated: settle it with a control build at the August commit, not by reasoning
+25. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+26. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
+27. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+28. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
+29. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
+30. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+31. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+32. **[#41](#item-41)** — No 8-core DRAM build closes timing, MSHRs or not, and on DDR2 the 4-core misses too: -3.231 / -5.189 ns at 4 / 8 cores, about 2 ns worse than in August
+33. **[#70](#item-70)** — The UART baud is stated three times; console.mk now refuses an unknown one, but the i5 still hardcodes its own
+34. **[#67](#item-67)** — `ep4cgx150DbFull` has `useStackCache` off. Its gate, item 14, closed 2026-10-13 — the stack cache is hardware-validated ([item 133](#item-133)) — so turning it on is now a measurement to make
+35. **[#75](#item-75)** — `ep4cgx150HwMath` is a byte-identical duplicate of `ep4cgx150Serial`
+36. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
+37. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
+38. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
+39. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
+40. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
+41. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+42. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
+43. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
+44. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+45. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+46. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+47. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+48. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+49. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+50. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+51. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+52. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+53. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+54. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+55. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+56. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+57. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
+58. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
+59. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
+60. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
+61. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
+62. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
+63. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
+64. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
+65. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
+66. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
+67. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
+68. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
 
 ## 2. All items — summary
 
@@ -212,6 +213,7 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[170](#item-170)** — the XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s when the data toggles, and each loss blacks the receiver out
 - **[178](#item-178)** — The JOP cluster carrier's mesh builds clean as one bitstream for all four sockets, and its PCB netlist matches the plan; questions stay open before it is made
 - **[179](#item-179)** — A method call and its return cost ~130 cycles, about half of Kfl's; `idle/direct` is mostly their memory reads
+- **[180](#item-180)** — fifteen formal properties check nothing: below BMC depth 4 an assertion under `pastValidAfterReset()` is never reached
 
 ### Closed
 
@@ -2262,6 +2264,43 @@ If a call and return came down from ~130 cycles to ~30, Kfl would run about
 - How the cost splits among the remedies.
 
 Measure both in simulation before choosing a remedy.
+
+<a id="item-180"></a>
+
+### Item 180 — fifteen formal properties check nothing: below BMC depth 4 an assertion under `pastValidAfterReset()` is never reached
+
+**Found 2026-11-12** while proving a new jump-table property could fail ([item
+165](#item-165)): with the jump table's GC-stop branch disabled, it still passed.
+
+**Calibrated in this flow** (SpinalHDL 1.12.2, SymbiYosys, Z3), against the
+jump table:
+
+| assertion | depth 2 | depth 3 | depth 4 |
+|---|---|---|---|
+| `assert(False)` under `pastValidAfterReset()` | passes | passes | **fails** |
+| the GC-stop property, branch disabled | -- | passes | **fails** |
+
+An unguarded `assert(False)` passes at depth 2 as well.
+
+**Fifteen tests assert only under that guard, at depth 3 or less,** so they have
+never checked anything -- found by scanning each `test(` block for `withBMC(d)`,
+d <= 3, together with the guard:
+
+- **`JumpTableFormal`, all four.** FIXED with item 165: at depth 4 all four hold
+  on the RTL, and the GC-stop one fails with its branch disabled.
+- **`ShiftFormal`, all four** (USHR, SHL, SHR, full shift by 31), at depth 2.
+- **`StackStageFormal`, six:** the zero, negative and equal flags, and SP
+  decrement, increment and hold, at depth 3.
+- **`Crc8MaximFormal`, "clear resets CRC to zero",** at depth 3.
+
+The formal job's pass count (147 on 2026-11-12) has included them all along.
+
+**Next:** raise each to depth 4 or more, prove each red with its feature broken,
+and guard the class -- no formal test may assert under `pastValidAfterReset()`
+below depth 4. A property that has never been checked may be false the first
+time it is, so expect to debug some of them, not only change a number.
+
+**No guard.** Open.
 
 <a id="item-56"></a>
 
@@ -11722,6 +11761,108 @@ above.)
 
 ### Item 165 — a GC halt stops a core only at its next memory access, so a collection can run while another core executes, and without a stack cache corrupt that core's locals
 
+**Fixed in RTL 2026-11-12; open until it runs on hardware.** Both parts of the
+fix named below:
+
+1. **A bounded stop.** `sys_gcstop` (`jvm.asm`) is `wait; wait; nop nxt`,
+   appended to the file so that no other microcode address moved: three ROM
+   words in each variant, and jump-table entry 0xF2 (`JopInstr`'s reserved
+   `resF2`, which Jopa now reports as `sysGcStopAddr`). While `gcFlushReq` is
+   high -- another core's GC halt, and this core no lock owner -- the bytecode
+   fetch dispatches it in place of the next bytecode, with the jpc increment
+   suppressed as for an exception. Priority is exception > GC stop >
+   interrupt, and an interrupt is not acknowledged on a dispatch the stop takes,
+   so it stays pending. The halt is part of `bsy`, so the second `wait` holds
+   the core at that bytecode boundary until the release, and `nxt` then
+   dispatches the bytecode that waited. `JopCore` registers the request first,
+   keeping the lock manager's cross-core arbitration off the microcode-address
+   path; a cycle late costs at most one more bytecode.
+2. **An acknowledgement that means stopped.** Each core reports `coreStopped`
+   (`JopCore`): held on a `wait` (`FetchStage.atWait`) with no pending store,
+   compute-unit operation or stack-cache transfer (`JopPipeline.waitHeld`), no
+   stack write still landing (`StackStage.writesQuiet`), its memory controller
+   IDLE and no device busy. `CmpSync` and `Ihlu` AND it into `othersHalted`
+   beside `halted` and `stackFlushed`. A halted core cannot leave such a wait,
+   so once the acknowledgement rises it stays up until the release.
+
+**Three of those terms were found by the probe, not reasoned out first.**
+
+- **The card-table clear's busy** is the collector's own sweep, which the
+  cluster drives into every core. Counted in `coreStopped`, it dropped the
+  acknowledgement once per collection, during the collector's own card clear.
+- **The memory controller's `!busy`** is also true in the cycle a response
+  arrives and in the one-cycle exception states, so `coreStopped` uses its
+  IDLE state.
+- **A stack write still landing.** The last instruction before the wait writes
+  its bank a cycle after decode and marks it dirty a cycle after that, so
+  "stopped and flushed" read true for one cycle before that write and the flush
+  it triggered. The acknowledgement rose and fell after 1 cycle, twice in 8
+  collections. It now waits for the second flush: 4,270-4,278 cycles in those
+  collections instead of ~2,135.
+
+**Green 2026-11-12,** the three runs that were red:
+
+| run | collections | acknowledgement | core 1 after it: executed / memory transaction | result |
+|---|---|---|---|---|
+| `JopSmpStackLoopSim`: no stack cache | 8 | 5 cycles after the halt, never withdrawn | 0 / 0 | every pass right |
+| `JopSmpStackLoopCacheSim`: stack cache | 8 | after its flush, never withdrawn | 0 / 0 | every pass right |
+| the same, running `SmpGcTest.jop` | 16 | after its flush, never withdrawn | 0 / 0 | `SMPGC OK` |
+
+Core 1 now runs 3-4 cycles into each collection, its way to the stop, all of
+them before the acknowledgement.
+
+**Regressions, all on the final RTL:**
+
+- **What CI runs.**
+  - The README walk-through, steps 1-8, in a cold clone: OK, including JopSim
+    (3b) and the two-core GC simulation (8).
+  - The four JVM suites, judged by `check-doall-log.sh`: 68/68, 68/68, 68/68,
+    and DeepAll 4/4.
+  - Formal: 147 passed. CI's simulation tests: 739 passed, 1 ignored. The
+    `hardware` project's tests: 12 passed. Verilog generation: OK.
+- **What CI does not run.**
+  - `JopSmpStackCacheSdramSim`: STACKROOT OK through 6 minor collections, and
+    `SMPGC OK`.
+  - `SmpDeepFlush` under the probe: OK (three banks and rotation); 6
+    collections, the acknowledgement never withdrawn.
+  - `JopJvmTestsSmpBramSim`: 68/68 on two cores. `ParkLoopStallReadTest`: pass.
+  - `JopGcHaltDeadlockSim`, 4 cores with CmpSync (a diagnosis harness, not
+    pass/fail): neither a crash nor a wedge in 75M cycles. It ended
+    "inconclusive" in `SmpGcTest`'s phase 2, with 9 minor collections and
+    `lost 0`; its own check reads "Stop-the-world HOLDS". A control run on
+    the unfixed tree is IDENTICAL at every 2M-cycle checkpoint to the end --
+    collections, phase, and each core's live-tick count -- and ends the same
+    way, so the CmpSync-contended stretch from 40M with no collection is not
+    this fix's.
+- **Each new property was proved able to fail, each with its own mechanism
+  broken in a copy:**
+  - `stopped` dropped from the acknowledgement: both "not stopped" properties
+    fail.
+  - jpc advanced on a GC-stop dispatch: the bytecode-fetch property fails on its
+    jpc assertion.
+  - The jump table's GC-stop branch disabled: "GC stop outranks an interrupt"
+    fails, but only at BMC depth 4. At the file's depth 2 none of
+    `JumpTableFormal`'s four assertions had ever been checked; all four now run
+    at depth 4 and hold.
+
+**Guard:**
+- **Simulation.** `JopSmpStackLoopSim` and `JopSmpStackLoopCacheSim` (the
+  latter also with `SmpGcTest.jop` and `SmpDeepFlush.jop`) fail on any cycle
+  core 1 executes, or has a memory transaction in flight, after the
+  acknowledgement. Not run by CI.
+- **Formal.** `CmpSyncFormal` and `IhluFormal`: "othersHalted is FALSE while a
+  halted core has not stopped", with Ihlu's control. `BytecodeFetchStageFormal`:
+  "a GC stop dispatches sys_gcstop, leaves jpc on the bytecode, takes no
+  interrupt". `JumpTableFormal`: "GC stop outranks an interrupt when no
+  exception", at BMC depth 4 ([item 180](#item-180)).
+
+**Remaining: hardware.** The fix adds a mux to the jump table's output and
+three terms to the acknowledgement. An SMP build must meet timing (the 8- and
+12-core EP4CGX150 builds are the tight ones) and run `SmpStackLoop` and
+`SmpGcTest` on the board before this closes.
+
+*Below: the investigation, as recorded before the fix.*
+
 **Investigated 2026-11-12: a GC halt stops a core only at its next memory
 access, and the acknowledgement does not wait for that.**
 
@@ -11768,7 +11909,7 @@ access, and the acknowledgement does not wait for that.**
 - **Not measured:** the memory operation that brings a core to its `wait` is
   issued, and executes, inside the stop-the-world.
 
-**A fix needs two parts** (not yet chosen):
+**A fix needs two parts** (both implemented 2026-11-12, above):
 
 1. **The acknowledgement must mean stopped:** halted, frozen on a `wait` (not on
    the stack cache's rotation stall), memory controller idle, and flushed. That

@@ -375,7 +375,9 @@ public class JopInstr{
 
 		new JopInstr("sys_int", 1, IMP_ASM, 1),			// 0xF0
 		new JopInstr("sys_exc", 1, IMP_ASM, 1),			// 0xF1
-		new JopInstr("resF2", 1, IMP_NO, 1),			// 0xF2
+		// Never in a class file: the bytecode fetch dispatches it in place of
+		// the next bytecode while a GC halt holds the core (status item 165).
+		new JopInstr("sys_gcstop", 1, IMP_ASM, 1),		// 0xF2
 		new JopInstr("resF3", 1, IMP_NO, 1),			// 0xF3
 		new JopInstr("resF4", 1, IMP_NO, 1),			// 0xF4
 		new JopInstr("resF5", 1, IMP_NO, 1),			// 0xF5

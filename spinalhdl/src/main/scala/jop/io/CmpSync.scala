@@ -21,6 +21,11 @@ case class SyncIn() extends Bundle {
     * collector can read its stack with ordinary loads. ANDed into othersHalted,
     * so "the world has stopped" means stopped AND readable. Status item 133. */
   val stackFlushed = Bool()
+  /** This core is STOPPED: held on a microcode wait with nothing in flight.
+    * `halted` alone only means it will stop at its next wait, and code that
+    * touches no memory never reaches one; ANDed into othersHalted, so the
+    * collector never scans a core that is still executing. Status item 165. */
+  val stopped = Bool()
 }
 
 /**
@@ -253,9 +258,15 @@ case class CmpSync(cpuCnt: Int) extends Component {
     // it must also be readable. ANDing stackFlushed here means the collector's
     // existing spin on IO_GC_HALTED covers the flush for free -- no second
     // handshake, no new wait in GC.java.
+    //
+    // AND STOPPED -- status item 165. `halted` only means the core will freeze
+    // at its next microcode wait, and until it reaches one it is executing:
+    // a loop that touches no memory never reached one at all. `stopped` is that
+    // wait reached with nothing in flight, which a halted core cannot leave, so
+    // once this goes true it stays true until the halt is released.
     io.syncOut(i).othersHalted := RegNext(
       (0 until cpuCnt).filter(_ != i)
-        .map(j => io.syncOut(j).halted && io.syncIn(j).stackFlushed)
+        .map(j => io.syncOut(j).halted && io.syncIn(j).stackFlushed && io.syncIn(j).stopped)
         .fold(True)(_ && _)
     ) init (False)
   }

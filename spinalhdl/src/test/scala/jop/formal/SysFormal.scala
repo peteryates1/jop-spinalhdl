@@ -46,6 +46,7 @@ class SysFormal extends SpinalFormalFunSuite {
     // Stack-cache flush handshake (item 133). anyseq for the same reason as
     // spOv: prove the properties for both values rather than only the quiet one.
     anyseq(dut.io.gcFlushDone)
+    anyseq(dut.io.coreStopped)    // item 165: passed straight to syncOut.stopped
     dut.io.ioInt := 0
     // Cross-core GC root data: a free input from the cluster, irrelevant to
     // every property here but it still needs a driver. Left as anyseq rather

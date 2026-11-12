@@ -78,6 +78,10 @@ case class BytecodeFetchStage(
     val ena = in Bool()                               // Interrupt enable
     val ack_irq = out Bool()                          // Interrupt acknowledged
     val ack_exc = out Bool()                          // Exception acknowledged
+    /** Another core's GC halt holds this one (Sys: gcHaltActive && halted).
+      * A LEVEL, not a pulse: every dispatch while it is high goes to
+      * `sys_gcstop`, which waits until the halt is released (item 165). */
+    val gcStop = in Bool()
 
     // Outputs
     val jpaddr   = out UInt(config.pcWidth bits)      // Microcode address from jump table
@@ -148,6 +152,7 @@ case class BytecodeFetchStage(
   // the interrupt/exception section further down.
   val doAckIrq = Bool()
   val doAckExc = Bool()
+  val doAckGcStop = Bool()
 
   when(io.stall) {
     // HOLD THE READ ON THE PENDING BYTE.
@@ -230,7 +235,7 @@ case class BytecodeFetchStage(
     when(jmp) {
       // Branch taken: load branch target
       jpc := jmp_addr
-    }.elsewhen((io.jfetch || io.jopdfetch) && !doAckExc) {
+    }.elsewhen((io.jfetch || io.jopdfetch) && !doAckExc && !doAckGcStop) {
       // Increment — SUPPRESSED on the fetch that takes an exception.
       //
       // A hardware exception is dispatched by overriding the jump table
@@ -252,6 +257,10 @@ case class BytecodeFetchStage(
       // to touch the stack at all. Interrupts are unaffected (doAckIrq is
       // separate): they are taken at bytecode boundaries where the stack IS
       // well defined, so sys_int keeps its correction.
+      //
+      // SUPPRESSED on a GC-stop dispatch too (item 165): `sys_gcstop` takes
+      // the place of the bytecode at jpc, and the `nxt` that ends it must
+      // dispatch that same bytecode once the halt is released.
       jpc := jpc + 1
     }
   }
@@ -380,9 +389,12 @@ case class BytecodeFetchStage(
   // (which may be in a different bytecode context, outside the try block).
   val excPendImmediate = excPend || io.exc
 
-  // Exception has priority; interrupt requires ena to be acknowledged
+  // Exception has priority; interrupt requires ena to be acknowledged.
+  // A GC stop sits between them (JumpTable): an interrupt is not acknowledged
+  // on a dispatch the stop takes, so it stays pending until after the release.
   doAckExc := excPendImmediate && io.jfetch
-  doAckIrq := intPend && io.ena && !excPendImmediate && io.jfetch
+  doAckGcStop := io.gcStop && !excPendImmediate && io.jfetch
+  doAckIrq := intPend && io.ena && !excPendImmediate && !io.gcStop && io.jfetch
 
   // Update pending latches
   when(doAckExc) {
@@ -411,6 +423,7 @@ case class BytecodeFetchStage(
   // This means the interrupt handler address is only output when interrupts are enabled
   jumpTable.io.intPend := intPend && io.ena
   jumpTable.io.excPend := excPendImmediate
+  jumpTable.io.gcStopPend := io.gcStop
   io.jpaddr := jumpTable.io.jpaddr
 }
 

@@ -2670,3 +2670,29 @@ fneg:
 fneg_sw:
 			ldi -2147483648	// 0x80000000
 			xor nxt			// XOR sign bit, done (pure microcode, no CU)
+
+//
+//	GC stop-the-world safepoint, bytecode 0xf2 -- status item 165.
+//
+//	A GC halt reaches a core as `bsy`, and the fetch stage freezes on `bsy`
+//	only at a `wait`. Bytecodes that touch no memory have none, so a core
+//	running them kept executing through another core's collection; on a
+//	build without a stack cache the collector's root scan then took over its
+//	stack-RAM read port and corrupted its locals.
+//
+//	While a GC halt holds this core, BytecodeFetchStage dispatches HERE in
+//	place of the next bytecode, without advancing jpc (as for sys_exc). The
+//	halt keeps bsy high, so the second wait holds the core at this bytecode
+//	boundary until the collector releases the world, and `nxt` then
+//	dispatches the bytecode that was waiting. A core is therefore stopped
+//	within one bytecode of the halt, at a point where every reference it
+//	holds is in its stack or in A and B.
+//
+//	At the END of the file on purpose: appending moves no other microcode
+//	address, so the jump table and every address a test or a log quotes stay
+//	valid.
+//
+sys_gcstop:
+			wait
+			wait
+			nop	nxt

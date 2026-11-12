@@ -295,6 +295,15 @@ case class JopCore(
   sys.io.spOv := pipeline.io.spOv
   pipeline.io.gcFlushReq := sys.io.gcFlushReq
   sys.io.gcFlushDone := pipeline.io.gcFlushDone
+  // The condition that requests the flush also STOPS the core, at its next
+  // bytecode boundary (item 165): a GC halt from another core, and not a lock
+  // owner, which is exempt from the halt so that it can drain.
+  //
+  // REGISTERED: `halted` is the lock manager's cross-core arbitration, and
+  // unregistered it would run on into the jump table's mux and the microcode
+  // address. A cycle late costs at most one more bytecode before the stop,
+  // and the acknowledgement waits for `coreStopped` regardless.
+  pipeline.io.gcStop := RegNext(sys.io.gcFlushReq) init (False)
   sys.io.memState := memCtrl.io.debug.state
   sys.io.memBusy  := memCtrl.io.memOut.busy
 
@@ -341,6 +350,19 @@ case class JopCore(
   // treatment the zero-fill DMA gets via notBusy. Status item 131.
   val cardBusy = io.card.map(_.busy).getOrElse(False)
   pipeline.io.memBusy := memCtrl.io.memOut.busy || sys.io.halted || io.debugHalt || pipeline.io.hwBusy || extBusy || cardBusy
+  // STOPPED, for the collector's acknowledgement (item 165): held on a wait
+  // with nothing of THIS core's in flight. A core can be halted and still
+  // running toward its next wait; only a stopped one can be scanned.
+  //
+  // Not `cardBusy`: the card table's clear sweep is the COLLECTOR's, and the
+  // cluster drives its busy into every core (JopCluster, `ports.foreach(_.busy
+  // := ct.io.clrBusy)`). With it here the acknowledgement dropped during each
+  // collection's own card clear while the halted core sat frozen -- measured,
+  // once per collection in JopSmpStackLoopSim.
+  //
+  // The memory controller IDLE, not merely `!busy`: busy drops in the cycle a
+  // response arrives, while the transaction is still finishing.
+  sys.io.coreStopped := pipeline.io.waitHeld && memCtrl.io.debug.idle && !pipeline.io.hwBusy && !extBusy
 
   // Interrupts: auto-wired from all device descriptors
   sys.io.ioInt := 0

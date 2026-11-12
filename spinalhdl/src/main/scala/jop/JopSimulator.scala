@@ -499,6 +499,7 @@ case class JopSimulator(
     bcfetch.io.irq := False
     bcfetch.io.exc := False
     bcfetch.io.ena := False
+    bcfetch.io.gcStop := False  // single core: no other core's GC halts this one
 
     // Fetch stage connections
     fetch.io.jpaddr := bcfetch.io.jpaddr

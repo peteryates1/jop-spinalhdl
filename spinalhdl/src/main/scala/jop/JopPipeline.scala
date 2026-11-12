@@ -66,6 +66,12 @@ case class JopPipeline(
     /** Stop-the-world stack-cache flush, item 133. */
     val gcFlushReq  = in Bool()
     val gcFlushDone = out Bool()
+    /** Another core's GC halt holds this one: at the next bytecode boundary,
+      * dispatch `sys_gcstop` instead of the bytecode (item 165). */
+    val gcStop      = in Bool()
+    /** Held on a `wait` with nothing of the pipeline's own in flight. JopCore
+      * adds the memory controller and the devices to make `stopped`. */
+    val waitHeld    = out Bool()
     val jpc        = out UInt((config.jpcWidth + 1) bits)
     val instr      = out Bits(config.instrWidth bits)
     val jfetch     = out Bool()
@@ -190,6 +196,7 @@ case class JopPipeline(
   bcfetch.io.irq := io.irq
   bcfetch.io.exc := io.exc
   bcfetch.io.ena := io.irqEna
+  bcfetch.io.gcStop := io.gcStop
   io.ackIrq := bcfetch.io.ack_irq
   io.ackExc := bcfetch.io.ack_exc
 
@@ -318,6 +325,17 @@ case class JopPipeline(
   io.spOv := stack.io.spOv
   stack.io.gcFlushReq := io.gcFlushReq
   io.gcFlushDone := stack.io.gcFlushDone
+  // Every term of bsy that is the pipeline's own: a store still being written,
+  // a compute unit running, a stack-cache transfer. With none of them, a core
+  // whose bsy is held high by a GC halt cannot move until the halt is released.
+  //
+  // And no STACK write in flight: the last instruction before the wait lands
+  // its write a cycle after decode and dirties its bank a cycle after that.
+  // Without this the acknowledgement rose for a cycle with the stack still
+  // "flushed", then fell as that write dirtied a bank -- measured twice in 8
+  // collections by JopSmpStackLoopCacheSim.
+  io.waitHeld := fetch.io.atWait && !decode.io.wrDly && !cu.io.busy && !stackRotBusy &&
+    stack.io.writesQuiet
   io.jpc := bcfetch.io.jpc_out
   io.instr := fetch.io.dout
   io.jfetch := fetch.io.nxt

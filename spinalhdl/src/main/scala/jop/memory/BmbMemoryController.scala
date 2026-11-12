@@ -117,6 +117,11 @@ case class BmbMemoryController(
     val debug = new Bundle {
       val state        = out UInt(5 bits)
       val busy         = out Bool()
+      /** In IDLE: no transaction in flight. Stricter than `!busy`, which is
+        * also true in the cycle a response arrives and in the one-cycle
+        * exception states. JopCore's `coreStopped` needs the strict one
+        * (item 165). */
+      val idle         = out Bool()
       val handleActive = out Bool()
       val addrReg      = out UInt(config.addressWidth bits)
       val rdDataReg    = out Bits(32 bits)
@@ -1519,6 +1524,7 @@ case class BmbMemoryController(
 
   io.debug.state := state.asBits.asUInt.resized
   io.debug.busy := !notBusy
+  io.debug.idle := state === State.IDLE
   io.debug.addrReg := addrReg
   io.debug.rdDataReg := rdDataReg
   io.debug.bcFillAddr := bcFillAddr

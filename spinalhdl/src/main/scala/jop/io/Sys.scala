@@ -61,6 +61,10 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
       * is in force, the stack cache says it has written itself out. */
     val gcFlushReq  = out Bool()
     val gcFlushDone = in Bool()
+    /** This core is STOPPED: held on a microcode wait with nothing in flight
+      * (JopCore). Passed to the lock manager, which ANDs it into the
+      * collector's acknowledgement (item 165). */
+    val coreStopped = in Bool()
 
     // External I/O interrupt inputs
     val ioInt  = in Bits(numIoInt bits)
@@ -299,6 +303,7 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
   io.syncOut.s_in     := signalReg
   io.syncOut.gcHalt   := gcHaltReg
   io.syncOut.stackFlushed := io.gcFlushDone
+  io.syncOut.stopped      := io.coreStopped
   // FLUSH ONLY A CORE THAT HAS ACTUALLY STOPPED. This used to be
   // `:= io.syncIn.gcHaltActive` alone, and that deadlocked the cluster.
   //
@@ -325,10 +330,16 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
   // `lockWait` too, and a core parked on lockWait is genuinely stopped, so
   // flushing it is safe.
   //
-  // Self-correcting if a core does resume: `gcFlushDone` is LIVE
-  // (`!anyDirty && rotState === IDLE`), not a latch, so a re-dirtied bank
-  // simply drops `othersHalted` again and the collector waits longer. It
-  // degrades to waiting, never to a collector running against a live mutator.
+  // THAT ASSUMPTION WAS STILL ASPIRATIONAL -- status item 165. `halted` only
+  // stops a core at its next microcode `wait`, and code that touches no memory
+  // has none, so a halted core went on executing -- and dirtying banks -- after
+  // the flush. `gcFlushDone` is live, so `othersHalted` dropped again, but the
+  // collector reads it ONCE, in its spin, and a window it sampled was enough
+  // to start the collection with that core running. Measured: the
+  // acknowledgement withdrawn 189 of 190 times in 8 collections. Two things
+  // now make the acknowledgement final: the core is stopped at its next
+  // bytecode boundary (`sys_gcstop`, dispatched from `gcFlushReq` below), and
+  // the lock manager acknowledges only a core that is also `coreStopped`.
   io.gcFlushReq := io.syncIn.gcHaltActive && io.syncIn.halted
   io.syncOut.data     := lockDataReg
   io.syncOut.op       := lockOpReg

@@ -11,9 +11,15 @@ import jop.pipeline.{JumpTable, JumpTableConfig, JumpTableInitData}
  * Source: jop/pipeline/JumpTable.scala
  *
  * The JumpTable is a combinational ROM-based lookup with priority muxing:
- *   Exception > Interrupt > Normal bytecode
+ *   Exception > GC stop > Interrupt > Normal bytecode
  *
- * All properties use BMC depth 2 (1 reset + 1 check) since the logic is combinational.
+ * BMC DEPTH 4, NOT 2 -- status item 165. The logic is combinational, so one
+ * checked step would do, but every assertion sits under pastValidAfterReset(),
+ * and in this flow an assertion under it is first checked at depth 4: a
+ * guarded assert(False) passes at depths 2 and 3 and fails at 4 (calibrated
+ * 2026-11-12). At depth 2 none of the assertions here had ever been checked.
+ * Found when the jump table's GC-stop branch was disabled and its property
+ * still passed; at depth 4 that break fails it.
  */
 class JumpTableFormal extends SpinalFormalFunSuite {
 
@@ -22,7 +28,7 @@ class JumpTableFormal extends SpinalFormalFunSuite {
 
   test("exception has highest priority") {
     formalConfig
-      .withBMC(2)
+      .withBMC(4)
       .doVerify(new Component {
         val dut = FormalDut(JumpTable())
         assumeInitial(ClockDomain.current.isResetActive)
@@ -30,6 +36,7 @@ class JumpTableFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.bytecode)
         dut.io.excPend := True
         anyseq(dut.io.intPend)
+        anyseq(dut.io.gcStopPend)
 
         when(pastValidAfterReset()) {
           // When excPend is set, jpaddr must always be sysExcAddr
@@ -40,7 +47,7 @@ class JumpTableFormal extends SpinalFormalFunSuite {
 
   test("interrupt priority when no exception") {
     formalConfig
-      .withBMC(2)
+      .withBMC(4)
       .doVerify(new Component {
         val dut = FormalDut(JumpTable())
         assumeInitial(ClockDomain.current.isResetActive)
@@ -48,6 +55,7 @@ class JumpTableFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.bytecode)
         dut.io.excPend := False
         dut.io.intPend := True
+        dut.io.gcStopPend := False
 
         when(pastValidAfterReset()) {
           assert(dut.io.jpaddr === U(JumpTableInitData.simulation.sysIntAddr, dut.config.pcWidth bits))
@@ -57,7 +65,7 @@ class JumpTableFormal extends SpinalFormalFunSuite {
 
   test("normal bytecode when no pending") {
     formalConfig
-      .withBMC(2)
+      .withBMC(4)
       .doVerify(new Component {
         val dut = FormalDut(JumpTable())
         assumeInitial(ClockDomain.current.isResetActive)
@@ -65,6 +73,7 @@ class JumpTableFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.bytecode)
         dut.io.excPend := False
         dut.io.intPend := False
+        dut.io.gcStopPend := False
 
         when(pastValidAfterReset()) {
           // jpaddr should not be exception or interrupt handler
@@ -75,7 +84,28 @@ class JumpTableFormal extends SpinalFormalFunSuite {
             // Bytecode 0x00 (nop) should map to its ROM entry, not handlers
             assert(dut.io.jpaddr =/= U(JumpTableInitData.simulation.sysExcAddr, dut.config.pcWidth bits))
             assert(dut.io.jpaddr =/= U(JumpTableInitData.simulation.sysIntAddr, dut.config.pcWidth bits))
+            assert(dut.io.jpaddr =/= U(JumpTableInitData.simulation.sysGcStopAddr, dut.config.pcWidth bits))
           }
+        }
+      })
+  }
+
+  // Item 165: a GC-halted core waits in sys_gcstop instead of dispatching, and
+  // an interrupt stays pending until the release -- so the stop outranks it.
+  test("GC stop outranks an interrupt when no exception") {
+    formalConfig
+      .withBMC(4)
+      .doVerify(new Component {
+        val dut = FormalDut(JumpTable())
+        assumeInitial(ClockDomain.current.isResetActive)
+
+        anyseq(dut.io.bytecode)
+        dut.io.excPend := False
+        anyseq(dut.io.intPend)
+        dut.io.gcStopPend := True
+
+        when(pastValidAfterReset()) {
+          assert(dut.io.jpaddr === U(JumpTableInitData.simulation.sysGcStopAddr, dut.config.pcWidth bits))
         }
       })
   }

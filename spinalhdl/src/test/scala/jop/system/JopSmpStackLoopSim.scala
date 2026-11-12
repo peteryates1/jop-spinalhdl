@@ -26,11 +26,16 @@ import spinal.lib.memory.sdram.sdr.sim.SdramModel
  *     read address (`debugRamAddr != 0`), when core 1's own reads return the
  *     words being scanned;
  *   - how often the acknowledgement rose, and fell again while the halt was
- *     still held (the window item 165 was filed for).
+ *     still held (the window item 165 was filed for), and which of core 1's
+ *     terms -- halted, flushed, stopped -- ended it;
+ *   - cycles core 1's memory controller was out of IDLE after the
+ *     acknowledgement, i.e. a transaction of the halted core running into the
+ *     collection.
  *
  * THE PROPERTY: once the collector holds the acknowledgement, no other core
- * executes. A core may run on between the halt and its acknowledgement -- that
- * is what the acknowledgement waits for -- but not after it.
+ * executes, and none has a memory transaction in flight. A core may run on
+ * between the halt and its acknowledgement -- that is what the
+ * acknowledgement waits for -- but not after it.
  *
  * RED 2026-11-12, on the RTL as it stood (status item 165):
  *
@@ -39,6 +44,13 @@ import spinal.lib.memory.sdram.sdr.sim.SdramModel
  *   JopSmpStackLoopCacheSim   2,861 cycles; acknowledgement withdrawn 189 of
  *                             190 times while the halt was held
  *     with SmpGcTest.jop      6 cycles, at most 2 per collection; withdrawn once
+ *
+ * GREEN 2026-11-12 with the fix (`sys_gcstop`, and `coreStopped` in the
+ * acknowledgement): in all three runs core 1 executed nothing and had no
+ * memory transaction after the acknowledgement, the acknowledgement was never
+ * withdrawn, and every pass was right. Before the last term of `coreStopped`
+ * (`StackStage.writesQuiet`) the stack-cache run still saw the acknowledgement
+ * rise for one cycle and fall, twice in 8 collections.
  */
 object StackLoopProbe {
 
@@ -51,6 +63,9 @@ object StackLoopProbe {
     c1.sys.io.halted.simPublic()
     c1.pipeline.fetch.io.frozen.simPublic()
     c1.io.debugRamAddr.simPublic()
+    c1.sys.io.coreStopped.simPublic()
+    c1.sys.io.gcFlushDone.simPublic()
+    c1.memCtrl.io.debug.idle.simPublic()
   }
 
   /** Run to the app's verdict line, then judge. `okLine` is the app's pass line. */
@@ -70,6 +85,8 @@ object StackLoopProbe {
     var wFalls = 0
     var lastAck = false
     var maxRunAfterAck = 0L
+    var memAfterAck = 0L
+    var fallsLogged = 0
 
     var cycle = 0
     var done = false
@@ -97,6 +114,14 @@ object StackLoopProbe {
           val len = cycle - ackRoseAt
           if (minWithdrawn < 0 || len < minWithdrawn) minWithdrawn = len
           if (len > maxWithdrawn) maxWithdrawn = len
+          // The acknowledgement is registered, so the term that ended it is
+          // the one low NOW or a cycle ago; print all three.
+          if (fallsLogged < 20) {
+            fallsLogged += 1
+            println(f"\n[ack withdrawn] cycle $cycle%,d after $len%,d high: core 1 halted=${c1.sys.io.halted.toBoolean} " +
+                    f"flushed=${c1.sys.io.gcFlushDone.toBoolean} stopped=${c1.sys.io.coreStopped.toBoolean} " +
+                    f"memIdle=${c1.memCtrl.io.debug.idle.toBoolean}")
+          }
         }
         lastAck = ack
         val halted = c1.sys.io.halted.toBoolean
@@ -110,6 +135,7 @@ object StackLoopProbe {
           if (ackAt != 0) { runAfterAck += 1; wRunAfterAck += 1 }
           if (hijack) { runHijacked += 1; wRunHijacked += 1 }
         }
+        if (ackAt != 0 && !c1.memCtrl.io.debug.idle.toBoolean) memAfterAck += 1
         if (!gh) {
           inStw = false; lastAck = false
           if (wRunAfterAck > maxRunAfterAck) maxRunAfterAck = wRunAfterAck
@@ -127,6 +153,7 @@ object StackLoopProbe {
     println(f"PROBE: core 1 executed while halted:          $runHalted%,d cycles")
     println(f"PROBE:   of those, after the acknowledgement: $runAfterAck%,d (worst window $maxRunAfterAck%,d)")
     println(f"PROBE:   of those, with its read port taken:  $runHijacked%,d (port taken $hijackCycles%,d cycles in all)")
+    println(f"PROBE: core 1 memory transaction after ack:   $memAfterAck%,d cycles")
     println(f"PROBE: core 1 exempt (not halted) in a STW:   $exemptCycles%,d cycles")
     println(f"PROBE: acknowledgement rose $ackRises%d times, withdrawn $ackFalls%d times while held" +
             (if (ackFalls > 0) f" (after $minWithdrawn%d-$maxWithdrawn%d cycles)" else ""))
@@ -136,6 +163,8 @@ object StackLoopProbe {
     if (windows == 0) fail("no stop-the-world happened, so nothing was tested")
     if (runAfterAck > 0)
       fail(f"core 1 executed $runAfterAck%,d cycles after the collector's acknowledgement")
+    if (memAfterAck > 0)
+      fail(f"core 1 had a memory transaction in flight $memAfterAck%,d cycles after the acknowledgement")
     if (!out.contains(okLine)) fail(s"the app did not print $okLine")
     println(s"PASS: $windows stop-the-worlds, core 1 never executed after the acknowledgement")
   }
@@ -180,7 +209,8 @@ object JopSmpStackLoopSim extends App {
  *
  * Usage: sbt "Test / runMain jop.system.JopSmpStackLoopCacheSim [maxCycles] [app.jop]"
  *   The app defaults to SmpStackLoop. SmpGcTest's image measures the
- *   acknowledgement under the real two-core GC workload instead.
+ *   acknowledgement under the real two-core GC workload instead, and
+ *   SmpDeepFlush's with core 1 parked ~100 frames deep, across every bank.
  */
 object JopSmpStackLoopCacheSim extends App {
   val cpuCnt = 2
@@ -200,7 +230,15 @@ object JopSmpStackLoopCacheSim extends App {
   val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
   val imageWords = JopFileLoader.loadJopFile(jopFilePath).words.length
   val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, imageWords)
-  val smpGc = jopFilePath.endsWith("SmpGcTest.jop")
+  // Each app's own verdict lines; the run ends on the first and passes on the OK.
+  val (verdicts, okLine) = new java.io.File(jopFilePath).getName match {
+    case "SmpGcTest.jop" =>
+      (Seq("SMPGC OK", "SMPGC FAIL", "SMPGC STALLED", "SMPGC INCONCLUSIVE"), "SMPGC OK")
+    case "SmpDeepFlush.jop" =>
+      (Seq("SmpDeepFlush OK", "SmpDeepFlush FAIL", "SmpDeepFlush INCONCLUSIVE"), "SmpDeepFlush OK")
+    case _ =>
+      (Seq("SMPSTACKLOOP "), "SMPSTACKLOOP OK")
+  }
 
   JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(jsys.clkFreq)))
@@ -218,11 +256,7 @@ object JopSmpStackLoopCacheSim extends App {
         for (b <- 0 until 4) sdram.write(i * 4 + b, ((w >> (8 * b)) & 0xFF).toByte)
       }
       dut.clockDomain.waitSampling(5)
-      if (smpGc)
-        StackLoopProbe.run(dut.clockDomain, dut.cluster, dut.io.uartTxValid, dut.io.uartTxData,
-          maxCycles, Seq("SMPGC OK", "SMPGC FAIL", "SMPGC STALLED", "SMPGC INCONCLUSIVE"), "SMPGC OK")
-      else
-        StackLoopProbe.run(dut.clockDomain, dut.cluster, dut.io.uartTxValid, dut.io.uartTxData,
-          maxCycles, Seq("SMPSTACKLOOP "), "SMPSTACKLOOP OK")
+      StackLoopProbe.run(dut.clockDomain, dut.cluster, dut.io.uartTxValid, dut.io.uartTxData,
+        maxCycles, verdicts, okLine)
     }
 }
