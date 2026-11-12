@@ -39,7 +39,7 @@ answer about the evidence costs confidence in every result built on it — then
 correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
-1. **[#165](#item-165)** — A halted core keeps executing until its next `wait`, so it can dirty its stack AFTER the stop-the-world flush: measured in simulation, the collector's `halted && flushed` acknowledgement reads true for 2-6 cycles and is then withdrawn while a second flush runs. Whether the collector can act inside that window is unassessed
+1. **[#165](#item-165)** — A GC halt stops a core only at its next memory access, and the collector's acknowledgement does not wait for it. Measured 2026-11-12: a core summing in locals ran ~20,900 cycles into each collection, and on SMP builds without a stack cache (all but the SDR Wukong and i9+) the collector's stack scan corrupted its locals -- 8 of its 9 passes wrong. With a stack cache the acknowledgement was withdrawn 189 of 190 times. A fix needs a truthful acknowledgement AND a bounded stop
 2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
 3. **[#178](#item-178)** — The JOP cluster carrier (four i9+ on one board, linked by a mesh) is not made yet: one bitstream serves all four sockets, taking its straps and its UART pins from the PCB's tables, and builds clean in Vivado; the PCB netlist matches pin plan v2, and in the layout each link's lines match in length to 1.1 mm. XDC fixes go back to its designer, and bank VCCO, the speed grade, the ETH1 LED pins, the Ethernet pairs' impedance and what the modules' flash holds stay open. Ranked here because the plan has to settle before the board is made
 4. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
@@ -206,7 +206,7 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[155](#item-155)** — Item 116's split decayed — past 11,000 lines by 2026-10-13 — and nothing guards section size
 - **[159](#item-159)** — No asynchronous clock groups in the generated SDR XDC; a 2:1 clock ratio was hiding it
 - **[163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions for timing margin
-- **[165](#item-165)** — a halted core can dirty its stack after the stop-the-world flush, so the collector's "halted and flushed" acknowledgement can be withdrawn
+- **[165](#item-165)** — a GC halt stops a core only at its next memory access, so a collection can run while another core executes, and without a stack cache corrupt that core's locals
 - **[167](#item-167)** — REGRESSION: the A-E115FB's minor-GC copy phase is 13.5 % slower than in August
 - **[168](#item-168)** — `xc7a100tDbEth` misses timing by 0.058 ns, on a core path
 - **[170](#item-170)** — the XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s when the data toggles, and each loss blacks the receiver out
@@ -11720,7 +11720,71 @@ above.)
 
 <a id="item-165"></a>
 
-### Item 165 — a halted core can dirty its stack after the stop-the-world flush, so the collector's "halted and flushed" acknowledgement can be withdrawn
+### Item 165 — a GC halt stops a core only at its next memory access, so a collection can run while another core executes, and without a stack cache corrupt that core's locals
+
+**Investigated 2026-11-12: a GC halt stops a core only at its next memory
+access, and the acknowledgement does not wait for that.**
+
+- **Why.** The halt reaches a core as `bsy`, and the fetch stage freezes on
+  `bsy` only at a microcode `wait` (`pcwait && io.bsy`, `FetchStage`). In
+  `jvm.asm` the local loads and stores, `iinc`, arithmetic, `goto` and the `if*`
+  branches have no `wait`, so a loop built from them never stops for a
+  collection. Without a stack cache the acknowledgement is `halted` alone, one
+  cycle after the halt; with one it is `halted && stackFlushed`, which a running
+  core keeps undoing.
+- **The collector reads the acknowledgement once** (`GC.java`,
+  `while (Native.rd(Const.IO_GC_HALTED) == 0) spins++;`). The comment on
+  `gcFlushReq` in `Sys.scala` says a re-dirtied bank "degrades to waiting, never
+  to a collector running against a live mutator". That holds only until the
+  spin exits.
+- **The probe.** `SmpStackLoop` (`java/apps/Small`): core 1 sums 0..19,999 in
+  locals, pass after pass, and checks each pass against 199,990,000; core 0
+  allocates through 8 minor collections. `StackLoopProbe`
+  (`JopSmpStackLoopSim.scala`) counts, in the RTL, the cycles core 1 executes
+  while marked halted, and after core 0's acknowledgement.
+
+| run | collections | acknowledgement | core 1 executed after it | result |
+|---|---|---|---|---|
+| `JopSmpStackLoopSim`: 2 cores, BRAM, no stack cache | 8 | 1 cycle after the halt, never withdrawn | 168,051 cycles, ~20,900 per collection; 157 of them while the root port held its read address | **8 of 9 passes wrong** (first 925,480) |
+| `JopSmpStackLoopCacheSim`: `wukongSdrSmpSim 2`, SDRAM, stack cache | 8 | rose 190 times, withdrawn 189 times while held, after 2-2,120 cycles | 2,861 cycles | every pass right |
+| the same, running `SmpGcTest.jop` | 16 | rose 17 times, withdrawn once, after 3 cycles | 6 cycles, at most 2 per collection | `SMPGC OK`, STACKROOT OK |
+
+- **The wrong sums are another core's collection reaching into this one's
+  locals.** Without a stack cache the collector reads core 1's stack words
+  through the root port, and while it reads, that port REPLACES the core's own
+  stack-RAM read address (`effectiveRdAddr`, `JopCoreConfig.scala`). A halted
+  core that is still running reads the words being scanned in place of its
+  locals. That is every SMP build without a stack cache -- all of them but the
+  SDR builds on the Wukong and the i9+ (`JopConfig.effectiveUseStackCache`),
+  so every validated EP4CGX150 and Wukong DDR3 SMP build.
+- **With a stack cache nothing takes the read port,** because the collector
+  reads the spill region instead. But the acknowledgement still comes and goes
+  while core 1 runs, so the collector's one spin can exit with core 1 executing
+  and its spill region going stale behind it.
+- **Why the hardware results are clean.** `SmpGcTest`'s and `SmpDeepFlush`'s
+  mutators touch memory constantly, so they reach a `wait` within a bytecode or
+  two -- 6 cycles after the acknowledgement in 16 collections, above. Neither
+  holds a core in memory-free code across a collection.
+- **Not measured:** the memory operation that brings a core to its `wait` is
+  issued, and executes, inside the stop-the-world.
+
+**A fix needs two parts** (not yet chosen):
+
+1. **The acknowledgement must mean stopped:** halted, frozen on a `wait` (not on
+   the stack cache's rotation stall), memory controller idle, and flushed. That
+   stays true until the halt is released. On its own it turns the corruption
+   into a collector that waits as long as a memory-free loop runs -- for ever
+   behind `for (;;) { }`, which is how both probes' core 1 ends.
+2. **The stop must be bounded:** at its next bytecode boundary a GC-halted core
+   is dispatched to microcode that waits, the way `sys_int` and `sys_exc` are
+   (`JumpTable`), with the jpc increment suppressed as it is for an exception.
+   Every core then reaches a `wait` within one bytecode.
+
+**Guard, once fixed:** `JopSmpStackLoopSim` and `JopSmpStackLoopCacheSim`, red
+today on "core 1 executed N cycles after the collector's acknowledgement", and
+`SmpGcTest.jop` under the same probe.
+
+*Below: the record as filed on 2026-10-06.*
 
 **Found 2026-10-06** by `ParkLoopStallReadTest`, [item 161](#item-161)'s vehicle:
 the real `JopCore` as core 1 of 2, halted for a GC at 24 phases of its park loop.
