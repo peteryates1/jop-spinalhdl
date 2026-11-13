@@ -11873,10 +11873,14 @@ cores now actually stop for each one.
 - **`SmpStackLoop` changed on the way.** It now keeps every result per core.
   Its first 8-core run stalled because all cores shared one `cpuId` static and
   read back each other's ids; each core now reads `IO_CPU_ID` itself.
-- **Twelve cores were still in the fitter when this closed.** At an estimated
-  98% of the device the build is congested -- ~146,600 of 149,760 logic
-  elements, against the 118,085 that fitted in August. The design has grown
-  since then; the cost of this fix, above, is nil.
+- **Twelve cores at the default method cache did not fit.** `ep4cgx150Smp 12 36`
+  at `13/6` failed after 6 h 59 min: Quartus gave up routing twice on regional
+  congestion, and its last attempt ended with routing resources still needed by
+  more than one signal, "Can't fit design in device". That is what [item
+  1](#item-1) has recorded since 2026-08-23 -- at 12 cores only the `14/5`
+  method cache routes -- so it says nothing about this fix. The 12-core `14/5`
+  build was not tried. (The commit that closed this item put the failure down to
+  the design growing since August, at "~98% of the device"; both were wrong.)
 
 *Below: the investigation, as recorded before the fix.*
 
